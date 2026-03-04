@@ -1,0 +1,16 @@
+[
+  {
+    "id": "entity:account",
+    "type": "entity",
+    "target": "/entities/account",
+    "description": "Accesso entity account",
+    "permissions": ["PORTAL_USER", "PORTAL_ADMIN"]
+  },
+  {
+    "id": "entity:opportunity",
+    "type": "entity",
+    "target": "/entities/opportunity",
+    "description": "Accesso entity opportunity",
+    "permissions": ["PORTAL_OPERATIONS", "PORTAL_ADMIN"]
+  }
+]

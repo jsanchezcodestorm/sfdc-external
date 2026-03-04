@@ -1,0 +1,11 @@
+{
+  "id": "account-pipeline",
+  "objectApiName": "Account",
+  "description": "Account list per industry",
+  "soql": "SELECT Id, Name, Industry, OwnerId FROM Account WHERE Industry = {{industry}} LIMIT {{limit}}",
+  "defaultParams": {
+    "industry": "Technology",
+    "limit": 50
+  },
+  "maxLimit": 200
+}

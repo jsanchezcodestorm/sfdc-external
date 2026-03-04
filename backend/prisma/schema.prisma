@@ -1,0 +1,110 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum VisibilityRuleEffect {
+  ALLOW
+  DENY
+}
+
+enum VisibilityDecision {
+  ALLOW
+  DENY
+}
+
+model VisibilityPolicyMeta {
+  id            Int      @id @default(1)
+  policyVersion BigInt   @default(1)
+  updatedAt     DateTime @updatedAt
+
+  @@map("policy_meta")
+}
+
+model VisibilityCone {
+  id          String                 @id @default(uuid()) @db.Uuid
+  code        String                 @unique @db.VarChar(64)
+  name        String                 @db.VarChar(128)
+  priority    Int                    @default(0)
+  active      Boolean                @default(true)
+  updatedAt   DateTime               @updatedAt
+  rules       VisibilityRule[]
+  assignments VisibilityAssignment[]
+
+  @@map("cones")
+}
+
+model VisibilityRule {
+  id            String               @id @default(uuid()) @db.Uuid
+  coneId        String               @db.Uuid
+  objectApiName String               @db.VarChar(128)
+  effect        VisibilityRuleEffect
+  conditionJson Json
+  fieldsAllowed Json?
+  fieldsDenied  Json?
+  active        Boolean              @default(true)
+  updatedAt     DateTime             @updatedAt
+  cone          VisibilityCone       @relation(fields: [coneId], references: [id], onDelete: Cascade)
+
+  @@index([objectApiName, active])
+  @@map("rules")
+}
+
+model VisibilityAssignment {
+  id             String         @id @default(uuid()) @db.Uuid
+  coneId         String         @db.Uuid
+  contactId      String?        @db.VarChar(18)
+  permissionCode String?        @db.VarChar(80)
+  recordType     String?        @db.VarChar(80)
+  validFrom      DateTime?
+  validTo        DateTime?
+  updatedAt      DateTime       @updatedAt
+  cone           VisibilityCone @relation(fields: [coneId], references: [id], onDelete: Cascade)
+
+  @@index([contactId, permissionCode, recordType, validFrom, validTo])
+  @@map("assignments")
+}
+
+model VisibilityUserScopeCache {
+  cacheKey          String   @id @db.VarChar(255)
+  objectApiName     String   @db.VarChar(128)
+  policyVersion     BigInt
+  compiledPredicate String   @db.Text
+  compiledFields    Json?
+  expiresAt         DateTime
+  updatedAt         DateTime @updatedAt
+
+  @@index([objectApiName, policyVersion])
+  @@index([expiresAt])
+  @@map("user_scope_cache")
+}
+
+model VisibilityAuditLog {
+  id                 BigInt             @id @default(autoincrement())
+  requestId          String             @db.VarChar(64)
+  createdAt          DateTime           @default(now())
+  contactId          String             @db.VarChar(18)
+  permissionsHash    String             @db.VarChar(128)
+  recordType         String?            @db.VarChar(80)
+  objectApiName      String             @db.VarChar(128)
+  queryKind          String             @db.VarChar(64)
+  baseWhereHash      String             @db.VarChar(128)
+  finalWhereHash     String             @db.VarChar(128)
+  appliedCones       Json
+  appliedRules       Json
+  decision           VisibilityDecision
+  decisionReasonCode String             @db.VarChar(64)
+  rowCount           Int
+  durationMs         Int
+  policyVersion      BigInt
+
+  @@index([createdAt])
+  @@index([contactId, createdAt])
+  @@index([objectApiName, createdAt])
+  @@index([decisionReasonCode, createdAt])
+  @@map("audit_log")
+}

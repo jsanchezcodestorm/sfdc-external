@@ -1,0 +1,23 @@
+[
+  {
+    "id": "route:home",
+    "type": "route",
+    "target": "/",
+    "description": "Dashboard home",
+    "permissions": ["PORTAL_USER", "PORTAL_ADMIN"]
+  },
+  {
+    "id": "route:operations-pipeline",
+    "type": "route",
+    "target": "/operations/pipeline",
+    "description": "Pagina pipeline operations",
+    "permissions": ["PORTAL_OPERATIONS", "PORTAL_ADMIN"]
+  },
+  {
+    "id": "route:admin-visibility",
+    "type": "route",
+    "target": "/admin/visibility",
+    "description": "Pagina admin visibility",
+    "permissions": ["PORTAL_ADMIN"]
+  }
+]

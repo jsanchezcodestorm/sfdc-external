@@ -1,0 +1,51 @@
+[
+  {
+    "id": "rest:navigation-read",
+    "type": "rest",
+    "target": "/navigation",
+    "description": "Legge la navigazione disponibile",
+    "permissions": ["PORTAL_USER", "PORTAL_ADMIN"]
+  },
+  {
+    "id": "rest:global-search",
+    "type": "rest",
+    "target": "/global-search",
+    "description": "Ricerca globale applicativa",
+    "permissions": ["PORTAL_USER", "PORTAL_ADMIN"]
+  },
+  {
+    "id": "rest:entities-read",
+    "type": "rest",
+    "target": "/entities/:entityId",
+    "description": "Lettura metadata e dati entity",
+    "permissions": ["PORTAL_USER", "PORTAL_ADMIN"]
+  },
+  {
+    "id": "rest:query-execute",
+    "type": "rest",
+    "target": "/query/template/:templateId",
+    "description": "Esecuzione query template",
+    "permissions": ["PORTAL_USER", "PORTAL_ADMIN"]
+  },
+  {
+    "id": "rest:salesforce-objects",
+    "type": "rest",
+    "target": "/salesforce/objects",
+    "description": "Describe metadata Salesforce",
+    "permissions": ["PORTAL_ADMIN"]
+  },
+  {
+    "id": "rest:salesforce-raw-query",
+    "type": "rest",
+    "target": "/salesforce/query",
+    "description": "Query SOQL raw read-only",
+    "permissions": ["PORTAL_ADMIN"]
+  },
+  {
+    "id": "rest:visibility-debug",
+    "type": "rest",
+    "target": "/visibility/evaluate",
+    "description": "Diagnostica visibilita",
+    "permissions": ["PORTAL_ADMIN"]
+  }
+]

@@ -1,0 +1,27 @@
+{
+  "id": "account",
+  "objectApiName": "Account",
+  "label": "Accounts",
+  "list": {
+    "columns": [
+      "Id",
+      "Name",
+      "Industry",
+      "OwnerId"
+    ],
+    "defaultSort": {
+      "field": "Name",
+      "direction": "asc"
+    }
+  },
+  "detail": {
+    "fields": [
+      "Id",
+      "Name",
+      "Type",
+      "Industry",
+      "OwnerId",
+      "CreatedDate"
+    ]
+  }
+}
