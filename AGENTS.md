@@ -475,6 +475,7 @@ Rules
 * Prefer dependency injection
 * Avoid static mutable state
 * Keep services testable
+* Mandatory (cannot be ignored): Every backend and frontend component must be designed for scalability and reusability, and must remain small and modular (no oversized components).
 
 ---
 
