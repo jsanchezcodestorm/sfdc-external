@@ -120,6 +120,11 @@ Esito ACL:
 - risorsa con permessi e match almeno uno -> allow
 - risorsa con permessi e nessun match -> deny
 
+Regola esplicita per query template:
+- `query:<template-id>` e l unica sorgente autorizzativa (`MUST`)
+- metadata template (`permissions.roles`, `permissions.fields`) non possono fare override della decisione ACL (`MUST NOT`)
+- se ACL nega, la richiesta termina in deny (`403`) senza fallback autorizzativi
+
 ## 10) Procedura operativa per nuova capability
 1. definire capability e perimetro (rest/entity/query/route)
 2. scegliere `resource id` conforme convenzioni
@@ -213,6 +218,7 @@ Gate minimo PR:
 - wildcard logici non tracciabili nei permessi
 - usare `PORTAL_ADMIN` come scorciatoia per feature non classificate
 - duplicare stessa capability su piu resource id ambigui
+- fallback autorizzativo da metadata esterni alla ACL (es. `template.permissions.roles`)
 
 ## 15) Osservabilita minima ACL
 Log e metriche consigliate:

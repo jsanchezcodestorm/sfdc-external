@@ -5,8 +5,8 @@ Questo documento definisce il contratto tecnico dei query template del modulo Qu
 
 Obiettivi:
 - standardizzare come definire template SOQL/DSL in JSON
-- chiarire il comportamento runtime reale del backend
-- evidenziare limiti e ambiguita da gestire in un progetto nuovo da zero
+- definire il comportamento target Fase 1 per progetto nuovo (fail-closed)
+- evidenziare differenze legacy da non replicare
 
 Ambito:
 - `backend/config/queries/templates/*.json`
@@ -85,14 +85,17 @@ Inferenza type:
 
 ### 4.3 Forme ammesse in `where`
 Una entry `where[]` puo essere:
-1. stringa raw (inserita nella WHERE, con placeholder replacement)
-2. oggetto con `raw`
-3. oggetto strutturato:
+1. stringa raw (legacy, non ammessa in Fase 1)
+2. oggetto con `raw` (legacy, non ammesso in Fase 1)
+3. oggetto strutturato (unica forma ammessa in Fase 1):
    - `field` (required)
    - `operator` (optional, default `=`)
    - `param` (optional)
    - `value` (optional)
    - `optional` (optional)
+
+Regola Fase 1:
+- input con `where` raw (`string` o `raw`) deve essere rifiutato con `400`.
 
 Risoluzione priorita valore:
 1. `param` se presente e valorizzato
@@ -100,18 +103,20 @@ Risoluzione priorita valore:
 3. nessun valore -> genera `field operator` (caso da evitare)
 
 ### 4.4 Operatori
-Stato attuale runtime:
-- nessuna whitelist hard-enforced degli operatori
-- `operator` e passato direttamente in output SOQL
+Requisito Fase 1 (vincolante):
+- whitelist hard-enforced operatori lato backend
+- operatori ammessi: `=`, `!=`, `>`, `>=`, `<`, `<=`, `IN`, `NOT IN`, `LIKE`, `STARTS_WITH`, `CONTAINS`, `IS_NULL`, `IS_NOT_NULL`
+- operatore fuori whitelist -> `400` (`INVALID_OPERATOR`)
 
-Conseguenza:
-- la governance operatori e demandata a review/config policy, non al parser.
+Nota transizione:
+- eventuale comportamento legacy "operator pass-through" non e conforme e non deve essere implementato nel nuovo progetto.
 
 ### 4.5 Placeholder
 Sostituzione placeholder: `{{paramName}}`
 
 Nei template DSL:
-- supportati in `where` string/raw
+- supportati nei parametri delle condizioni strutturate (`param`)
+- non ammessi in `where` raw (bloccato in Fase 1)
 - non supportano fallback `||`
 
 Nei template `type: soql`:
@@ -165,20 +170,24 @@ Tradeoff:
 - maggiore flessibilita
 - minore controllabilita rispetto al DSL strutturato
 
-## 7) `permissions` e ACL: logica effettiva
-Controllo accesso template (`QueryService.assertTemplateAccess`):
+## 7) ACL come sorgente unica (vincolante)
+Controllo accesso template (norma vincolante):
 1. verifica ACL risorsa `query:<templateId>`
 2. se ACL concede, accesso consentito
-3. se ACL nega, fallback su `template.permissions.roles`
-4. se nessun ruolo richiesto, accesso negato (`403`)
+3. se ACL nega, accesso negato (`403`) senza fallback autorizzativi
 
-Implicazioni:
-- ACL e la prima linea di controllo
-- `permissions.roles` puo fungere da fallback
+Regola obbligatoria:
+- `template.permissions.roles` non deve concedere accesso se ACL nega
+- la decisione autorizzativa sui query template e solo ACL
+- ordine decisionale obbligatorio (`MUST`): ACL -> decisione finale `ALLOW/DENY`
 
-`permissions.fields`:
-- viene normalizzato (`resolvedFields`) ma non e applicato come filtro campo server-side nella risposta
-- quindi e metadata, non enforcement effettivo.
+`permissions.roles` e `permissions.fields`:
+- sono metadata di documentazione/governance
+- non sono un meccanismo di autorizzazione runtime
+- `permissions.fields` non applica filtering server-side della risposta
+
+Nota di transizione:
+- eventuali fallback legacy presenti in implementazioni preesistenti sono da considerare debito tecnico, non conformi, e non vanno replicati nel nuovo progetto.
 
 ## 8) `options` supportate
 Campi:
@@ -244,9 +253,9 @@ Errori comuni:
 | Condizioni opzionali (`optional`) | Coperto | skip condizione se parametro assente |
 | Vincolo `requireAnyOf` | Coperto | enforce lato backend |
 | ACL `query:<id>` | Coperto | enforcement primario |
-| Fallback `permissions.roles` | Coperto | usato solo se ACL non concede |
+| Fallback `permissions.roles` | Escluso/Vietato | non deve autorizzare se ACL nega |
 | Filtro risposta per `permissions.fields` | Escluso | metadata, non enforcement |
-| Validazione whitelist operatori | Escluso | operator pass-through |
+| Validazione whitelist operatori | Coperto/Obbligatorio | reject hard su operatori non ammessi |
 | Registry API template (list/get) | Escluso | nessun endpoint pubblico dedicato |
 
 ## 12) Regole pratiche per nuovi template
@@ -255,7 +264,7 @@ Errori comuni:
 3. Dichiarare tutti i parametri usati in `param` dentro `parameters`.
 4. Per filtri opzionali combinabili, usare `optional: true` e `options.requireAnyOf` quando serve.
 5. Aggiungere risorsa ACL `query:<templateId>` in `backend/config/acl/resources/query.json`.
-6. Evitare `where` string/raw salvo casi eccezionali; preferire condizioni strutturate.
+6. Vietare `where` string/raw; usare solo condizioni strutturate.
 7. Impostare `cacheTtl` solo su query stabili e non sensibili a freshness immediata.
 8. Testare sempre: ok path, 400 (parametro), 403 (ACL), 404 (id).
 
@@ -263,15 +272,17 @@ Errori comuni:
 Ambiguita de facto:
 - `parameters.required` non enforce
 - `permissions.fields` non enforce
+- fallback autorizzativo su `permissions.roles` (se presente in codice legacy) in conflitto con modello ACL sorgente unica
 - `ui.*` e `parameters.source` non usati dal backend per enforcement
-- nessuna whitelist operatori
 - una condizione con `param` non dichiarato puo degradare in SOQL invalida (`field operator`)
 - un file JSON corrotto puo disabilitare tutti i template (fallback vuoto)
+- differenze legacy possibili su installazioni esistenti (es. operator pass-through o `where` raw accettato)
 
 Hardening consigliato per progetto nuovo:
 - validazione schema JSON in CI con regole forti (operatori, parametri dichiarati, no condizioni monche)
-- lint custom: vietare `where` string/raw salvo allowlist
+- lint custom: vietare `where` string/raw
 - enforcement esplicito di `required` lato backend
+- rimuovere/impedire fallback autorizzativo da `template.permissions.roles`
 - enforcement reale `permissions.fields` o rimozione del campo per evitare falso senso di sicurezza
 - invalidazione cache su reload config (version key o purge)
 

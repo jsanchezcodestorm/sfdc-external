@@ -71,6 +71,7 @@ Campi minimi:
 - `effect` (varchar check `ALLOW|DENY`)
 - `condition_json` (jsonb)
 - `fields_allowed` (jsonb, opzionale)
+- `fields_denied` (jsonb, opzionale)
 - `active` (boolean)
 - `updated_at` (timestamptz)
 
@@ -131,10 +132,14 @@ Contesto runtime:
 Assignment applicabile se:
 - `valid_from` assente o `valid_from <= now`
 - `valid_to` assente o `valid_to >= now`
-- match per almeno una dimensione:
-  - `contact_id` esatto
-  - `permission_code` in `permissions[]`
-  - `record_type` uguale
+- almeno un selettore tra `contact_id`, `permission_code`, `record_type` e valorizzato
+- semantica di match `AND` sui selettori valorizzati nella stessa assignment:
+  - se `contact_id` e valorizzato: deve matchare esattamente
+  - se `permission_code` e valorizzato: deve essere presente in `permissions[]`
+  - se `record_type` e valorizzato: deve essere uguale al contesto
+
+Nota operativa:
+- per ottenere semantica `OR` tra selettori diversi, creare assignment separate.
 
 Ordinamento cone applicabili:
 1. `priority DESC`
@@ -150,8 +155,9 @@ Ordinamento cone applicabili:
 7. Comporre filtro finale:
    - `FINAL = (BASE_WHERE) AND (ALLOW_EXPR) AND NOT (DENY_EXPR)`
 8. Applicare field-level set finale:
-   - intersezione whitelist ALLOW
-   - meno eventuali deny field explicit
+   - intersezione whitelist ALLOW (`fields_allowed`)
+   - sottrazione deny espliciti (`fields_denied`)
+   - precedenza `fields_denied` in caso di conflitto sullo stesso campo
 9. Se set campi finale e vuoto -> `DENY` (`FIELDSET_EMPTY`).
 10. Audit obbligatorio con regole/coni applicati e reason code.
 
@@ -228,7 +234,8 @@ Regole minime:
 - se il set finale e vuoto -> `DENY`
 
 Nota:
-- `fields_allowed` e parte della policy visibility, non sostituisce ACL.
+- `fields_allowed` e `fields_denied` sono parte della policy visibility, non sostituiscono ACL.
+- `fields_denied` deve essere definito esplicitamente nel modello regole; non e implicito da `effect = DENY`.
 
 ## 13) Cache policy: chiavi, invalidazione, SLA
 ### 13.1 Chiavi cache minime
@@ -254,7 +261,7 @@ Requisito operativo:
 - limite massimo: `<= 120s`
 - oltre limite massimo: fail-closed + audit `POLICY_STALE`
 
-## 14) Contratto audit minimo (obbligatorio)
+## 14) Contratto audit minimo (visibility, obbligatorio)
 Campi obbligatori evento audit:
 - `request_id`
 - `created_at`
@@ -277,20 +284,44 @@ Retention minima:
 - dettaglio: `180 giorni`
 - aggregati giornalieri: `24 mesi`
 
-## 15) `decision_reason_code` minimi
+## 15) `decision_reason_code` visibility (minimi)
 - `ALLOW_MATCH`
 - `DENY_MATCH`
 - `NO_ALLOW_RULE`
 - `INVALID_RULE_DROPPED`
 - `FIELDSET_EMPTY`
 - `POLICY_STALE`
-- `CSRF_VALIDATION_FAILED`
-- `CURSOR_SCOPE_MISMATCH`
-- `CURSOR_EXPIRED`
 - `QUERY_LIMIT_EXCEEDED`
 - `NON_SELECTIVE_QUERY`
 
-## 16) Test matrix obbligatoria
+Regola tassonomia:
+- questi codici coprono solo decisioni del motore visibility dopo superamento dei controlli gateway.
+
+## 16) Contratto audit minimo (security gateway, obbligatorio)
+Scope:
+- eventi bloccati prima della valutazione visibility (auth/sessione/csrf/cursor/input boundary)
+
+Campi obbligatori evento audit:
+- `request_id`
+- `created_at`
+- `contact_id` (nullable se non autenticato)
+- `endpoint`
+- `http_method`
+- `event_type` (`AUTH`, `SESSION`, `CSRF`, `CURSOR`, `INPUT`)
+- `decision` (`ALLOW|DENY`)
+- `reason_code`
+- `ip_hash`
+- `user_agent_hash`
+
+## 17) `reason_code` security gateway (minimi)
+- `CSRF_VALIDATION_FAILED`
+- `CURSOR_SCOPE_MISMATCH`
+- `CURSOR_EXPIRED`
+- `SESSION_INVALID`
+- `ORIGIN_NOT_ALLOWED`
+- `INPUT_VALIDATION_FAILED`
+
+## 18) Test matrix obbligatoria
 | ID | Scenario | Esito atteso |
 | --- | --- | --- |
 | `VIZ-01` | Nessuna assignment valida per utente/oggetto | `DENY` |
@@ -303,18 +334,22 @@ Retention minima:
 | `VIZ-08` | Assignment scaduta | non applicata |
 | `VIZ-09` | Assignment per permission_code matchata | applicata |
 | `VIZ-10` | Assignment record_type non compatibile | non applicata |
-| `VIZ-11` | `queryMore` cursor non scoped/valido | `DENY` + cursor reason code |
+| `VIZ-11` | `queryMore` cursor non scoped/valido | `DENY` + evento security audit (`CURSOR_*`) |
 | `VIZ-12` | Modifica policy con cache calda | propagazione entro SLA |
 | `VIZ-13` | Audit evento decisione | tutti i campi obbligatori presenti |
 | `VIZ-14` | Performance compilazione policy | entro budget |
 | `VIZ-15` | Query compilata oltre limiti hard | `DENY` + `QUERY_LIMIT_EXCEEDED` |
 | `VIZ-16` | Query non selettiva high-volume | `DENY` + `NON_SELECTIVE_QUERY` |
+| `VIZ-17` | Assignment con `contact_id` + `permission_code`, match solo uno | non applicata (semantica AND) |
+| `VIZ-18` | Assignment con tutti i selettori `NULL` | invalida/scartata (mai applicabile) |
+| `VIZ-19` | Campo presente in `fields_allowed` e `fields_denied` | campo rimosso (deny precedence) |
+| `VIZ-20` | Field set finale vuoto dopo `fields_denied` | `DENY` + `FIELDSET_EMPTY` |
 
 Gate rilascio:
-- nessun test `VIZ-01..VIZ-16` fallito
+- nessun test `VIZ-01..VIZ-20` fallito
 - copertura unit visibility compiler/enforcer >= `90%`
 
-## 17) Sicurezza operativa minima
+## 19) Sicurezza operativa minima
 - raw query endpoint disabilitato in produzione (`ENABLE_RAW_SALESFORCE_QUERY=false`)
 - cursor pagination solo opachi e scoped
 - sanitizzazione placeholder/literal centralizzata
@@ -324,7 +359,7 @@ Gate rilascio:
   - policy engine failures
   - degradazione SLA propagazione
 
-## 18) Variabili ambiente consigliate
+## 20) Variabili ambiente consigliate
 - `VISIBILITY_DB_SCHEMA`
 - `VISIBILITY_CACHE_TTL_SECONDS`
 - `VISIBILITY_AUDIT_ENABLED`
@@ -333,7 +368,7 @@ Gate rilascio:
 - `VISIBILITY_AUDIT_RETENTION_DAYS` (default `180`)
 - `VISIBILITY_AUDIT_AGGREGATE_RETENTION_MONTHS` (default `24`)
 
-## 19) Criteri di accettazione
+## 21) Criteri di accettazione
 Il tema coni e accettato quando:
 - ogni endpoint dati coperto applica visibility con deny-by-default
 - nessun endpoint protetto puo bypassare il visibility engine
@@ -341,13 +376,13 @@ Il tema coni e accettato quando:
 - invalidazione cache e SLA propagazione rispettati
 - audit permette di ricostruire sempre il perche di ALLOW/DENY
 
-## 20) Non-obiettivi (Fase 1)
+## 22) Non-obiettivi (Fase 1)
 - policy storage su Salesforce custom objects
 - global search con visibility completa
 - write-time row-level cones (create/update/delete)
 - registry pubblico template/policy per utenti finali
 
-## 21) Documenti correlati
+## 23) Documenti correlati
 - `docs/architecture-overview.md`
 - `docs/security-model.md`
 - `docs/acl-resources-map.md`

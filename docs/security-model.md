@@ -87,6 +87,8 @@ Regole:
 - controllo ACL obbligatorio su ogni endpoint protetto
 - default deny su risorsa non mappata
 - nessuna decisione autorizzativa delegata al frontend
+- per i query template, ACL (`query:<templateId>`) e sorgente unica autorizzativa (`MUST`)
+- metadata template (es. `permissions.roles`) non devono concedere accesso in fallback (`MUST NOT`)
 
 ## 9) Visibility policy model
 Principio:
@@ -106,13 +108,14 @@ Storage:
 ## 10) Security pipeline per ogni request dati
 Ordine obbligatorio:
 1. validazione sessione autenticata
-2. validazione input DTO/schema
-3. verifica ACL risorsa
-4. costruzione visibility context (utente, permessi, recordType, oggetto)
-5. risoluzione policy e compilazione predicate
-6. esecuzione query scoped
-7. field-level filtering (se applicabile)
-8. audit della decisione finale
+2. validazione CSRF + `Origin/Referer` per endpoint mutativi browser (`POST|PUT|PATCH|DELETE`)
+3. validazione input DTO/schema
+4. verifica ACL risorsa
+5. costruzione visibility context (utente, permessi, recordType, oggetto)
+6. risoluzione policy e compilazione predicate
+7. esecuzione query scoped
+8. field-level filtering (se applicabile)
+9. audit della decisione finale
 
 Se uno step fallisce: risposta deny coerente + audit reason code.
 
@@ -128,15 +131,16 @@ Raw query endpoint:
 - solo statement read-only esplicitamente consentiti
 
 Template/DSL:
-- whitelist operatori supportati
+- whitelist operatori supportati (hard-enforced)
 - validazione placeholders e tipi
 - escape obbligatorio dei literal
 - limiti hard su profondita/numero nodi/cardinalita
+- reject `where` raw/string non strutturato in Fase 1
 
 ## 12) Field-level security applicativa
 Regole minime:
 - set campi visibili = intersezione whitelist ALLOW applicabili
-- campi negati esplicitamente rimossi dal set finale
+- campi negati esplicitamente (`fields_denied`) rimossi dal set finale
 - se set finale vuoto: deny
 
 Obbligo:
@@ -181,7 +185,8 @@ Regole:
 Obiettivo:
 - ricostruire sempre chi ha visto cosa, quando e perche
 
-Campi minimi audit visibility:
+### 16.1 Audit visibility (decisioni row/field-level)
+Campi minimi:
 - `request_id`
 - `created_at`
 - `contact_id`
@@ -198,6 +203,37 @@ Campi minimi audit visibility:
 - `row_count`
 - `policy_version`
 - `duration_ms`
+
+Tassonomia reason code (`decision_reason_code`):
+- `ALLOW_MATCH`
+- `DENY_MATCH`
+- `NO_ALLOW_RULE`
+- `INVALID_RULE_DROPPED`
+- `FIELDSET_EMPTY`
+- `POLICY_STALE`
+- `QUERY_LIMIT_EXCEEDED`
+- `NON_SELECTIVE_QUERY`
+
+### 16.2 Audit security gateway (pre-visibility)
+Campi minimi:
+- `request_id`
+- `created_at`
+- `contact_id` (nullable se non autenticato)
+- `endpoint`
+- `http_method`
+- `event_type` (`AUTH`, `SESSION`, `CSRF`, `CURSOR`, `INPUT`)
+- `decision` (`ALLOW|DENY`)
+- `reason_code`
+- `ip_hash`
+- `user_agent_hash`
+
+Tassonomia reason code (`reason_code`):
+- `CSRF_VALIDATION_FAILED`
+- `CURSOR_SCOPE_MISMATCH`
+- `CURSOR_EXPIRED`
+- `SESSION_INVALID`
+- `ORIGIN_NOT_ALLOWED`
+- `INPUT_VALIDATION_FAILED`
 
 Retention:
 - dettaglio audit: 180 giorni

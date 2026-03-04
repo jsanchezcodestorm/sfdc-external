@@ -8,6 +8,10 @@ Obiettivo principale:
 - workflow migrazioni ripetibile tra `dev`, `staging`, `prod`
 - integrazione pulita con backend NestJS
 
+Nota audit:
+- il presente schema copre l audit del motore visibility.
+- eventi security gateway (es. CSRF/cursor/sessione) devono usare stream/tabella separata per non mescolare tassonomie reason code.
+
 ## 2) Decisioni architetturali
 Decisioni vincolanti:
 - Salesforce resta system of record business
@@ -126,6 +130,7 @@ model VisibilityRule {
   effect       VisibilityRuleEffect
   conditionJson Json
   fieldsAllowed Json?
+  fieldsDenied  Json?
   active       Boolean              @default(true)
   updatedAt    DateTime             @updatedAt
   cone         VisibilityCone       @relation(fields: [coneId], references: [id], onDelete: Cascade)
@@ -193,6 +198,18 @@ model VisibilityAuditLog {
 Nota importante:
 - l esempio usa `@@map("...")` per nomi tabella puliti.
 - se vuoi lo schema fisico `visibility` separato da `public`, aggiungi migrazione SQL che crea schema e setta search_path (o usa feature multi-schema della tua versione Prisma se supportata).
+
+Regole obbligatorie del modello:
+- `fieldsDenied` modella il deny field-level esplicito; non e implicito da `effect = DENY`.
+- una assignment deve avere almeno un selettore valorizzato tra `contactId`, `permissionCode`, `recordType`.
+- match assignment runtime: `AND` su tutti i selettori non nulli della stessa riga.
+
+Guardrail SQL raccomandato (migrazione manuale):
+```sql
+ALTER TABLE visibility.assignments
+  ADD CONSTRAINT assignments_selector_not_all_null
+  CHECK (contact_id IS NOT NULL OR permission_code IS NOT NULL OR record_type IS NOT NULL);
+```
 
 ## 8) Migrazione iniziale
 Genera e applica migrazione locale:

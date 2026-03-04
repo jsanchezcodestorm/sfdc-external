@@ -79,11 +79,14 @@ Output atteso script:
 - tag `vX.Y.Z`
 - push commit e tag
 
-## 7) Strategie deploy supportate
-Il progetto supporta due modalita operative. Usarne una per ambiente e documentarla nel change ticket.
+## 7) Strategie deploy supportate (profili di riferimento)
+Questo capitolo definisce profili operativi di esempio.
+Regola:
+- usare solo i profili/file realmente presenti nel repository/ambiente target
+- se un artifact o script non esiste nel contesto, adattare la checklist mantenendo invariati i controlli di sicurezza/go-no-go
 
 ### 7.1 Modalita A: Amplify Hosting
-Riferimenti:
+Riferimenti (esempio per questo repository):
 - `amplify.yml`
 - `bin/postbuild.sh`
 - `deploy-manifest.json`
@@ -103,7 +106,7 @@ Controlli critici:
 - presenza `public/index.html`
 
 ### 7.2 Modalita B: VM + PM2
-Riferimenti:
+Riferimenti (esempio per questo repository):
 - `bin/deploy-pm2.sh`
 - `deploy-cs-backoffice.sh`
 - `backend/ecosystem.config.js`
@@ -141,7 +144,8 @@ Regole:
 
 ## 9) Smoke test post deploy (obbligatori)
 ### 9.1 Smoke tecnico base
-- `GET /api` deve rispondere `Hello from Codestorm backend!`
+- health endpoint configurato (es. `GET /api/health` o `GET /api`) deve rispondere `2xx`
+- il body di health check puo variare per progetto; non usare una stringa testuale hardcoded come unico criterio
 - `GET /api/docs` raggiungibile
 - frontend servito correttamente (`/`)
 
@@ -239,7 +243,8 @@ Nota DB:
 
 ## 14) Cache e manutenzione operativa
 Cache backend locale:
-- script emergenza: `./invalidate-backend-cache.sh`
+- script emergenza (se presente): `./invalidate-backend-cache.sh`
+- alternativa generica: endpoint/admin command di purge cache documentato per l ambiente
 
 Uso:
 - solo in scenari controllati (degrado cache o dati obsoleti)

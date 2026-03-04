@@ -427,14 +427,17 @@ Nota:
 ### 14.6 Algoritmo di valutazione (deterministico e obbligatorio)
 
 1. Costruire il contesto utente (`contactId`, `permissions`, `recordType`, timestamp corrente).
-2. Caricare le assegnazioni valide nel timestamp corrente (assi per `contact`, `permission_code`, `record_type`).
+2. Caricare le assegnazioni valide nel timestamp corrente (assi per `contact`, `permission_code`, `record_type`) con regola deterministica:
+   - ogni assignment deve avere almeno un selettore valorizzato
+   - semantica di match `AND` su tutti i selettori valorizzati della stessa assignment
+   - per ottenere semantica `OR`, usare assignment separate
 3. Ordinare i coni applicabili per `priority DESC`, poi `code ASC` (tie-break stabile).
 4. Filtrare solo regole `active` riferite all oggetto richiesto.
 5. Costruire `ALLOW_EXPR` come OR di tutte le regole `ALLOW` valide.
 6. Costruire `DENY_EXPR` come OR di tutte le regole `DENY` valide.
 7. Comporre il filtro finale: se `ALLOW_EXPR` e vuota, deny immediato; altrimenti `FINAL = (BASE_WHERE) AND (ALLOW_EXPR) AND NOT (DENY_EXPR)`.
 8. Precedenza conflitti: `DENY` vince sempre su `ALLOW`.
-9. Regole field-level: il set finale e l intersezione delle whitelist ALLOW applicabili, meno eventuali campi esplicitamente negati; se il set finale e vuoto, deny.
+9. Regole field-level: il set finale e l intersezione delle whitelist ALLOW (`fields_allowed`) applicabili, meno eventuali campi esplicitamente negati (`fields_denied`); in caso di conflitto, `fields_denied` prevale; se il set finale e vuoto, deny.
 10. Regole invalide (campo o operatore non supportato): scarto regola + audit; se dopo lo scarto non resta alcuna ALLOW valida, deny.
 
 ### 14.7 Specifica formale DSL v1
@@ -551,6 +554,8 @@ Nota implementativa:
 
 - mappare queste tabelle in modelli Prisma (`backend/prisma/schema.prisma`)
 - centralizzare accesso DB in repository/service dedicati (`VisibilityRepository`, `VisibilityAuditRepository`)
+- `visibility.rules` deve modellare esplicitamente sia `fields_allowed` sia `fields_denied`
+- `visibility.assignments` deve impedire righe con tutti i selettori null (`contact_id`, `permission_code`, `record_type`)
 
 ## 16) Sicurezza end-to-end
 
@@ -634,7 +639,7 @@ Campi obbligatori:
 - `contact_id` (nullable se utente non autenticato)
 - `endpoint`
 - `http_method`
-- `event_type` (`AUTH`, `SESSION`, `CSRF`, `CURSOR`)
+- `event_type` (`AUTH`, `SESSION`, `CSRF`, `CURSOR`, `INPUT`)
 - `decision` (`ALLOW` o `DENY`)
 - `reason_code`
 - `ip_hash`
@@ -647,6 +652,7 @@ Codici motivo minimi (`reason_code`):
 - `CURSOR_EXPIRED`
 - `SESSION_INVALID`
 - `ORIGIN_NOT_ALLOWED`
+- `INPUT_VALIDATION_FAILED`
 
 ## 18) Performance
 
@@ -765,10 +771,14 @@ Pipeline minima:
 | `VIZ-14` | Performance compilazione                     | entro budget definito                    |
 | `VIZ-15` | Query compilata oltre limiti hard            | `DENY` + `QUERY_LIMIT_EXCEEDED`          |
 | `VIZ-16` | Query non selettiva su oggetto high-volume   | `DENY` + `NON_SELECTIVE_QUERY`           |
+| `VIZ-17` | Assignment con `contact_id` + `permission_code`, match solo uno | non applicata (semantica AND) |
+| `VIZ-18` | Assignment con tutti i selettori `NULL`      | invalida/scartata (mai applicabile)      |
+| `VIZ-19` | Campo in `fields_allowed` e `fields_denied`  | campo rimosso (deny precedence)          |
+| `VIZ-20` | Set campi finale vuoto dopo deny field-level | `DENY` + `FIELDSET_EMPTY`                |
 
 Gate di rilascio:
 
-- nessun test `VIZ-01..VIZ-16` fallito
+- nessun test `VIZ-01..VIZ-20` fallito
 - copertura test unit visibility compiler/enforcer >= `90%`
 
 ## 23) Roadmap implementazione su progetto vuoto
