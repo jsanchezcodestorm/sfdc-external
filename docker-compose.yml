@@ -1,0 +1,76 @@
+name: sfdc-external
+
+x-node-base: &node-base
+  image: node:22-bookworm-slim
+  working_dir: /workspace
+  restart: unless-stopped
+  networks:
+    - app
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    networks:
+      - app
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-sfdc_external}
+      POSTGRES_USER: ${POSTGRES_USER:-app_rw}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app_rw}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  backend:
+    <<: *node-base
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: >
+      sh -c "if [ ! -d node_modules ]; then npm install; fi &&
+             if [ -f backend/prisma/schema.prisma ]; then npm exec --workspace backend prisma -- generate --schema prisma/schema.prisma; fi &&
+             npm run start:dev --workspace backend"
+    environment:
+      NODE_ENV: development
+      PORT: ${BACKEND_PORT:-3000}
+      FRONTEND_ORIGINS: ${FRONTEND_ORIGINS:-http://localhost:5173}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://app_rw:app_rw@postgres:5432/sfdc_external?schema=visibility}
+      CHOKIDAR_USEPOLLING: "true"
+    ports:
+      - "3000:3000"
+    volumes:
+      - .:/workspace
+      - root_node_modules:/workspace/node_modules
+
+  frontend:
+    <<: *node-base
+    depends_on:
+      backend:
+        condition: service_started
+    command: >
+      sh -c "if [ ! -d node_modules ]; then npm install; fi &&
+             npm run dev --workspace frontend -- --host 0.0.0.0 --port 5173"
+    environment:
+      NODE_ENV: development
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:3000/api}
+      CHOKIDAR_USEPOLLING: "true"
+    ports:
+      - "5173:5173"
+    volumes:
+      - .:/workspace
+      - root_node_modules:/workspace/node_modules
+
+networks:
+  app:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  root_node_modules:

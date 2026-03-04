@@ -1,0 +1,19 @@
+{
+  "name": "sfdc-external",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace backend && npm run build --workspace frontend",
+    "lint": "npm run lint --workspaces",
+    "start:dev": "npm run start:dev --workspace backend",
+    "dev": "npm run dev --workspace frontend"
+  },
+  "engines": {
+    "node": ">=22",
+    "npm": ">=10"
+  }
+}
