@@ -1,8 +1,12 @@
 import type {
-  EntityColumn,
-  EntityRecord,
   EntityAction,
+  EntityColumn,
+  EntityListConfig,
+  EntityListViewConfig,
+  EntityRecord,
 } from './entity-types'
+
+const ACTION_TYPES = new Set(['edit', 'delete', 'link'])
 
 export function getRecordId(record: EntityRecord): string {
   const raw = record.Id ?? record.id ?? record.recordId
@@ -135,13 +139,113 @@ export function renderRecordTemplate(template: string, record: EntityRecord): st
   })
 }
 
-export function buildRowActions(actions: EntityAction[] | undefined): EntityAction[] {
-  if (actions && actions.length > 0) {
-    return actions
+export function normalizeEntityBasePath(entityId: string, configuredBasePath?: string): string {
+  const normalizedConfigPath = configuredBasePath?.trim()
+  if (!normalizedConfigPath) {
+    return `/s/${entityId}`
   }
 
-  return [
-    { type: 'edit', label: 'Edit' },
-    { type: 'delete', label: 'Delete' },
-  ]
+  const withLeadingSlash = normalizedConfigPath.startsWith('/')
+    ? normalizedConfigPath
+    : `/${normalizedConfigPath}`
+
+  const withoutTrailingSlash = withLeadingSlash.replace(/\/+$/, '')
+  return withoutTrailingSlash.length > 0 ? withoutTrailingSlash : '/'
+}
+
+export function selectListView(
+  listConfig: EntityListConfig | undefined,
+  requestedViewId: string | undefined,
+): EntityListViewConfig | undefined {
+  const views = listConfig?.views ?? []
+  if (views.length === 0) {
+    return undefined
+  }
+
+  const requested = requestedViewId?.trim()
+  if (requested) {
+    const requestedView = views.find((view) => view.id === requested)
+    if (requestedView) {
+      return requestedView
+    }
+  }
+
+  const defaultView = views.find((view) => view.default === true)
+  return defaultView ?? views[0]
+}
+
+export function resolveActionTarget(
+  action: EntityAction,
+  options: {
+    baseEntityPath: string
+    fallbackPath: string
+    record?: EntityRecord
+    rowId?: string
+  },
+): string {
+  const actionBasePath = action.entityId
+    ? normalizeEntityBasePath(action.entityId)
+    : options.baseEntityPath
+
+  const fallbackPath = toActionPath(options.fallbackPath, actionBasePath)
+  const rawTarget = action.target?.trim()
+
+  if (!rawTarget) {
+    return fallbackPath
+  }
+
+  const templateRecord = buildTemplateRecord(options.record, options.rowId)
+  const renderedTarget = renderRecordTemplate(rawTarget, templateRecord).trim()
+  if (!renderedTarget) {
+    return fallbackPath
+  }
+
+  if (renderedTarget.startsWith('http://') || renderedTarget.startsWith('https://')) {
+    return renderedTarget
+  }
+
+  return toActionPath(renderedTarget, actionBasePath)
+}
+
+export function buildRowActions(actions: EntityAction[] | undefined): EntityAction[] {
+  if (!actions || actions.length === 0) {
+    return []
+  }
+
+  return actions.filter((action) => ACTION_TYPES.has(action.type))
+}
+
+function toActionPath(target: string, baseEntityPath: string): string {
+  const normalizedTarget = target.trim()
+  if (normalizedTarget.startsWith('/')) {
+    return normalizedTarget
+  }
+
+  const normalizedBase = baseEntityPath.replace(/\/+$/, '')
+  const normalizedRelative = normalizedTarget.replace(/^\/+/, '')
+
+  if (!normalizedRelative) {
+    return normalizedBase
+  }
+
+  return `${normalizedBase}/${normalizedRelative}`
+}
+
+function buildTemplateRecord(record: EntityRecord | undefined, rowId: string | undefined): EntityRecord {
+  if (!rowId) {
+    return record ?? {}
+  }
+
+  const baseRecord = record ?? {}
+  const currentId = getRecordId(baseRecord)
+  if (currentId.length > 0) {
+    return baseRecord
+  }
+
+  return {
+    ...baseRecord,
+    Id: rowId,
+    id: rowId,
+    recordId: rowId,
+  }
 }

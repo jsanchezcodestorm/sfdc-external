@@ -5,20 +5,25 @@ import {
   deleteEntityRecord,
   fetchEntityConfig,
   fetchEntityRecord,
+  updateEntityRecord,
 } from '../entity-api'
 import {
   formatFieldValue,
   formatFieldValueByFormat,
+  normalizeEntityBasePath,
   renderRecordTemplate,
+  resolveActionTarget,
   resolveFieldValue,
   toLabel,
   toTitleCase,
 } from '../entity-helpers'
 import type {
   DetailSectionConfig,
+  EntityAction,
   EntityConfigEnvelope,
   EntityDetailResponse,
   EntityRecord,
+  PathStatusConfig,
   RelatedListConfig,
 } from '../entity-types'
 import { EntityPageFrame } from '../components/EntityPageFrame'
@@ -33,6 +38,7 @@ export function EntityDetailPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [pathUpdatingValue, setPathUpdatingValue] = useState<string | null>(null)
 
   const loadDetail = useCallback(async () => {
     if (!entityId || !recordId) {
@@ -68,6 +74,7 @@ export function EntityDetailPage() {
     [detailResponse?.data, detailResponse?.record],
   )
   const entityLabel = config?.entity.label ?? toTitleCase(entityId)
+  const baseEntityPath = normalizeEntityBasePath(entityId, config?.entity.navigation?.basePath)
   const headerTitle =
     detailResponse?.title ?? String(record.Name ?? record.name ?? `${entityLabel} Detail`)
   const detailSections = useMemo<DetailSectionConfig[]>(() => {
@@ -90,6 +97,18 @@ export function EntityDetailPage() {
     return config?.entity.detail?.relatedLists ?? []
   }, [config?.entity.detail?.relatedLists, detailResponse?.relatedLists])
 
+  const detailActions = useMemo<EntityAction[]>(() => {
+    if (detailResponse?.actions && detailResponse.actions.length > 0) {
+      return detailResponse.actions
+    }
+
+    return config?.entity.detail?.actions ?? []
+  }, [config?.entity.detail?.actions, detailResponse?.actions])
+
+  const pathStatus = useMemo<PathStatusConfig | undefined>(() => {
+    return detailResponse?.pathStatus ?? config?.entity.detail?.pathStatus
+  }, [config?.entity.detail?.pathStatus, detailResponse?.pathStatus])
+
   if (!entityId || !recordId) {
     return (
       <EntityPageFrame
@@ -111,45 +130,38 @@ export function EntityDetailPage() {
       subtitle={`${entityLabel} - ${recordId}`}
       breadcrumbs={[
         { label: 'Home', to: '/' },
-        { label: entityLabel, to: `/s/${entityId}` },
+        { label: entityLabel, to: baseEntityPath },
         { label: recordId },
       ]}
       actions={
-        <>
-          <Link
-            to={`/s/${entityId}/${recordId}/edit`}
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
-          >
-            Edit
-          </Link>
-          <button
-            type="button"
-            onClick={() => {
+        detailActions.length > 0 ? (
+          <DetailActions
+            actions={detailActions}
+            record={record}
+            recordId={recordId}
+            baseEntityPath={baseEntityPath}
+            deleting={deleting}
+            onDelete={async () => {
               const confirmDelete = window.confirm('Confermi eliminazione del record?')
               if (!confirmDelete) {
                 return
               }
 
               setDeleting(true)
-              void deleteEntityRecord(entityId, recordId)
-                .then(() => {
-                  navigate(`/s/${entityId}`)
-                })
-                .catch((deleteError: unknown) => {
-                  const message =
-                    deleteError instanceof Error ? deleteError.message : 'Errore eliminazione record'
-                  setError(message)
-                })
-                .finally(() => {
-                  setDeleting(false)
-                })
+
+              try {
+                await deleteEntityRecord(entityId, recordId)
+                navigate(baseEntityPath)
+              } catch (deleteError: unknown) {
+                const message =
+                  deleteError instanceof Error ? deleteError.message : 'Errore eliminazione record'
+                setError(message)
+              } finally {
+                setDeleting(false)
+              }
             }}
-            disabled={deleting}
-            className="rounded-lg border border-rose-200 px-3 py-2 text-sm font-medium text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {deleting ? 'Deleting...' : 'Delete'}
-          </button>
-        </>
+          />
+        ) : undefined
       }
     >
       {loading && <EntityStatePanel title="Caricamento detail in corso..." />}
@@ -158,6 +170,36 @@ export function EntityDetailPage() {
       )}
       {!loading && !error && (
         <>
+          {pathStatus && (
+            <PathStatusPanel
+              pathStatus={pathStatus}
+              record={record}
+              updatingValue={pathUpdatingValue}
+              onSelect={async (nextValue) => {
+                if (pathStatus.field.includes('.')) {
+                  return
+                }
+
+                setPathUpdatingValue(nextValue)
+
+                try {
+                  await updateEntityRecord(entityId, recordId, {
+                    [pathStatus.field]: nextValue,
+                  })
+                  await loadDetail()
+                } catch (updateError) {
+                  const message =
+                    updateError instanceof Error
+                      ? updateError.message
+                      : 'Errore aggiornamento path status'
+                  setError(message)
+                } finally {
+                  setPathUpdatingValue(null)
+                }
+              }}
+            />
+          )}
+
           <section className="flex flex-col gap-4">
             {detailSections.map((section) => (
               <article key={section.title} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -206,6 +248,7 @@ export function EntityDetailPage() {
                 key={relatedList.id}
                 entityId={entityId}
                 recordId={recordId}
+                baseEntityPath={baseEntityPath}
                 relatedList={relatedList}
               />
             ))}
@@ -213,5 +256,122 @@ export function EntityDetailPage() {
         </>
       )}
     </EntityPageFrame>
+  )
+}
+
+type DetailActionsProps = {
+  actions: EntityAction[]
+  baseEntityPath: string
+  recordId: string
+  record: EntityRecord
+  deleting: boolean
+  onDelete: () => Promise<void>
+}
+
+function DetailActions({
+  actions,
+  baseEntityPath,
+  recordId,
+  record,
+  deleting,
+  onDelete,
+}: DetailActionsProps) {
+  return (
+    <>
+      {actions.map((action, index) => {
+        if (action.type === 'delete') {
+          return (
+            <button
+              key={`${action.type}-${action.label ?? index}`}
+              type="button"
+              onClick={() => {
+                void onDelete()
+              }}
+              disabled={deleting}
+              className="rounded-lg border border-rose-200 px-3 py-2 text-sm font-medium text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {deleting ? 'Deleting...' : action.label ?? 'Delete'}
+            </button>
+          )
+        }
+
+        const target = resolveActionTarget(action, {
+          baseEntityPath,
+          fallbackPath:
+            action.type === 'edit'
+              ? `${baseEntityPath}/${recordId}/edit`
+              : `${baseEntityPath}/${recordId}`,
+          record,
+          rowId: recordId,
+        })
+
+        return (
+          <Link
+            key={`${action.type}-${action.label ?? action.target ?? index}`}
+            to={target}
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
+          >
+            {action.label ?? (action.type === 'edit' ? 'Edit' : 'Open')}
+          </Link>
+        )
+      })}
+    </>
+  )
+}
+
+type PathStatusPanelProps = {
+  pathStatus: PathStatusConfig
+  record: EntityRecord
+  updatingValue: string | null
+  onSelect: (value: string) => Promise<void>
+}
+
+function PathStatusPanel({ pathStatus, record, updatingValue, onSelect }: PathStatusPanelProps) {
+  const steps = pathStatus.steps ?? []
+
+  if (!pathStatus.field || steps.length === 0) {
+    return null
+  }
+
+  const currentValue = String(resolveFieldValue(record, pathStatus.field) ?? '')
+  const activeStepIndex = steps.findIndex((step) => step.value === currentValue)
+  const allowUpdate = pathStatus.allowUpdate !== false && !pathStatus.field.includes('.')
+
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-slate-600">Path Status</h2>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        {steps.map((step, index) => {
+          const stepLabel = step.label ?? step.value
+          const isActive = currentValue === step.value
+          const isPassed = activeStepIndex >= 0 && index <= activeStepIndex
+          const isUpdating = updatingValue === step.value
+
+          return (
+            <button
+              key={step.value}
+              type="button"
+              disabled={!allowUpdate || isActive || isUpdating}
+              onClick={() => {
+                if (!allowUpdate || isActive) {
+                  return
+                }
+
+                void onSelect(step.value)
+              }}
+              className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
+                isActive
+                  ? 'border-sky-600 bg-sky-600 text-white'
+                  : isPassed
+                    ? 'border-sky-200 bg-sky-50 text-sky-700'
+                    : 'border-slate-300 bg-white text-slate-600'
+              } ${allowUpdate ? 'hover:border-sky-400' : 'cursor-default opacity-85'}`}
+            >
+              {isUpdating ? 'Updating...' : stepLabel}
+            </button>
+          )
+        })}
+      </div>
+    </section>
   )
 }

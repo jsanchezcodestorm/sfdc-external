@@ -4,6 +4,7 @@ import {
   buildRowActions,
   formatFieldValue,
   getRecordId,
+  resolveActionTarget,
   resolveFieldValue,
   toColumns,
 } from '../entity-helpers'
@@ -28,6 +29,7 @@ export function EntityRecordTable({
 }: EntityRecordTableProps) {
   const normalizedColumns = toColumns(columns)
   const rowActions = buildRowActions(actions)
+  const hasActions = rowActions.length > 0
 
   if (records.length === 0) {
     return (
@@ -48,7 +50,9 @@ export function EntityRecordTable({
                   {column.label}
                 </th>
               ))}
-              <th className="border-b border-slate-200 px-4 py-3 text-right font-semibold">Actions</th>
+              {hasActions && (
+                <th className="border-b border-slate-200 px-4 py-3 text-right font-semibold">Actions</th>
+              )}
             </tr>
           </thead>
           <tbody>
@@ -62,20 +66,22 @@ export function EntityRecordTable({
                       {formatFieldValue(resolveFieldValue(record, column.field))}
                     </td>
                   ))}
-                  <td className="border-b border-slate-100 px-4 py-3">
-                    <div className="flex items-center justify-end gap-2">
-                      {rowActions.map((action) => (
-                        <EntityRowAction
-                          key={`${rowId}-${action.type}-${action.label ?? action.target ?? ''}`}
-                          action={action}
-                          rowId={rowId}
-                          baseEntityPath={baseEntityPath}
-                          onDelete={onDelete}
-                          record={record}
-                        />
-                      ))}
-                    </div>
-                  </td>
+                  {hasActions && (
+                    <td className="border-b border-slate-100 px-4 py-3">
+                      <div className="flex items-center justify-end gap-2">
+                        {rowActions.map((action) => (
+                          <EntityRowAction
+                            key={`${rowId}-${action.type}-${action.label ?? action.target ?? ''}`}
+                            action={action}
+                            rowId={rowId}
+                            baseEntityPath={baseEntityPath}
+                            onDelete={onDelete}
+                            record={record}
+                          />
+                        ))}
+                      </div>
+                    </td>
+                  )}
                 </tr>
               )
             })}
@@ -95,15 +101,22 @@ type EntityRowActionProps = {
 }
 
 function EntityRowAction({ action, rowId, baseEntityPath, record, onDelete }: EntityRowActionProps) {
-  if (!rowId) {
-    return null
-  }
-
   if (action.type === 'edit') {
+    if (!rowId) {
+      return null
+    }
+
+    const target = resolveActionTarget(action, {
+      baseEntityPath,
+      fallbackPath: `${baseEntityPath}/${rowId}/edit`,
+      record,
+      rowId,
+    })
+
     return (
       <Link
         className="rounded-md border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 transition hover:border-slate-400 hover:bg-white"
-        to={`${baseEntityPath}/${rowId}/edit`}
+        to={target}
       >
         {action.label ?? 'Edit'}
       </Link>
@@ -111,6 +124,10 @@ function EntityRowAction({ action, rowId, baseEntityPath, record, onDelete }: En
   }
 
   if (action.type === 'delete') {
+    if (!rowId) {
+      return null
+    }
+
     return (
       <button
         type="button"
@@ -134,7 +151,12 @@ function EntityRowAction({ action, rowId, baseEntityPath, record, onDelete }: En
     )
   }
 
-  const target = action.target ? action.target.replace('{{Id}}', rowId) : `${baseEntityPath}/${rowId}`
+  const target = resolveActionTarget(action, {
+    baseEntityPath,
+    fallbackPath: rowId ? `${baseEntityPath}/${rowId}` : baseEntityPath,
+    record,
+    rowId,
+  })
 
   return (
     <Link

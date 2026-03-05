@@ -14,13 +14,41 @@ export type EntityAction = {
   entityId?: string
 }
 
+export type EntityListSearchConfig = {
+  fields?: string[]
+  minLength?: number
+}
+
+export type EntityListViewConfig = {
+  id: string
+  label: string
+  description?: string
+  default?: boolean
+  pageSize?: number
+  query?: unknown
+  columns: Array<EntityColumn | string>
+  search?: EntityListSearchConfig
+  primaryAction?: EntityAction
+  rowActions?: EntityAction[]
+}
+
+export type EntityListConfig = {
+  title?: string
+  subtitle?: string
+  primaryAction?: EntityAction
+  views?: EntityListViewConfig[]
+}
+
 export type RelatedListConfig = {
   id: string
   label: string
   description?: string
   entityId?: string
   columns?: Array<EntityColumn | string>
+  actions?: EntityAction[]
   rowActions?: EntityAction[]
+  emptyState?: string
+  pageSize?: number
 }
 
 export type DetailFieldConfig = {
@@ -36,10 +64,22 @@ export type DetailSectionConfig = {
   fields: DetailFieldConfig[]
 }
 
+export type PathStatusStepConfig = {
+  value: string
+  label?: string
+}
+
+export type PathStatusConfig = {
+  field: string
+  steps: PathStatusStepConfig[]
+  allowUpdate?: boolean
+}
+
 export type LookupCondition = {
   field?: string
   operator?: string
   value?: string | number | boolean | null
+  parentRel?: string
 }
 
 export type LookupOrderBy = {
@@ -84,19 +124,22 @@ export type EntityConfig = {
   id: string
   label?: string
   objectApiName?: string
-  list?: {
-    title?: string
-    subtitle?: string
+  navigation?: {
+    basePath?: string
   }
+  list?: EntityListConfig
   detail?: {
     sections?: DetailSectionConfig[]
     relatedLists?: RelatedListConfig[]
+    actions?: EntityAction[]
+    pathStatus?: PathStatusConfig
   }
   form?: {
     title?: {
       create?: string
       edit?: string
     }
+    subtitle?: string
     sections?: FormSectionConfig[]
   }
 }
@@ -114,6 +157,11 @@ export type EntityListResponse = {
   items?: EntityRecord[]
   data?: EntityRecord[]
   total?: number
+  page?: number
+  pageSize?: number
+  viewId?: string
+  primaryAction?: EntityAction
+  rowActions?: EntityAction[]
 }
 
 export type EntityDetailResponse = {
@@ -124,6 +172,8 @@ export type EntityDetailResponse = {
   record?: EntityRecord
   data?: EntityRecord
   relatedLists?: RelatedListConfig[]
+  actions?: EntityAction[]
+  pathStatus?: PathStatusConfig
 }
 
 export type EntityRelatedListResponse = {
@@ -134,6 +184,11 @@ export type EntityRelatedListResponse = {
   items?: EntityRecord[]
   data?: EntityRecord[]
   total?: number
+  page?: number
+  pageSize?: number
+  actions?: EntityAction[]
+  rowActions?: EntityAction[]
+  emptyState?: string
 }
 
 export type EntityFormResponse = {

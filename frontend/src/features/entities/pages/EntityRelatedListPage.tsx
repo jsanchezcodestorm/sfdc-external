@@ -1,13 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 
 import {
   deleteEntityRecord,
   fetchEntityConfig,
   fetchEntityRelatedList,
 } from '../entity-api'
-import { getRecordsFromCollection, toTitleCase } from '../entity-helpers'
+import {
+  getRecordsFromCollection,
+  normalizeEntityBasePath,
+  resolveActionTarget,
+  toTitleCase,
+} from '../entity-helpers'
 import type {
+  EntityAction,
   EntityConfigEnvelope,
   EntityRelatedListResponse,
   EntityRecord,
@@ -65,6 +71,7 @@ export function EntityRelatedListPage() {
   const relatedList = relatedPayload?.relatedList ?? configRelatedList
   const relatedEntityId = relatedList?.entityId ?? entityId
   const entityLabel = config?.entity.label ?? toTitleCase(entityId)
+  const baseEntityPath = normalizeEntityBasePath(entityId, config?.entity.navigation?.basePath)
   const title =
     relatedPayload?.title ??
     relatedList?.label ??
@@ -72,6 +79,9 @@ export function EntityRelatedListPage() {
 
   const records = getRecordsFromCollection(relatedPayload ?? {})
   const columns = relatedPayload?.columns ?? relatedList?.columns ?? []
+  const rowActions = relatedPayload?.rowActions ?? relatedList?.rowActions
+  const actions = relatedPayload?.actions ?? relatedList?.actions ?? []
+  const emptyMessage = relatedPayload?.emptyState ?? relatedList?.emptyState ?? 'Nessun record collegato'
 
   if (!entityId || !recordId || !relatedListId) {
     return (
@@ -94,11 +104,26 @@ export function EntityRelatedListPage() {
       subtitle={`${entityLabel} - ${recordId}`}
       breadcrumbs={[
         { label: 'Home', to: '/' },
-        { label: entityLabel, to: `/s/${entityId}` },
-        { label: recordId, to: `/s/${entityId}/${recordId}` },
+        { label: entityLabel, to: baseEntityPath },
+        { label: recordId, to: `${baseEntityPath}/${recordId}` },
         { label: 'Related List' },
       ]}
     >
+      {actions.length > 0 && (
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex flex-wrap items-center gap-2">
+            {actions.map((action, index) => (
+              <RelatedPageActionButton
+                key={`${action.type}-${action.label ?? action.target ?? index}`}
+                action={action}
+                recordId={recordId}
+                baseEntityPath={`/s/${relatedEntityId}`}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+
       {loading && <EntityStatePanel title="Caricamento related list in corso..." />}
       {!loading && error && (
         <EntityStatePanel tone="error" title="Related list non disponibile" description={error} />
@@ -107,9 +132,9 @@ export function EntityRelatedListPage() {
         <EntityRecordTable
           columns={columns}
           records={records}
-          emptyMessage="Nessun record collegato"
+          emptyMessage={emptyMessage}
           baseEntityPath={`/s/${relatedEntityId}`}
-          actions={relatedList?.rowActions}
+          actions={rowActions}
           onDelete={async (record: EntityRecord) => {
             const rowId = String(record.Id ?? record.id ?? '')
             if (!rowId) {
@@ -122,5 +147,32 @@ export function EntityRelatedListPage() {
         />
       )}
     </EntityPageFrame>
+  )
+}
+
+type RelatedPageActionButtonProps = {
+  action: EntityAction
+  baseEntityPath: string
+  recordId: string
+}
+
+function RelatedPageActionButton({ action, baseEntityPath, recordId }: RelatedPageActionButtonProps) {
+  if (action.type === 'delete') {
+    return null
+  }
+
+  const target = resolveActionTarget(action, {
+    baseEntityPath,
+    fallbackPath: baseEntityPath,
+    rowId: recordId,
+  })
+
+  return (
+    <Link
+      to={target}
+      className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
+    >
+      {action.label ?? 'Open'}
+    </Link>
   )
 }

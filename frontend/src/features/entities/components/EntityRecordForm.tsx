@@ -84,18 +84,20 @@ type FormInputProps = {
 function FormInput({ field, value, onChange }: FormInputProps) {
   const inputClassName =
     'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100'
+  const placeholder = field.placeholder ?? (field.lookup ? `Lookup by ${field.lookup.searchField ?? 'Name'}` : undefined)
 
   return (
     <label className={field.inputType === 'textarea' ? 'sm:col-span-2' : ''}>
       <span className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.1em] text-slate-600">
         {field.label}
         {field.required ? ' *' : ''}
+        {field.lookup ? ' (Lookup)' : ''}
       </span>
       {field.inputType === 'textarea' ? (
         <textarea
           className={`${inputClassName} min-h-24`}
           value={value}
-          placeholder={field.placeholder}
+          placeholder={placeholder}
           required={field.required}
           onChange={(event) => onChange(event.target.value)}
         />
@@ -104,7 +106,7 @@ function FormInput({ field, value, onChange }: FormInputProps) {
           className={inputClassName}
           type={field.inputType ?? 'text'}
           value={value}
-          placeholder={field.placeholder}
+          placeholder={placeholder}
           required={field.required}
           onChange={(event) => onChange(event.target.value)}
         />
