@@ -1,6 +1,11 @@
 {
   "title": "Accounts List",
   "subtitle": "Account records",
+  "primaryAction": {
+    "type": "link",
+    "label": "New Account",
+    "target": "new"
+  },
   "views": [
     "views/all.json"
   ]

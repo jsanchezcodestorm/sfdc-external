@@ -9,6 +9,10 @@
   },
   "titleTemplate": "{{Name || Id}}",
   "fallbackTitle": "Account Detail",
+  "actions": [
+    { "type": "edit", "label": "Edit" },
+    { "type": "delete", "label": "Delete" }
+  ],
   "sections": [
     "sections/main.json"
   ],

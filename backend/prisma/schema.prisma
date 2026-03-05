@@ -108,3 +108,19 @@ model VisibilityAuditLog {
   @@index([decisionReasonCode, createdAt])
   @@map("audit_log")
 }
+
+model SalesforceSObjectDescribeCache {
+  cacheKey     String   @id @db.VarChar(64)
+  cacheScope   String   @db.VarChar(512)
+  objectApiName String  @db.VarChar(128)
+  apiVersion   String   @db.VarChar(32)
+  describeJson Json
+  payloadHash  String   @db.VarChar(64)
+  fetchedAt    DateTime @default(now())
+  expiresAt    DateTime
+  updatedAt    DateTime @updatedAt
+
+  @@index([cacheScope, objectApiName, apiVersion])
+  @@index([expiresAt])
+  @@map("salesforce_sobject_describe_cache")
+}

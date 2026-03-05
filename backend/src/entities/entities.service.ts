@@ -7,10 +7,12 @@ import type { VisibilityEvaluation } from '../visibility/visibility.types';
 
 import type { GetEntityListDto } from './dto/get-entity-list.dto';
 import type {
+  EntityActionConfig,
   EntityConfig,
   EntityFormFieldConfig,
   EntityListSearchConfig,
   EntityListViewConfig,
+  EntityPathStatusConfig,
   EntityQueryConfig,
   EntityQueryWhere
 } from './entities.types';
@@ -77,6 +79,8 @@ interface EntityListResponse {
   title: string;
   subtitle?: string;
   columns: EntityListViewConfig['columns'];
+  primaryAction?: EntityActionConfig;
+  rowActions?: EntityActionConfig[];
   records: Array<Record<string, unknown>>;
   total: number;
   page: number;
@@ -89,6 +93,8 @@ interface EntityDetailResponse {
   title: string;
   subtitle?: string;
   sections?: NonNullable<EntityConfig['detail']>['sections'];
+  actions?: EntityActionConfig[];
+  pathStatus?: EntityPathStatusConfig;
   record: Record<string, unknown>;
   data: Record<string, unknown>;
   relatedLists?: NonNullable<EntityConfig['detail']>['relatedLists'];
@@ -122,6 +128,9 @@ interface EntityRelatedListResponse {
   relatedList: NonNullable<NonNullable<EntityConfig['detail']>['relatedLists']>[number];
   title: string;
   columns: NonNullable<NonNullable<EntityConfig['detail']>['relatedLists']>[number]['columns'];
+  actions?: NonNullable<NonNullable<EntityConfig['detail']>['relatedLists']>[number]['actions'];
+  rowActions?: NonNullable<NonNullable<EntityConfig['detail']>['relatedLists']>[number]['rowActions'];
+  emptyState?: string;
   records: Array<Record<string, unknown>>;
   total: number;
   page: number;
@@ -131,8 +140,6 @@ interface EntityRelatedListResponse {
 
 @Injectable()
 export class EntitiesService {
-  private readonly describeFieldCache = new Map<string, Promise<Map<string, SalesforceFieldSummary>>>();
-
   constructor(
     private readonly resourceAccessService: ResourceAccessService,
     private readonly entityConfigRepository: EntityConfigRepository,
@@ -179,6 +186,8 @@ export class EntitiesService {
       title: listConfig.title,
       subtitle: listConfig.subtitle,
       columns: selectedView.columns,
+      primaryAction: selectedView.primaryAction ?? listConfig.primaryAction,
+      rowActions: selectedView.rowActions,
       records,
       total: totalSize,
       page,
@@ -221,6 +230,8 @@ export class EntitiesService {
       title,
       subtitle,
       sections: detailConfig.sections,
+      actions: detailConfig.actions,
+      pathStatus: detailConfig.pathStatus,
       record,
       data: record,
       relatedLists: detailConfig.relatedLists,
@@ -321,6 +332,9 @@ export class EntitiesService {
       relatedList,
       title: relatedList.label,
       columns: relatedList.columns,
+      actions: relatedList.actions,
+      rowActions: relatedList.rowActions,
+      emptyState: relatedList.emptyState,
       records,
       total: totalSize,
       page,
@@ -879,21 +893,9 @@ export class EntitiesService {
   }
 
   private async getDescribeFieldMap(objectApiName: string): Promise<Map<string, SalesforceFieldSummary>> {
-    const cacheKey = objectApiName.trim();
-    const cachedPromise = this.describeFieldCache.get(cacheKey);
-    if (cachedPromise) {
-      return cachedPromise;
-    }
-
-    const loadPromise = this.salesforceService
-      .describeObjectFields(cacheKey)
-      .then((fields) => {
-        const typedFields = fields as SalesforceFieldSummary[];
-        return new Map(typedFields.map((field) => [field.name, field]));
-      });
-
-    this.describeFieldCache.set(cacheKey, loadPromise);
-    return loadPromise;
+    const fields = await this.salesforceService.describeObjectFields(objectApiName.trim());
+    const typedFields = fields as SalesforceFieldSummary[];
+    return new Map(typedFields.map((field) => [field.name, field]));
   }
 
   private extractRecords(result: unknown): { records: Array<Record<string, unknown>>; totalSize: number } {
