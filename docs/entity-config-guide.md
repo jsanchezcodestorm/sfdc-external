@@ -256,6 +256,17 @@ Conseguenza:
 - le query raw via string in `where` sono potenti ma riducono controllabilita
 - la metadata `lookup` e applicata lato frontend; non fa parte della validazione campi backend completa
 
+## 15) Admin configurazione (PostgreSQL)
+Endpoint admin (solo `PORTAL_ADMIN`):
+- `GET /entities/admin/configs`: lista entita configurate con summary (views/sezioni/related/form)
+- `GET /entities/admin/configs/:entityId`: configurazione completa entity
+- `PUT /entities/admin/configs/:entityId`: upsert configurazione completa (`{ "entity": { ... } }`)
+
+UI frontend admin:
+- route hash persistente `#/admin/entity-config/:entityId/:section`
+- sidebar sinistra fissa full-height con category `Entity PostgreSQL` e sub category `Base/List/Detail/Form`
+- editor JSON sezione + salvataggio su PostgreSQL
+
 Per un progetto nuovo si raccomanda di aggiungere in CI:
 - validazione statica JSON schema per `base/list/detail/form`
 - smoke test automatico su tutte le entita configurate
