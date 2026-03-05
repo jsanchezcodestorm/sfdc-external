@@ -8,12 +8,45 @@ import { AclGuard } from '../common/guards/acl.guard';
 
 import { GetEntityListDto } from './dto/get-entity-list.dto';
 import { GetEntityRelatedListDto } from './dto/get-entity-related-list.dto';
+import { SearchSalesforceObjectsDto } from './dto/search-salesforce-objects.dto';
+import { UpsertEntityAdminConfigDto } from './dto/upsert-entity-admin-config.dto';
 import { EntitiesService } from './entities.service';
+import { EntityAdminConfigService } from './services/entity-admin-config.service';
 
 @Controller('entities')
 @UseGuards(JwtAuthGuard, AclGuard)
 export class EntitiesController {
-  constructor(private readonly entitiesService: EntitiesService) {}
+  constructor(
+    private readonly entitiesService: EntitiesService,
+    private readonly entityAdminConfigService: EntityAdminConfigService
+  ) {}
+
+  @Get('admin/configs')
+  @AclResource('rest:entities-config-admin')
+  listEntityAdminConfigs(): Promise<unknown> {
+    return this.entityAdminConfigService.listEntityConfigs();
+  }
+
+  @Get('admin/configs/:entityId')
+  @AclResource('rest:entities-config-admin')
+  getEntityAdminConfig(@Param('entityId') entityId: string): Promise<unknown> {
+    return this.entityAdminConfigService.getEntityConfig(entityId);
+  }
+
+  @Put('admin/configs/:entityId')
+  @AclResource('rest:entities-config-admin')
+  upsertEntityAdminConfig(
+    @Param('entityId') entityId: string,
+    @Body() payload: UpsertEntityAdminConfigDto
+  ): Promise<unknown> {
+    return this.entityAdminConfigService.upsertEntityConfig(entityId, payload);
+  }
+
+  @Get('admin/configs/object-api-name/suggestions')
+  @AclResource('rest:entities-config-admin')
+  searchSalesforceObjectApiNames(@Query() query: SearchSalesforceObjectsDto): Promise<unknown> {
+    return this.entityAdminConfigService.searchSalesforceObjectApiNames(query.q, query.limit);
+  }
 
   @Get(':entityId/config')
   @AclResource('rest:entities-read')

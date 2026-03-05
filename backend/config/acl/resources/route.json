@@ -19,5 +19,12 @@
     "target": "/admin/visibility",
     "description": "Pagina admin visibility",
     "permissions": ["PORTAL_ADMIN"]
+  },
+  {
+    "id": "route:admin-entity-config",
+    "type": "route",
+    "target": "/admin/entity-config",
+    "description": "Pagina admin configurazione entita PostgreSQL",
+    "permissions": ["PORTAL_ADMIN"]
   }
 ]

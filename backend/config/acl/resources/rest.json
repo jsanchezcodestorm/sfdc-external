@@ -28,6 +28,13 @@
     "permissions": ["PORTAL_ADMIN"]
   },
   {
+    "id": "rest:entities-config-admin",
+    "type": "rest",
+    "target": "/entities/admin/configs",
+    "description": "Gestione amministrativa entity config su PostgreSQL",
+    "permissions": ["PORTAL_ADMIN"]
+  },
+  {
     "id": "rest:query-execute",
     "type": "rest",
     "target": "/query/template/:templateId",

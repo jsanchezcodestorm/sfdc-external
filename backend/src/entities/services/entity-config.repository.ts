@@ -80,6 +80,17 @@ export class EntityConfigRepository {
     return loadPromise;
   }
 
+  evictEntityConfig(entityId?: string): void {
+    if (!entityId) {
+      this.entityCache.clear();
+      this.inFlightLoads.clear();
+      return;
+    }
+
+    this.entityCache.delete(entityId);
+    this.inFlightLoads.delete(entityId);
+  }
+
   private async loadEntityConfig(entityId: string): Promise<EntityConfig> {
     const entityConfigRecord = await this.prisma.entityConfigRecord.findUnique({
       where: { id: entityId },
