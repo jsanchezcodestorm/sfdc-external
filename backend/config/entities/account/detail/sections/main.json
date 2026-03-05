@@ -1,0 +1,10 @@
+{
+  "title": "Account Overview",
+  "fields": [
+    { "label": "Account Name", "field": "Name", "highlight": true },
+    { "label": "Type", "field": "Type" },
+    { "label": "Industry", "field": "Industry" },
+    { "label": "Owner", "field": "OwnerId" },
+    { "label": "Created", "field": "CreatedDate", "format": "datetime" }
+  ]
+}

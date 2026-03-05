@@ -1,0 +1,9 @@
+{
+  "id": "account",
+  "label": "Accounts",
+  "description": "Salesforce Account entity",
+  "objectApiName": "Account",
+  "navigation": {
+    "basePath": "/s/account"
+  }
+}

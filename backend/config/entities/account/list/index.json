@@ -1,0 +1,7 @@
+{
+  "title": "Accounts List",
+  "subtitle": "Account records",
+  "views": [
+    "views/all.json"
+  ]
+}

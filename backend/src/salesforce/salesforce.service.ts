@@ -14,7 +14,12 @@ interface SalesforceFieldSummary {
   label: string;
   type: string;
   nillable: boolean;
+  createable: boolean;
+  updateable: boolean;
+  filterable: boolean;
 }
+
+type SalesforceMutationOperation = 'create' | 'update' | 'delete';
 
 @Injectable()
 export class SalesforceService {
@@ -48,7 +53,10 @@ export class SalesforceService {
       name: String(field.name ?? ''),
       label: String(field.label ?? ''),
       type: String(field.type ?? ''),
-      nillable: Boolean(field.nillable ?? false)
+      nillable: Boolean(field.nillable ?? false),
+      createable: Boolean(field.createable ?? false),
+      updateable: Boolean(field.updateable ?? false),
+      filterable: Boolean(field.filterable ?? false)
     }));
   }
 
@@ -67,6 +75,44 @@ export class SalesforceService {
     }
 
     return this.executeReadOnlyQuery(soql);
+  }
+
+  async createRecord(objectApiName: string, values: Record<string, unknown>): Promise<Record<string, unknown>> {
+    try {
+      const connection = await this.getConnection();
+      const result = await connection.sobject(objectApiName).create(values);
+      return this.normalizeMutationResult('create', result);
+    } catch (error) {
+      this.rethrowMutationError('create', error);
+    }
+  }
+
+  async updateRecord(
+    objectApiName: string,
+    recordId: string,
+    values: Record<string, unknown>
+  ): Promise<Record<string, unknown>> {
+    try {
+      const connection = await this.getConnection();
+      const result = await connection.sobject(objectApiName).update({
+        Id: recordId,
+        ...values
+      });
+
+      return this.normalizeMutationResult('update', result, recordId);
+    } catch (error) {
+      this.rethrowMutationError('update', error);
+    }
+  }
+
+  async deleteRecord(objectApiName: string, recordId: string): Promise<void> {
+    try {
+      const connection = await this.getConnection();
+      const result = await connection.sobject(objectApiName).destroy(recordId);
+      this.normalizeMutationResult('delete', result, recordId);
+    } catch (error) {
+      this.rethrowMutationError('delete', error);
+    }
   }
 
   async ping(): Promise<void> {
@@ -120,5 +166,75 @@ export class SalesforceService {
     if (forbiddenTokens.some((token) => normalized.includes(token))) {
       throw new BadRequestException('Mutating SOQL tokens are not allowed');
     }
+  }
+
+  private normalizeMutationResult(
+    operation: SalesforceMutationOperation,
+    result: unknown,
+    fallbackRecordId?: string
+  ): Record<string, unknown> {
+    if (!this.isObjectRecord(result)) {
+      throw new BadRequestException(`Salesforce ${operation} failed: invalid response shape`);
+    }
+
+    const success = typeof result.success === 'boolean' ? result.success : false;
+    const errors = this.extractErrorMessages(result.errors);
+
+    if (!success) {
+      const message = errors.length > 0 ? errors.join(', ') : 'unknown error';
+      throw new BadRequestException(`Salesforce ${operation} failed: ${message}`);
+    }
+
+    const response: Record<string, unknown> = {
+      success: true
+    };
+
+    const recordId = typeof result.id === 'string' ? result.id : fallbackRecordId;
+    if (recordId) {
+      response.Id = recordId;
+    }
+
+    if (errors.length > 0) {
+      response.errors = errors;
+    }
+
+    return response;
+  }
+
+  private extractErrorMessages(value: unknown): string[] {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+
+    return value
+      .map((entry) => {
+        if (typeof entry === 'string') {
+          return entry.trim();
+        }
+
+        if (this.isObjectRecord(entry)) {
+          const rawMessage = entry.message;
+          return typeof rawMessage === 'string' ? rawMessage.trim() : '';
+        }
+
+        return '';
+      })
+      .filter((entry) => entry.length > 0);
+  }
+
+  private rethrowMutationError(operation: SalesforceMutationOperation, error: unknown): never {
+    if (error instanceof BadRequestException) {
+      throw error;
+    }
+
+    if (this.isObjectRecord(error) && typeof error.message === 'string') {
+      throw new BadRequestException(`Salesforce ${operation} failed: ${error.message}`);
+    }
+
+    throw new BadRequestException(`Salesforce ${operation} failed`);
+  }
+
+  private isObjectRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
   }
 }

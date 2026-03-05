@@ -21,6 +21,13 @@
     "permissions": ["PORTAL_USER", "PORTAL_ADMIN"]
   },
   {
+    "id": "rest:entities-write",
+    "type": "rest",
+    "target": "/entities/:entityId/records",
+    "description": "Operazioni write entity (create/update/delete)",
+    "permissions": ["PORTAL_ADMIN"]
+  },
+  {
     "id": "rest:query-execute",
     "type": "rest",
     "target": "/query/template/:templateId",

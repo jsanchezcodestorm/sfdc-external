@@ -1,0 +1,16 @@
+{
+  "query": {
+    "object": "Account",
+    "fields": ["Id", "Name", "Type", "Industry", "OwnerId", "CreatedDate"],
+    "where": [
+      { "field": "Id", "operator": "=", "value": "{{id}}" }
+    ],
+    "limit": 1
+  },
+  "titleTemplate": "{{Name || Id}}",
+  "fallbackTitle": "Account Detail",
+  "sections": [
+    "sections/main.json"
+  ],
+  "relatedLists": []
+}

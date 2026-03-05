@@ -1,0 +1,18 @@
+{
+  "title": {
+    "create": "New Account",
+    "edit": "Edit Account"
+  },
+  "subtitle": "Manage account data",
+  "query": {
+    "object": "Account",
+    "fields": ["Id", "Name", "Type", "Industry", "OwnerId"],
+    "where": [
+      { "field": "Id", "operator": "=", "value": "{{id}}" }
+    ],
+    "limit": 1
+  },
+  "sections": [
+    "sections/main.json"
+  ]
+}

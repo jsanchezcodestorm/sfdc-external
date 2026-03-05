@@ -2,15 +2,18 @@ import { Module } from '@nestjs/common';
 
 import { AclModule } from '../acl/acl.module';
 import { AuthModule } from '../auth/auth.module';
+import { ResourceAccessService } from '../common/services/resource-access.service';
+import { SalesforceModule } from '../salesforce/salesforce.module';
 import { VisibilityModule } from '../visibility/visibility.module';
 
 import { EntitiesController } from './entities.controller';
 import { EntitiesService } from './entities.service';
+import { EntityConfigRepository } from './services/entity-config.repository';
 
 @Module({
-  imports: [AuthModule, AclModule, VisibilityModule],
+  imports: [AuthModule, AclModule, VisibilityModule, SalesforceModule],
   controllers: [EntitiesController],
-  providers: [EntitiesService],
+  providers: [EntitiesService, EntityConfigRepository, ResourceAccessService],
   exports: [EntitiesService]
 })
 export class EntitiesModule {}
