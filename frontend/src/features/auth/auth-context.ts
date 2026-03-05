@@ -1,0 +1,12 @@
+import { createContext } from 'react'
+
+import type { SessionUser } from './auth-types'
+
+export type AuthContextValue = {
+  user: SessionUser | null
+  isBootstrapping: boolean
+  loginWithGoogleIdToken: (idToken: string) => Promise<void>
+  logout: () => Promise<void>
+}
+
+export const AuthContext = createContext<AuthContextValue | undefined>(undefined)

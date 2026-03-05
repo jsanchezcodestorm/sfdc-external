@@ -5,6 +5,16 @@ type ApiRequestOptions = Omit<RequestInit, 'body' | 'headers'> & {
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api'
 
+export class ApiError extends Error {
+  readonly status: number
+
+  constructor(status: number, message: string) {
+    super(`API ${status}: ${message}`)
+    this.name = 'ApiError'
+    this.status = status
+  }
+}
+
 function buildUrl(path: string): string {
   if (path.startsWith('http://') || path.startsWith('https://')) {
     return path
@@ -67,7 +77,8 @@ export async function apiFetch<T = unknown>(
   })
 
   if (!response.ok) {
-    throw new Error(`API ${response.status}: ${await parseError(response)}`)
+    const message = await parseError(response)
+    throw new ApiError(response.status, message)
   }
 
   if (response.status === 204) {
