@@ -110,17 +110,150 @@ model VisibilityAuditLog {
 }
 
 model SalesforceSObjectDescribeCache {
-  cacheKey     String   @id @db.VarChar(64)
-  cacheScope   String   @db.VarChar(512)
-  objectApiName String  @db.VarChar(128)
-  apiVersion   String   @db.VarChar(32)
-  describeJson Json
-  payloadHash  String   @db.VarChar(64)
-  fetchedAt    DateTime @default(now())
-  expiresAt    DateTime
-  updatedAt    DateTime @updatedAt
+  cacheKey      String   @id @db.VarChar(64)
+  cacheScope    String   @db.VarChar(512)
+  objectApiName String   @db.VarChar(128)
+  apiVersion    String   @db.VarChar(32)
+  describeJson  Json
+  payloadHash   String   @db.VarChar(64)
+  fetchedAt     DateTime @default(now())
+  expiresAt     DateTime
+  updatedAt     DateTime @updatedAt
 
   @@index([cacheScope, objectApiName, apiVersion])
   @@index([expiresAt])
   @@map("salesforce_sobject_describe_cache")
+}
+
+model EntityConfigRecord {
+  id             String                    @id @db.VarChar(64)
+  objectApiName  String                    @db.VarChar(128)
+  label          String                    @db.VarChar(128)
+  description    String?                   @db.VarChar(512)
+  navigationJson Json?
+  createdAt      DateTime                  @default(now())
+  updatedAt      DateTime                  @updatedAt
+  listConfig     EntityListConfigRecord?
+  detailConfig   EntityDetailConfigRecord?
+  formConfig     EntityFormConfigRecord?
+
+  @@map("entity_configs")
+}
+
+model EntityListConfigRecord {
+  entityId          String                       @id @db.VarChar(64)
+  title             String                       @db.VarChar(256)
+  subtitle          String?                      @db.VarChar(512)
+  primaryActionJson Json?
+  createdAt         DateTime                     @default(now())
+  updatedAt         DateTime                     @updatedAt
+  entity            EntityConfigRecord           @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  views             EntityListViewConfigRecord[]
+
+  @@map("entity_list_configs")
+}
+
+model EntityListViewConfigRecord {
+  id                String                 @id @default(uuid()) @db.Uuid
+  entityId          String                 @db.VarChar(64)
+  sortOrder         Int
+  viewId            String                 @db.VarChar(64)
+  label             String                 @db.VarChar(256)
+  description       String?                @db.VarChar(512)
+  isDefault         Boolean                @default(false)
+  pageSize          Int?
+  queryJson         Json
+  columnsJson       Json
+  searchJson        Json?
+  primaryActionJson Json?
+  rowActionsJson    Json?
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+  listConfig        EntityListConfigRecord @relation(fields: [entityId], references: [entityId], onDelete: Cascade)
+
+  @@unique([entityId, viewId])
+  @@index([entityId, sortOrder])
+  @@map("entity_list_view_configs")
+}
+
+model EntityDetailConfigRecord {
+  entityId       String                            @id @db.VarChar(64)
+  queryJson      Json
+  titleTemplate  String?                           @db.VarChar(512)
+  fallbackTitle  String?                           @db.VarChar(256)
+  subtitle       String?                           @db.VarChar(512)
+  actionsJson    Json?
+  pathStatusJson Json?
+  createdAt      DateTime                          @default(now())
+  updatedAt      DateTime                          @updatedAt
+  entity         EntityConfigRecord                @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  sections       EntityDetailSectionConfigRecord[]
+  relatedLists   EntityRelatedListConfigRecord[]
+
+  @@map("entity_detail_configs")
+}
+
+model EntityDetailSectionConfigRecord {
+  id           String                   @id @default(uuid()) @db.Uuid
+  entityId     String                   @db.VarChar(64)
+  sortOrder    Int
+  title        String                   @db.VarChar(256)
+  fieldsJson   Json
+  createdAt    DateTime                 @default(now())
+  updatedAt    DateTime                 @updatedAt
+  detailConfig EntityDetailConfigRecord @relation(fields: [entityId], references: [entityId], onDelete: Cascade)
+
+  @@index([entityId, sortOrder])
+  @@map("entity_detail_section_configs")
+}
+
+model EntityRelatedListConfigRecord {
+  id             String                   @id @default(uuid()) @db.Uuid
+  entityId       String                   @db.VarChar(64)
+  sortOrder      Int
+  relatedListId  String                   @db.VarChar(64)
+  label          String                   @db.VarChar(256)
+  description    String?                  @db.VarChar(512)
+  queryJson      Json
+  columnsJson    Json
+  actionsJson    Json?
+  rowActionsJson Json?
+  emptyState     String?                  @db.VarChar(512)
+  pageSize       Int?
+  linkedEntityId String?                  @db.VarChar(64)
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+  detailConfig   EntityDetailConfigRecord @relation(fields: [entityId], references: [entityId], onDelete: Cascade)
+
+  @@unique([entityId, relatedListId])
+  @@index([entityId, sortOrder])
+  @@map("entity_related_list_configs")
+}
+
+model EntityFormConfigRecord {
+  entityId    String                          @id @db.VarChar(64)
+  createTitle String                          @db.VarChar(256)
+  editTitle   String                          @db.VarChar(256)
+  queryJson   Json
+  subtitle    String?                         @db.VarChar(512)
+  createdAt   DateTime                        @default(now())
+  updatedAt   DateTime                        @updatedAt
+  entity      EntityConfigRecord              @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  sections    EntityFormSectionConfigRecord[]
+
+  @@map("entity_form_configs")
+}
+
+model EntityFormSectionConfigRecord {
+  id         String                 @id @default(uuid()) @db.Uuid
+  entityId   String                 @db.VarChar(64)
+  sortOrder  Int
+  title      String?                @db.VarChar(256)
+  fieldsJson Json
+  createdAt  DateTime               @default(now())
+  updatedAt  DateTime               @updatedAt
+  formConfig EntityFormConfigRecord @relation(fields: [entityId], references: [entityId], onDelete: Cascade)
+
+  @@index([entityId, sortOrder])
+  @@map("entity_form_section_configs")
 }

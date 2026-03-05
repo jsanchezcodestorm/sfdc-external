@@ -1,9 +1,7 @@
-import { existsSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
-import path from 'node:path';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-
+import { PrismaService } from '../../prisma/prisma.service';
 import type {
   EntityConfig,
   EntityDetailConfig,
@@ -15,11 +13,53 @@ import type {
   EntityRelatedListConfig
 } from '../entities.types';
 
+type EntityConfigRecordWithRelations = Prisma.EntityConfigRecordGetPayload<{
+  include: {
+    listConfig: {
+      include: {
+        views: {
+          orderBy: {
+            sortOrder: 'asc';
+          };
+        };
+      };
+    };
+    detailConfig: {
+      include: {
+        sections: {
+          orderBy: {
+            sortOrder: 'asc';
+          };
+        };
+        relatedLists: {
+          orderBy: {
+            sortOrder: 'asc';
+          };
+        };
+      };
+    };
+    formConfig: {
+      include: {
+        sections: {
+          orderBy: {
+            sortOrder: 'asc';
+          };
+        };
+      };
+    };
+  };
+}>;
+
+type EntityListConfigRecordWithRelations = NonNullable<EntityConfigRecordWithRelations['listConfig']>;
+type EntityDetailConfigRecordWithRelations = NonNullable<EntityConfigRecordWithRelations['detailConfig']>;
+type EntityFormConfigRecordWithRelations = NonNullable<EntityConfigRecordWithRelations['formConfig']>;
+
 @Injectable()
 export class EntityConfigRepository {
-  private readonly logger = new Logger(EntityConfigRepository.name);
   private readonly entityCache = new Map<string, EntityConfig>();
   private readonly inFlightLoads = new Map<string, Promise<EntityConfig>>();
+
+  constructor(private readonly prisma: PrismaService) {}
 
   async getEntityConfig(entityId: string): Promise<EntityConfig> {
     const cached = this.entityCache.get(entityId);
@@ -41,310 +81,240 @@ export class EntityConfigRepository {
   }
 
   private async loadEntityConfig(entityId: string): Promise<EntityConfig> {
-    const structuredConfigDirectory = this.resolveEntityConfigDirectory(entityId);
+    const entityConfigRecord = await this.prisma.entityConfigRecord.findUnique({
+      where: { id: entityId },
+      include: {
+        listConfig: {
+          include: {
+            views: {
+              orderBy: { sortOrder: 'asc' }
+            }
+          }
+        },
+        detailConfig: {
+          include: {
+            sections: {
+              orderBy: { sortOrder: 'asc' }
+            },
+            relatedLists: {
+              orderBy: { sortOrder: 'asc' }
+            }
+          }
+        },
+        formConfig: {
+          include: {
+            sections: {
+              orderBy: { sortOrder: 'asc' }
+            }
+          }
+        }
+      }
+    });
 
-    if (!structuredConfigDirectory) {
-      throw new NotFoundException(`Entity config folder not found for ${entityId}`);
+    if (!entityConfigRecord) {
+      throw new NotFoundException(`Entity config not found for ${entityId}`);
     }
 
-    const config = await this.loadStructuredEntityConfig(entityId, structuredConfigDirectory);
+    const config = this.mapEntityConfig(entityConfigRecord);
     this.entityCache.set(entityId, config);
     return config;
   }
 
-  private resolveEntityConfigDirectory(entityId: string): string | null {
-    const candidates = [
-      path.resolve(process.cwd(), 'config', 'entities', entityId),
-      path.resolve(process.cwd(), 'backend', 'config', 'entities', entityId)
-    ];
-
-    for (const candidate of candidates) {
-      if (existsSync(candidate)) {
-        return candidate;
-      }
-    }
-
-    return null;
-  }
-
-  private async loadStructuredEntityConfig(entityId: string, directoryPath: string): Promise<EntityConfig> {
-    const basePath = path.resolve(directoryPath, 'base.json');
-    if (!existsSync(basePath)) {
-      throw new NotFoundException(`Entity base config not found for ${entityId}`);
-    }
-
-    const baseConfig = await this.readJsonFile<Record<string, unknown>>(basePath);
-    const baseEntityId = this.asNonEmptyString(baseConfig.id);
-
-    if (!baseEntityId) {
-      throw new BadRequestException(`Entity base config for ${entityId} is invalid: id is required`);
-    }
-
-    if (baseEntityId !== entityId) {
-      this.logger.warn(`Entity config folder id mismatch: folder=${entityId}, base.id=${baseEntityId}`);
-    }
-
-    const listConfig = await this.loadListConfig(directoryPath);
-    const detailConfig = await this.loadDetailConfig(directoryPath);
-    const formConfig = await this.loadFormConfig(directoryPath);
-    const objectApiName = this.resolveObjectApiName(baseConfig, listConfig, detailConfig, formConfig);
+  private mapEntityConfig(entityConfigRecord: EntityConfigRecordWithRelations): EntityConfig {
+    const id = this.requireString(
+      entityConfigRecord.id,
+      `Entity config is invalid: id is required`
+    );
+    const objectApiName = this.requireString(
+      entityConfigRecord.objectApiName,
+      `Entity config ${id} is invalid: objectApiName is required`
+    );
+    const label = this.requireString(entityConfigRecord.label, `Entity config ${id} is invalid: label is required`);
 
     return {
-      ...baseConfig,
-      id: baseEntityId,
-      label: this.asOptionalString(baseConfig.label),
-      description: this.asOptionalString(baseConfig.description),
-      navigation: this.asNavigation(baseConfig.navigation),
+      id,
       objectApiName,
-      list: listConfig,
-      detail: detailConfig,
-      form: formConfig
+      label,
+      description: this.asOptionalString(entityConfigRecord.description),
+      navigation: this.asNavigation(entityConfigRecord.navigationJson),
+      list: entityConfigRecord.listConfig ? this.mapListConfig(id, entityConfigRecord.listConfig) : undefined,
+      detail: entityConfigRecord.detailConfig
+        ? this.mapDetailConfig(id, entityConfigRecord.detailConfig)
+        : undefined,
+      form: entityConfigRecord.formConfig ? this.mapFormConfig(id, entityConfigRecord.formConfig) : undefined
     };
   }
 
-  private async loadListConfig(entityDirectoryPath: string): Promise<EntityListConfig | undefined> {
-    const indexPath = path.resolve(entityDirectoryPath, 'list', 'index.json');
-    if (!existsSync(indexPath)) {
-      return undefined;
-    }
+  private mapListConfig(entityId: string, listConfigRecord: EntityListConfigRecordWithRelations): EntityListConfig {
+    const title = this.requireString(
+      listConfigRecord.title,
+      `Entity list config ${entityId} is invalid: title is required`
+    );
+    const views = listConfigRecord.views.map((viewConfigRecord) => this.mapListViewConfig(entityId, viewConfigRecord));
 
-    const indexConfig = await this.readJsonFile<Record<string, unknown>>(indexPath);
-    const title = this.asNonEmptyString(indexConfig.title);
-    if (!title) {
-      throw new BadRequestException(`Invalid list/index.json: title is required`);
-    }
-
-    const views = await this.loadListViews(path.resolve(entityDirectoryPath, 'list'), indexConfig.views);
     if (views.length === 0) {
-      throw new BadRequestException(`Invalid list/index.json: at least one valid view is required`);
+      throw new BadRequestException(`Entity list config ${entityId} is invalid: at least one view is required`);
     }
 
     return {
       title,
-      subtitle: this.asOptionalString(indexConfig.subtitle),
-      primaryAction: (this.asObject(indexConfig.primaryAction) ?? undefined) as unknown as EntityListConfig['primaryAction'],
+      subtitle: this.asOptionalString(listConfigRecord.subtitle),
+      primaryAction: this.asTypedObject<EntityListConfig['primaryAction']>(listConfigRecord.primaryActionJson),
       views
     };
   }
 
-  private async loadListViews(listDirectoryPath: string, refs: unknown): Promise<EntityListViewConfig[]> {
-    if (!Array.isArray(refs)) {
-      return [];
+  private mapListViewConfig(
+    entityId: string,
+    viewConfigRecord: EntityListConfigRecordWithRelations['views'][number]
+  ): EntityListViewConfig {
+    const id = this.requireString(
+      viewConfigRecord.viewId,
+      `Entity list view config ${entityId} is invalid: id is required`
+    );
+    const label = this.requireString(
+      viewConfigRecord.label,
+      `Entity list view config ${entityId}/${id} is invalid: label is required`
+    );
+    const query = this.requireObject(
+      viewConfigRecord.queryJson,
+      `Entity list view config ${entityId}/${id} is invalid: query is required`
+    );
+    const columns = this.asStringOrObjectArray(viewConfigRecord.columnsJson);
+
+    if (columns.length === 0) {
+      throw new BadRequestException(`Entity list view config ${entityId}/${id} is invalid: columns are required`);
     }
 
-    const loadedViews: EntityListViewConfig[] = [];
-
-    for (const ref of refs) {
-      const relativePath = typeof ref === 'string' ? ref.trim() : '';
-      if (!relativePath) {
-        continue;
-      }
-
-      const viewPath = path.resolve(listDirectoryPath, relativePath);
-      if (!existsSync(viewPath)) {
-        this.logger.warn(`Entity list view not found: ${viewPath}`);
-        continue;
-      }
-
-      try {
-        const viewConfig = await this.readJsonFile<Record<string, unknown>>(viewPath);
-        const id = this.asNonEmptyString(viewConfig.id);
-        const label = this.asNonEmptyString(viewConfig.label);
-        const query = this.asObject(viewConfig.query);
-        const columns = Array.isArray(viewConfig.columns)
-          ? (viewConfig.columns.filter((column) => typeof column === 'string' || this.isObjectRecord(column)) as Array<
-              string | Record<string, unknown>
-            >)
-          : [];
-
-        if (!id || !label || !query || columns.length === 0) {
-          this.logger.warn(`Entity list view is invalid and will be skipped: ${viewPath}`);
-          continue;
-        }
-
-        loadedViews.push({
-          id,
-          label,
-          query: query as unknown as EntityListViewConfig['query'],
-          columns: columns as unknown as EntityListViewConfig['columns'],
-          description: this.asOptionalString(viewConfig.description),
-          default: typeof viewConfig.default === 'boolean' ? viewConfig.default : undefined,
-          pageSize: typeof viewConfig.pageSize === 'number' ? viewConfig.pageSize : undefined,
-          search: (this.asObject(viewConfig.search) ?? undefined) as unknown as EntityListViewConfig['search'] | undefined,
-          primaryAction: (this.asObject(viewConfig.primaryAction) ?? undefined) as unknown as EntityListViewConfig['primaryAction'] | undefined,
-          rowActions: this.asObjectArray(viewConfig.rowActions) as unknown as EntityListViewConfig['rowActions'] | undefined
-        });
-      } catch (error) {
-        this.logger.warn(`Entity list view cannot be parsed and will be skipped: ${viewPath} (${String(error)})`);
-      }
-    }
-
-    return loadedViews;
+    return {
+      id,
+      label,
+      query: query as unknown as EntityListViewConfig['query'],
+      columns: columns as unknown as EntityListViewConfig['columns'],
+      description: this.asOptionalString(viewConfigRecord.description),
+      default: viewConfigRecord.isDefault ? true : undefined,
+      pageSize: typeof viewConfigRecord.pageSize === 'number' ? viewConfigRecord.pageSize : undefined,
+      search: this.asTypedObject<EntityListViewConfig['search']>(viewConfigRecord.searchJson),
+      primaryAction: this.asTypedObject<EntityListViewConfig['primaryAction']>(viewConfigRecord.primaryActionJson),
+      rowActions: this.asTypedObjectArray<NonNullable<EntityListViewConfig['rowActions']>[number]>(
+        viewConfigRecord.rowActionsJson
+      )
+    };
   }
 
-  private async loadDetailConfig(entityDirectoryPath: string): Promise<EntityDetailConfig | undefined> {
-    const indexPath = path.resolve(entityDirectoryPath, 'detail', 'index.json');
-    if (!existsSync(indexPath)) {
-      return undefined;
-    }
+  private mapDetailConfig(
+    entityId: string,
+    detailConfigRecord: EntityDetailConfigRecordWithRelations
+  ): EntityDetailConfig {
+    const query = this.requireObject(
+      detailConfigRecord.queryJson,
+      `Entity detail config ${entityId} is invalid: query is required`
+    );
+    const sections = detailConfigRecord.sections.map((sectionConfigRecord) =>
+      this.mapDetailSectionConfig(entityId, sectionConfigRecord)
+    );
 
-    const indexConfig = await this.readJsonFile<Record<string, unknown>>(indexPath);
-    const query = this.asObject(indexConfig.query);
-    if (!query) {
-      throw new BadRequestException(`Invalid detail/index.json: query is required`);
-    }
-
-    const sections = await this.loadDetailSections(path.resolve(entityDirectoryPath, 'detail'), indexConfig.sections);
     if (sections.length === 0) {
-      throw new BadRequestException(`Invalid detail/index.json: sections are required`);
+      throw new BadRequestException(`Entity detail config ${entityId} is invalid: sections are required`);
     }
 
-    const relatedLists = await this.loadRelatedLists(
-      path.resolve(entityDirectoryPath, 'detail'),
-      indexConfig.relatedLists
+    const relatedLists = detailConfigRecord.relatedLists.map((relatedListConfigRecord) =>
+      this.mapRelatedListConfig(entityId, relatedListConfigRecord)
     );
 
     return {
       query: query as unknown as EntityDetailConfig['query'],
       sections,
       relatedLists: relatedLists.length > 0 ? relatedLists : undefined,
-      titleTemplate: this.asOptionalString(indexConfig.titleTemplate),
-      fallbackTitle: this.asOptionalString(indexConfig.fallbackTitle),
-      subtitle: this.asOptionalString(indexConfig.subtitle),
-      actions: this.asObjectArray(indexConfig.actions) as unknown as EntityDetailConfig['actions'] | undefined,
-      pathStatus: (this.asObject(indexConfig.pathStatus) ?? undefined) as unknown as EntityDetailConfig['pathStatus'] | undefined
+      titleTemplate: this.asOptionalString(detailConfigRecord.titleTemplate),
+      fallbackTitle: this.asOptionalString(detailConfigRecord.fallbackTitle),
+      subtitle: this.asOptionalString(detailConfigRecord.subtitle),
+      actions: this.asTypedObjectArray<NonNullable<EntityDetailConfig['actions']>[number]>(
+        detailConfigRecord.actionsJson
+      ),
+      pathStatus: this.asTypedObject<EntityDetailConfig['pathStatus']>(detailConfigRecord.pathStatusJson)
     };
   }
 
-  private async loadDetailSections(
-    detailDirectoryPath: string,
-    refs: unknown
-  ): Promise<EntityDetailSectionConfig[]> {
-    if (!Array.isArray(refs)) {
-      return [];
+  private mapDetailSectionConfig(
+    entityId: string,
+    sectionConfigRecord: EntityDetailConfigRecordWithRelations['sections'][number]
+  ): EntityDetailSectionConfig {
+    const title = this.requireString(
+      sectionConfigRecord.title,
+      `Entity detail section config ${entityId} is invalid: title is required`
+    );
+    const fields = this.asObjectArray(sectionConfigRecord.fieldsJson);
+
+    if (fields.length === 0) {
+      throw new BadRequestException(`Entity detail section config ${entityId}/${title} is invalid: fields are required`);
     }
 
-    const sections: EntityDetailSectionConfig[] = [];
-
-    for (const ref of refs) {
-      const relativePath = typeof ref === 'string' ? ref.trim() : '';
-      if (!relativePath) {
-        continue;
-      }
-
-      const sectionPath = path.resolve(detailDirectoryPath, relativePath);
-      if (!existsSync(sectionPath)) {
-        this.logger.warn(`Entity detail section not found: ${sectionPath}`);
-        continue;
-      }
-
-      try {
-        const sectionConfig = await this.readJsonFile<Record<string, unknown>>(sectionPath);
-        const title = this.asNonEmptyString(sectionConfig.title);
-        const fields = this.asObjectArray(sectionConfig.fields);
-
-        if (!title || fields.length === 0) {
-          this.logger.warn(`Entity detail section is invalid and will be skipped: ${sectionPath}`);
-          continue;
-        }
-
-        sections.push({
-          title,
-          fields: fields as unknown as EntityDetailSectionConfig['fields']
-        });
-      } catch (error) {
-        this.logger.warn(
-          `Entity detail section cannot be parsed and will be skipped: ${sectionPath} (${String(error)})`
-        );
-      }
-    }
-
-    return sections;
+    return {
+      title,
+      fields: fields as unknown as EntityDetailSectionConfig['fields']
+    };
   }
 
-  private async loadRelatedLists(
-    detailDirectoryPath: string,
-    refs: unknown
-  ): Promise<EntityRelatedListConfig[]> {
-    if (!Array.isArray(refs)) {
-      return [];
+  private mapRelatedListConfig(
+    entityId: string,
+    relatedListConfigRecord: EntityDetailConfigRecordWithRelations['relatedLists'][number]
+  ): EntityRelatedListConfig {
+    const id = this.requireString(
+      relatedListConfigRecord.relatedListId,
+      `Entity related-list config ${entityId} is invalid: id is required`
+    );
+    const label = this.requireString(
+      relatedListConfigRecord.label,
+      `Entity related-list config ${entityId}/${id} is invalid: label is required`
+    );
+    const query = this.requireObject(
+      relatedListConfigRecord.queryJson,
+      `Entity related-list config ${entityId}/${id} is invalid: query is required`
+    );
+    const columns = this.asStringOrObjectArray(relatedListConfigRecord.columnsJson);
+
+    if (columns.length === 0) {
+      throw new BadRequestException(`Entity related-list config ${entityId}/${id} is invalid: columns are required`);
     }
 
-    const relatedLists: EntityRelatedListConfig[] = [];
-
-    for (const ref of refs) {
-      const relativePath = typeof ref === 'string' ? ref.trim() : '';
-      if (!relativePath) {
-        continue;
-      }
-
-      const relatedListPath = path.resolve(detailDirectoryPath, relativePath);
-      if (!existsSync(relatedListPath)) {
-        this.logger.warn(`Entity related-list not found: ${relatedListPath}`);
-        continue;
-      }
-
-      try {
-        const relatedListConfig = await this.readJsonFile<Record<string, unknown>>(relatedListPath);
-        const id = this.asNonEmptyString(relatedListConfig.id);
-        const label = this.asNonEmptyString(relatedListConfig.label);
-        const query = this.asObject(relatedListConfig.query);
-        const columns = Array.isArray(relatedListConfig.columns)
-          ? (relatedListConfig.columns.filter((column) => typeof column === 'string' || this.isObjectRecord(column)) as Array<
-              string | Record<string, unknown>
-            >)
-          : [];
-
-        if (!id || !label || !query || columns.length === 0) {
-          this.logger.warn(`Entity related-list is invalid and will be skipped: ${relatedListPath}`);
-          continue;
-        }
-
-        relatedLists.push({
-          id,
-          label,
-          query: query as unknown as EntityRelatedListConfig['query'],
-          columns: columns as unknown as EntityRelatedListConfig['columns'],
-          description: this.asOptionalString(relatedListConfig.description),
-          actions: this.asObjectArray(relatedListConfig.actions) as unknown as EntityRelatedListConfig['actions'] | undefined,
-          rowActions: this.asObjectArray(relatedListConfig.rowActions) as unknown as EntityRelatedListConfig['rowActions'] | undefined,
-          emptyState: this.asOptionalString(relatedListConfig.emptyState),
-          pageSize: typeof relatedListConfig.pageSize === 'number' ? relatedListConfig.pageSize : undefined,
-          entityId: this.asOptionalString(relatedListConfig.entityId)
-        });
-      } catch (error) {
-        this.logger.warn(
-          `Entity related-list cannot be parsed and will be skipped: ${relatedListPath} (${String(error)})`
-        );
-      }
-    }
-
-    return relatedLists;
+    return {
+      id,
+      label,
+      query: query as unknown as EntityRelatedListConfig['query'],
+      columns: columns as unknown as EntityRelatedListConfig['columns'],
+      description: this.asOptionalString(relatedListConfigRecord.description),
+      actions: this.asTypedObjectArray<NonNullable<EntityRelatedListConfig['actions']>[number]>(
+        relatedListConfigRecord.actionsJson
+      ),
+      rowActions: this.asTypedObjectArray<NonNullable<EntityRelatedListConfig['rowActions']>[number]>(
+        relatedListConfigRecord.rowActionsJson
+      ),
+      emptyState: this.asOptionalString(relatedListConfigRecord.emptyState),
+      pageSize: typeof relatedListConfigRecord.pageSize === 'number' ? relatedListConfigRecord.pageSize : undefined,
+      entityId: this.asOptionalString(relatedListConfigRecord.linkedEntityId)
+    };
   }
 
-  private async loadFormConfig(entityDirectoryPath: string): Promise<EntityFormConfig | undefined> {
-    const indexPath = path.resolve(entityDirectoryPath, 'form', 'index.json');
-    if (!existsSync(indexPath)) {
-      return undefined;
-    }
+  private mapFormConfig(entityId: string, formConfigRecord: EntityFormConfigRecordWithRelations): EntityFormConfig {
+    const createTitle = this.requireString(
+      formConfigRecord.createTitle,
+      `Entity form config ${entityId} is invalid: title.create is required`
+    );
+    const editTitle = this.requireString(
+      formConfigRecord.editTitle,
+      `Entity form config ${entityId} is invalid: title.edit is required`
+    );
+    const query = this.requireObject(
+      formConfigRecord.queryJson,
+      `Entity form config ${entityId} is invalid: query is required`
+    );
+    const sections = formConfigRecord.sections.map((sectionConfigRecord) =>
+      this.mapFormSectionConfig(entityId, sectionConfigRecord)
+    );
 
-    const indexConfig = await this.readJsonFile<Record<string, unknown>>(indexPath);
-    const titleObject = this.asObject(indexConfig.title);
-    const createTitle = this.asNonEmptyString(titleObject?.create);
-    const editTitle = this.asNonEmptyString(titleObject?.edit);
-    const query = this.asObject(indexConfig.query);
-
-    if (!createTitle || !editTitle) {
-      throw new BadRequestException(`Invalid form/index.json: title.create and title.edit are required`);
-    }
-
-    if (!query) {
-      throw new BadRequestException(`Invalid form/index.json: query is required`);
-    }
-
-    const sections = await this.loadFormSections(path.resolve(entityDirectoryPath, 'form'), indexConfig.sections);
     if (sections.length === 0) {
-      throw new BadRequestException(`Invalid form/index.json: sections are required`);
+      throw new BadRequestException(`Entity form config ${entityId} is invalid: sections are required`);
     }
 
     return {
@@ -353,92 +323,66 @@ export class EntityConfigRepository {
         edit: editTitle
       },
       query: query as unknown as EntityFormConfig['query'],
-      subtitle: this.asOptionalString(indexConfig.subtitle),
+      subtitle: this.asOptionalString(formConfigRecord.subtitle),
       sections
     };
   }
 
-  private async loadFormSections(formDirectoryPath: string, refs: unknown): Promise<EntityFormSectionConfig[]> {
-    if (!Array.isArray(refs)) {
-      return [];
+  private mapFormSectionConfig(
+    entityId: string,
+    sectionConfigRecord: EntityFormConfigRecordWithRelations['sections'][number]
+  ): EntityFormSectionConfig {
+    const fields = this.asObjectArray(sectionConfigRecord.fieldsJson);
+    if (fields.length === 0) {
+      throw new BadRequestException(`Entity form section config ${entityId} is invalid: fields are required`);
     }
 
-    const sections: EntityFormSectionConfig[] = [];
-
-    for (const ref of refs) {
-      const relativePath = typeof ref === 'string' ? ref.trim() : '';
-      if (!relativePath) {
-        continue;
-      }
-
-      const sectionPath = path.resolve(formDirectoryPath, relativePath);
-      if (!existsSync(sectionPath)) {
-        this.logger.warn(`Entity form section not found: ${sectionPath}`);
-        continue;
-      }
-
-      try {
-        const sectionConfig = await this.readJsonFile<Record<string, unknown>>(sectionPath);
-        const title = this.asOptionalString(sectionConfig.title);
-        const fields = this.asObjectArray(sectionConfig.fields);
-        if (fields.length === 0) {
-          this.logger.warn(`Entity form section is invalid and will be skipped: ${sectionPath}`);
-          continue;
-        }
-
-        sections.push({
-          title,
-          fields: fields as unknown as EntityFormSectionConfig['fields']
-        });
-      } catch (error) {
-        this.logger.warn(`Entity form section cannot be parsed and will be skipped: ${sectionPath} (${String(error)})`);
-      }
-    }
-
-    return sections;
+    return {
+      title: this.asOptionalString(sectionConfigRecord.title),
+      fields: fields as unknown as EntityFormSectionConfig['fields']
+    };
   }
 
-  private resolveObjectApiName(
-    baseConfig: Record<string, unknown>,
-    listConfig: EntityListConfig | undefined,
-    detailConfig: EntityDetailConfig | undefined,
-    formConfig: EntityFormConfig | undefined
-  ): string {
-    const fromBase = this.asNonEmptyString(baseConfig.objectApiName);
-    if (fromBase) {
-      return fromBase;
-    }
-
-    const fromList = listConfig?.views[0]?.query.object;
-    if (typeof fromList === 'string' && fromList.trim().length > 0) {
-      return fromList.trim();
-    }
-
-    const fromDetail = detailConfig?.query.object;
-    if (typeof fromDetail === 'string' && fromDetail.trim().length > 0) {
-      return fromDetail.trim();
-    }
-
-    const fromForm = formConfig?.query?.object;
-    if (typeof fromForm === 'string' && fromForm.trim().length > 0) {
-      return fromForm.trim();
-    }
-
-    throw new BadRequestException(`Entity config is invalid: objectApiName is required`);
-  }
-
-  private asNavigation(value: unknown): EntityConfig['navigation'] | undefined {
-    const objectValue = this.asObject(value);
-    if (!objectValue) {
+  private asNavigation(value: Prisma.JsonValue | null): EntityConfig['navigation'] | undefined {
+    const navigationObject = this.asObject(value);
+    if (!navigationObject) {
       return undefined;
     }
 
-    const basePath = this.asOptionalString(objectValue.basePath);
+    const basePath = this.asOptionalString(navigationObject.basePath);
     if (!basePath) {
       return undefined;
     }
 
     return { basePath };
+  }
+
+  private requireObject(value: unknown, errorMessage: string): Record<string, unknown> {
+    const objectValue = this.asObject(value);
+    if (!objectValue) {
+      throw new BadRequestException(errorMessage);
+    }
+
+    return objectValue;
+  }
+
+  private requireString(value: unknown, errorMessage: string): string {
+    const normalized = this.asNonEmptyString(value);
+    if (!normalized) {
+      throw new BadRequestException(errorMessage);
+    }
+
+    return normalized;
+  }
+
+  private asTypedObject<T>(value: unknown): T | undefined {
+    const objectValue = this.asObject(value);
+    return objectValue ? (objectValue as T) : undefined;
+  }
+
+  private asTypedObjectArray<T>(value: unknown): T[] | undefined {
+    const objectArray = this.asObjectArray(value);
+    return objectArray.length > 0 ? (objectArray as T[]) : undefined;
   }
 
   private asObject(value: unknown): Record<string, unknown> | null {
@@ -453,6 +397,16 @@ export class EntityConfigRepository {
     return value.filter((entry): entry is Record<string, unknown> => this.isObjectRecord(entry));
   }
 
+  private asStringOrObjectArray(value: unknown): Array<string | Record<string, unknown>> {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+
+    return value.filter(
+      (entry): entry is string | Record<string, unknown> => typeof entry === 'string' || this.isObjectRecord(entry)
+    );
+  }
+
   private asNonEmptyString(value: unknown): string | null {
     if (typeof value !== 'string') {
       return null;
@@ -465,19 +419,6 @@ export class EntityConfigRepository {
   private asOptionalString(value: unknown): string | undefined {
     const normalized = this.asNonEmptyString(value);
     return normalized ?? undefined;
-  }
-
-  private async readJsonFile<T>(absoluteFilePath: string): Promise<T> {
-    const raw = await readFile(absoluteFilePath, 'utf8');
-    return this.parseJson<T>(raw, absoluteFilePath);
-  }
-
-  private parseJson<T>(rawValue: string, sourceName: string): T {
-    try {
-      return JSON.parse(rawValue) as T;
-    } catch {
-      throw new BadRequestException(`Invalid JSON in ${sourceName}`);
-    }
   }
 
   private isObjectRecord(value: unknown): value is Record<string, unknown> {

@@ -7,44 +7,40 @@ Questo documento definisce il contratto tecnico delle configurazioni entita (`En
 - form create/edit (`form`)
 - related lists
 
-Obiettivo: permettere un progetto nuovo da zero con configurazione JSON versionata, senza hardcode diffuso.
+Obiettivo: permettere un progetto nuovo da zero con configurazione versionata, senza hardcode diffuso.
 
 ## 2) Fonte di verita e runtime
 Fonte di verita:
-- `config/entities` (se presente nella root runtime)
-- fallback: `backend/config/entities`
+- PostgreSQL (tabelle `entity_*` gestite via Prisma migration)
 
 Comportamento runtime (`EntitiesService`):
-- carica tutte le cartelle entita all'avvio
-- in ambiente non `production` attiva file watcher ricorsivo e ricarica automatica con debounce (~100ms)
-- se un file JSON e invalido, logga errore e salta il file (fail-soft)
-- se `base.json` manca, la cartella viene ignorata
+- carica la configurazione entita dalla repository Postgres on-demand
+- applica cache in-memory per `entityId` + deduplica load concorrenti
+- se il record entita non esiste: `404`
+- se il payload JSONB persistito e invalido rispetto al contratto: `400`
 
 Nota operativa:
 - la validazione campi Salesforce e lazy: avviene alla prima richiesta runtime dell'entita (`getValidatedEntityConfigOrThrow`), non al bootstrap.
 
-## 3) Struttura directory obbligatoria
+## 3) Struttura storage obbligatoria (PostgreSQL)
 ```text
-backend/config/entities/<entity-id>/
-  base.json
-  list/
-    index.json
-    views/*.json
-  detail/
-    index.json
-    sections/*.json
-    related-lists/*.json
-  form/
-    index.json
-    sections/*.json
+entity_configs
+entity_list_configs
+entity_list_view_configs
+entity_detail_configs
+entity_detail_section_configs
+entity_related_list_configs
+entity_form_configs
+entity_form_section_configs
 ```
 
 Regole:
-- `<entity-id>` SHOULD coincidere con `base.json.id`
-- `list`, `detail`, `form` sono opzionali
-- i manifest (`index.json`) referenziano file figli tramite path relativi alla rispettiva cartella
+- `entity_configs.id` e l identificatore tecnico univoco (`entityId`)
+- blocchi `list`, `detail`, `form` sono opzionali e modellati come record 1:1
+- viste/sezioni/related lists sono modellate come record 1:N con `sortOrder`
+- campi annidati (`query`, `columns`, `actions`, `fields`, `pathStatus`) sono persistiti come JSONB
 
-## 4) Contratto `base.json`
+## 4) Contratto `base` (`entity_configs`)
 Campi:
 - `id` (required): identificatore tecnico entita
 - `label` (required): label UI
@@ -64,18 +60,17 @@ Esempio:
 ```
 
 ## 5) Contratto `list`
-### 5.1 Manifest `list/index.json`
+### 5.1 Manifest `list` (`entity_list_configs`)
 Campi principali:
 - `title` (required)
 - `subtitle` (optional)
 - `primaryAction` (optional)
-- `views` (required): array string con file path vista, es. `"views/all.json"`
+- `views` (required): relazione verso `entity_list_view_configs`
 
-Se una view referenziata non esiste o non e JSON valido:
-- warning su log
-- view ignorata
+Vincolo:
+- deve esistere almeno una view valida per `entityId`
 
-### 5.2 View `list/views/*.json`
+### 5.2 View `list` (`entity_list_view_configs`)
 Campi principali:
 - `id`, `label`, `query`, `columns` (required)
 - `description`, `default`, `pageSize`, `search`, `primaryAction`, `rowActions` (optional)
@@ -102,20 +97,20 @@ Nota:
 - `pageSize` e clampato lato API nel range `1..2000`.
 
 ## 6) Contratto `detail`
-### 6.1 Manifest `detail/index.json`
+### 6.1 Manifest `detail` (`entity_detail_configs`)
 Campi principali:
 - `query` (required)
-- `sections` (required in pratica UI): array path verso `detail/sections/*.json`
-- `relatedLists` (optional): array path verso `detail/related-lists/*.json`
+- `sections` (required in pratica UI): relazione verso `entity_detail_section_configs`
+- `relatedLists` (optional): relazione verso `entity_related_list_configs`
 - `titleTemplate`, `fallbackTitle`, `subtitle`, `actions`, `pathStatus` (optional)
 
-### 6.2 Sezioni `detail/sections/*.json`
+### 6.2 Sezioni `detail` (`entity_detail_section_configs`)
 Struttura:
 - `title`, `fields[]`
 - ogni field puo avere `label` + (`field` oppure `template`)
 - supportati `highlight` e `format` (`date` | `datetime`)
 
-### 6.3 Related lists `detail/related-lists/*.json`
+### 6.3 Related lists `detail` (`entity_related_list_configs`)
 Campi principali:
 - `id`, `label`, `query`, `columns` (required)
 - `description`, `actions`, `rowActions`, `emptyState`, `pageSize` (optional)
@@ -132,14 +127,14 @@ Vincolo importante:
 - aggiornamento stato supportato solo su field diretto (no path con `.`).
 
 ## 7) Contratto `form`
-### 7.1 Manifest `form/index.json`
+### 7.1 Manifest `form` (`entity_form_configs`)
 Campi:
 - `title.create`, `title.edit` (required)
 - `query` (required)
-- `sections` (required in pratica UI): array path verso `form/sections/*.json`
+- `sections` (required in pratica UI): relazione verso `entity_form_section_configs`
 - `subtitle` (optional)
 
-### 7.2 Sezioni `form/sections/*.json`
+### 7.2 Sezioni `form` (`entity_form_section_configs`)
 Ogni field:
 - `label`, `field`, `inputType` (required)
 - `inputType` ammessi: `text | email | tel | date | textarea`
@@ -233,7 +228,7 @@ Conseguenza:
 - la form config definisce esplicitamente il perimetro di scrittura consentito.
 
 ## 12) Convenzioni raccomandate
-- mantenere `id cartella == base.id`
+- mantenere `entity_configs.id == entityId` usato in ACL e routing
 - in `query.fields` includere sempre `Id` nelle viste tabellari e dettaglio
 - evitare `where` string raw se non strettamente necessario; preferire condizioni object
 - per azioni `link`, usare target relativi e placeholder espliciti (`view/{{Id}}`)
@@ -241,24 +236,23 @@ Conseguenza:
 - documentare ogni nuova entita anche su `docs/acl-resources-map.md`
 
 ## 13) Checklist "nuova entita" (da zero)
-1. creare cartella `backend/config/entities/<entity-id>/`
-2. creare `base.json`
-3. creare `list/index.json` + almeno una view in `list/views/`
-4. creare `detail/index.json` + sezioni in `detail/sections/`
-5. creare `form/index.json` + sezioni in `form/sections/` (se entita editabile)
-6. aggiungere risorsa ACL `entity:<entity-id>` in `backend/config/acl/resources/entity.json`
-7. avviare backend in dev e verificare hot reload config
-8. testare endpoint:
+1. creare/aggiornare migration Prisma per inserire record in `entity_configs`
+2. inserire blocco `list` in `entity_list_configs` + almeno una view in `entity_list_view_configs`
+3. inserire blocco `detail` in `entity_detail_configs` + sezioni in `entity_detail_section_configs`
+4. inserire blocco `form` in `entity_form_configs` + sezioni in `entity_form_section_configs` (se entita editabile)
+5. aggiungere risorsa ACL `entity:<entity-id>` in `backend/config/acl/resources/entity.json`
+6. applicare migrazione (`prisma migrate dev|deploy`) e rigenerare client Prisma
+7. testare endpoint:
    - `GET /entities/:entityId/config`
    - `GET /entities/:entityId/list`
    - `GET /entities/:entityId/records/:recordId`
    - `POST/PUT /entities/:entityId/records`
-9. correggere eventuali `422` su field path invalidi
-10. aggiornare documentazione (`docs/entity-config-guide.md` se cambia il contratto)
+8. correggere eventuali `422` su field path invalidi
+9. aggiornare documentazione (`docs/entity-config-guide.md` se cambia il contratto)
 
 ## 14) Limiti attuali da considerare nel progetto nuovo
 - non esiste schema JSON hard-enforced a build time (validazione e runtime/lazy)
-- i file JSON invalidi vengono skippati, non bloccano il bootstrap
+- payload JSONB invalidi rispetto al contratto producono errore runtime lato backend
 - le query raw via string in `where` sono potenti ma riducono controllabilita
 - la metadata `lookup` e applicata lato frontend; non fa parte della validazione campi backend completa
 
