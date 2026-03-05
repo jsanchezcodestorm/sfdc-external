@@ -358,6 +358,7 @@ Rules
 
 * Never modify DB manually
 * All schema changes via migrations
+* If `prisma/schema.prisma` is updated, always apply migrations (`prisma migrate dev` in local development or `prisma migrate deploy` in pipeline)
 * Always regenerate client after schema changes
 
 ---
