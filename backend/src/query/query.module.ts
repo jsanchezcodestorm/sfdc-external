@@ -2,16 +2,19 @@ import { Module } from '@nestjs/common';
 
 import { AclModule } from '../acl/acl.module';
 import { AuthModule } from '../auth/auth.module';
+import { ResourceAccessService } from '../common/services/resource-access.service';
 import { SalesforceModule } from '../salesforce/salesforce.module';
 import { VisibilityModule } from '../visibility/visibility.module';
 
 import { QueryController } from './query.controller';
 import { QueryService } from './query.service';
+import { QueryTemplateCompiler } from './services/query-template.compiler';
+import { QueryTemplateRepository } from './services/query-template.repository';
 
 @Module({
   imports: [AuthModule, AclModule, VisibilityModule, SalesforceModule],
   controllers: [QueryController],
-  providers: [QueryService],
+  providers: [QueryService, QueryTemplateRepository, QueryTemplateCompiler, ResourceAccessService],
   exports: [QueryService]
 })
 export class QueryModule {}
