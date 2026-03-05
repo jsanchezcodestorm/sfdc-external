@@ -7,6 +7,11 @@ export function AppTopBar() {
   const { user, isBootstrapping, logout } = useAuth()
   const [isLoggingOut, setIsLoggingOut] = useState(false)
   const [logoutError, setLogoutError] = useState<string | null>(null)
+  const canAccessAdmin = Boolean(
+    user?.permissions.some((permission) =>
+      ['PORTAL_ADMIN', 'ADMIN', 'SUPERUSER'].includes(permission.trim().toUpperCase()),
+    ),
+  )
 
   const handleLogout = async () => {
     setIsLoggingOut(true)
@@ -40,6 +45,14 @@ export function AppTopBar() {
           {!isBootstrapping && user ? (
             <>
               <span className="hidden text-sm text-slate-600 sm:inline">{user.email}</span>
+              {canAccessAdmin ? (
+                <Link
+                  to="/admin/entity-config"
+                  className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-2 text-sm font-medium text-sky-700 transition hover:border-sky-300 hover:bg-sky-100"
+                >
+                  Admin Config
+                </Link>
+              ) : null}
               <button
                 type="button"
                 onClick={() => {

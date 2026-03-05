@@ -123,6 +123,7 @@ export type EntityFieldDefinition = {
 export type EntityConfig = {
   id: string
   label?: string
+  description?: string
   objectApiName?: string
   navigation?: {
     basePath?: string

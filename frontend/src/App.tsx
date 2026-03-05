@@ -1,12 +1,14 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { AppShell } from './components/AppShell'
 import { RequireAuth } from './features/auth/components/RequireAuth'
+import { RequireAdmin } from './features/auth/components/RequireAdmin'
 
 import { EntityDetailPage } from './features/entities/pages/EntityDetailPage'
 import { EntityFormPage } from './features/entities/pages/EntityFormPage'
 import { EntityListPage } from './features/entities/pages/EntityListPage'
 import { EntityRelatedListPage } from './features/entities/pages/EntityRelatedListPage'
 import { EntityRouteFallbackPage } from './features/entities/pages/EntityRouteFallbackPage'
+import { EntityAdminConfigPage } from './features/entities-admin/pages/EntityAdminConfigPage'
 import { HomePage } from './pages/HomePage'
 import { LoginPage } from './pages/LoginPage'
 
@@ -28,6 +30,12 @@ function App() {
             element={<EntityRelatedListPage />}
           />
           <Route path="/s/:entityId/*" element={<EntityRouteFallbackPage />} />
+        </Route>
+
+        <Route element={<RequireAdmin />}>
+          <Route path="/admin/entity-config" element={<EntityAdminConfigPage />} />
+          <Route path="/admin/entity-config/:entityId" element={<EntityAdminConfigPage />} />
+          <Route path="/admin/entity-config/:entityId/:section" element={<EntityAdminConfigPage />} />
         </Route>
 
         <Route
