@@ -41,7 +41,7 @@ Accessi minimi richiesti:
 ## 5) Inventario configurazioni critiche
 Verificare prima di ogni deploy:
 - sessione/auth: `JWT_SECRET`, `JWT_EXPIRES_IN`, `SESSION_COOKIE_*`, `FRONTEND_ORIGINS`
-- Salesforce: `SALESFORCE_*`, `SALESFORCE_DESCRIBE_CACHE_TTL_MS`
+- Salesforce: `SALESFORCE_*`, `SALESFORCE_DESCRIBE_CACHE_TTL_MS`, `SALESFORCE_DESCRIBE_STALE_WHILE_REVALIDATE_MS`
 - Google: `GOOGLE_CLIENT_ID` (+ secret/redirect se flow code)
 - visibility/postgres: `DATABASE_URL`, `VISIBILITY_*`
 - hardening: `ENABLE_RAW_SALESFORCE_QUERY=false` in produzione
