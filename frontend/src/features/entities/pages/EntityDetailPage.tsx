@@ -13,6 +13,7 @@ import {
   normalizeEntityBasePath,
   renderRecordTemplate,
   resolveActionTarget,
+  resolveDisplayFieldValue,
   resolveFieldValue,
   toLabel,
   toTitleCase,
@@ -210,9 +211,10 @@ export function EntityDetailPage() {
                   {section.fields.map((field) => {
                     const fieldKey = field.field ?? field.template ?? field.label ?? 'field'
                     const fieldLabel = field.label ?? (field.field ? toLabel(field.field) : 'Value')
+                    const rawDisplayValue = field.field ? resolveDisplayFieldValue(record, field.field) : undefined
                     const fieldValue = field.template
                       ? renderRecordTemplate(field.template, record)
-                      : formatFieldValueByFormat(resolveFieldValue(record, field.field ?? ''), field.format)
+                      : formatFieldValueByFormat(rawDisplayValue, field.format)
 
                     return (
                       <article
@@ -223,7 +225,7 @@ export function EntityDetailPage() {
                           {fieldLabel}
                         </p>
                         <p className={`mt-1 text-sm ${field.highlight ? 'font-semibold text-slate-900' : 'text-slate-800'}`}>
-                          {fieldValue.length > 0 ? fieldValue : formatFieldValue(resolveFieldValue(record, field.field ?? ''))}
+                          {fieldValue.length > 0 ? fieldValue : formatFieldValue(rawDisplayValue)}
                         </p>
                       </article>
                     )

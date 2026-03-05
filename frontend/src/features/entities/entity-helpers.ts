@@ -69,6 +69,30 @@ export function resolveFieldValue(record: EntityRecord, fieldPath: string): unkn
   return current
 }
 
+export function resolveDisplayFieldValue(record: EntityRecord, fieldPath: string): unknown {
+  const directValue = resolveFieldValue(record, fieldPath)
+  if (fieldPath.includes('.')) {
+    return directValue
+  }
+
+  const relationshipPath = resolveLookupRelationshipPath(fieldPath)
+  if (!relationshipPath) {
+    return directValue
+  }
+
+  const relatedRecord = resolveFieldValue(record, relationshipPath)
+  if (relatedRecord && typeof relatedRecord === 'object') {
+    for (const candidate of lookupDisplayFieldCandidates()) {
+      const value = (relatedRecord as Record<string, unknown>)[candidate]
+      if (value !== null && value !== undefined && String(value).trim().length > 0) {
+        return value
+      }
+    }
+  }
+
+  return directValue
+}
+
 export function formatFieldValue(value: unknown): string {
   if (value === null || value === undefined) {
     return '-'
@@ -248,4 +272,20 @@ function buildTemplateRecord(record: EntityRecord | undefined, rowId: string | u
     id: rowId,
     recordId: rowId,
   }
+}
+
+function resolveLookupRelationshipPath(fieldPath: string): string | null {
+  if (fieldPath.endsWith('__c') && fieldPath.length > 3) {
+    return `${fieldPath.slice(0, -3)}__r`
+  }
+
+  if (fieldPath.endsWith('Id') && fieldPath.length > 2) {
+    return fieldPath.slice(0, -2)
+  }
+
+  return null
+}
+
+function lookupDisplayFieldCandidates(): string[] {
+  return ['Name', 'CaseNumber', 'Subject', 'Title']
 }

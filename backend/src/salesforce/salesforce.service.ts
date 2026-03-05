@@ -22,6 +22,8 @@ interface SalesforceFieldSummary {
   createable: boolean;
   updateable: boolean;
   filterable: boolean;
+  relationshipName?: string;
+  referenceTo?: string[];
 }
 
 type SalesforceMutationOperation = 'create' | 'update' | 'delete';
@@ -89,7 +91,13 @@ export class SalesforceService {
       nillable: Boolean(field.nillable ?? false),
       createable: Boolean(field.createable ?? false),
       updateable: Boolean(field.updateable ?? false),
-      filterable: Boolean(field.filterable ?? false)
+      filterable: Boolean(field.filterable ?? false),
+      relationshipName: typeof field.relationshipName === 'string' ? field.relationshipName : undefined,
+      referenceTo: Array.isArray(field.referenceTo)
+        ? field.referenceTo
+            .map((entry) => String(entry).trim())
+            .filter((entry) => entry.length > 0)
+        : undefined
     }));
   }
 

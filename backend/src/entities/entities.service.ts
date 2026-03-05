@@ -52,6 +52,8 @@ interface SalesforceFieldSummary {
   createable: boolean;
   updateable: boolean;
   filterable: boolean;
+  relationshipName?: string;
+  referenceTo?: string[];
 }
 
 interface EntityFieldDefinition {
@@ -73,6 +75,7 @@ interface SoqlBuildOptions {
   forcedLimit?: number;
   search?: string;
   searchConfig?: EntityListSearchConfig;
+  extraFields?: string[];
 }
 
 interface EntityListResponse {
@@ -171,12 +174,17 @@ export class EntitiesService {
     const configuredPageSize = this.clamp(selectedView.pageSize ?? DEFAULT_PAGE_SIZE, 1, MAX_PAGE_SIZE);
     const pageSize = this.clamp(query.pageSize ?? configuredPageSize, 1, MAX_PAGE_SIZE);
     const search = this.normalizeSearchQuery(query.search);
+    const lookupProjectionFields = await this.resolveLookupProjectionFields(
+      selectedView.query.object,
+      this.extractColumnFieldPaths(selectedView.columns)
+    );
 
     const soql = await this.buildSoqlFromQueryConfig(selectedView.query, {
       page,
       pageSize,
       search,
-      searchConfig: selectedView.search
+      searchConfig: selectedView.search,
+      extraFields: lookupProjectionFields
     });
 
     const rawQueryResult = await this.salesforceService.executeReadOnlyQuery(soql);
@@ -206,9 +214,13 @@ export class EntitiesService {
       throw new NotFoundException(`Detail view is not configured for ${entityId}`);
     }
 
+    const detailFieldNames = this.collectDetailFieldNames(entityConfig, detailConfig.query);
+    const lookupProjectionFields = await this.resolveLookupProjectionFields(detailConfig.query.object, detailFieldNames);
+
     const soql = await this.buildSoqlFromQueryConfig(detailConfig.query, {
       context: { id: recordId, recordId },
-      forcedLimit: 1
+      forcedLimit: 1,
+      extraFields: lookupProjectionFields
     });
     const rawQueryResult = await this.salesforceService.executeReadOnlyQuery(soql);
     const { records } = this.extractRecords(rawQueryResult);
@@ -220,7 +232,7 @@ export class EntitiesService {
     const record = records[0];
     const fieldDefinitions = await this.buildFieldDefinitions(
       detailConfig.query.object,
-      this.collectDetailFieldNames(entityConfig, detailConfig.query)
+      detailFieldNames
     );
 
     const title = this.resolveDetailTitle(detailConfig.titleTemplate, detailConfig.fallbackTitle, record, entityConfig);
@@ -319,11 +331,16 @@ export class EntitiesService {
     const page = this.clamp(params.page ?? 1, 1, Number.MAX_SAFE_INTEGER);
     const configuredPageSize = this.clamp(relatedList.pageSize ?? DEFAULT_PAGE_SIZE, 1, MAX_PAGE_SIZE);
     const pageSize = this.clamp(params.pageSize ?? configuredPageSize, 1, MAX_PAGE_SIZE);
+    const lookupProjectionFields = await this.resolveLookupProjectionFields(
+      relatedList.query.object,
+      this.extractColumnFieldPaths(relatedList.columns)
+    );
 
     const soql = await this.buildSoqlFromQueryConfig(relatedList.query, {
       context: { id: recordId, recordId },
       page,
-      pageSize
+      pageSize,
+      extraFields: lookupProjectionFields
     });
     const rawQueryResult = await this.salesforceService.executeReadOnlyQuery(soql);
     const { records, totalSize } = this.extractRecords(rawQueryResult);
@@ -408,7 +425,8 @@ export class EntitiesService {
   private async buildSoqlFromQueryConfig(query: EntityQueryConfig, options: SoqlBuildOptions): Promise<string> {
     const objectApiName = this.toSoqlIdentifier(query.object);
     const queryFields = Array.isArray(query.fields) && query.fields.length > 0 ? query.fields : ['Id'];
-    const selectFields = this.uniqueValues(['Id', ...queryFields]).map((field) => this.toSoqlIdentifier(field));
+    const extraFields = Array.isArray(options.extraFields) ? options.extraFields : [];
+    const selectFields = this.uniqueValues(['Id', ...queryFields, ...extraFields]).map((field) => this.toSoqlIdentifier(field));
 
     const context = options.context ?? {};
     const whereConditions = this.compileWhereConditions(query.where ?? [], context);
@@ -617,6 +635,103 @@ export class EntitiesService {
       .filter((fieldName): fieldName is string => typeof fieldName === 'string' && fieldName.trim().length > 0);
 
     return this.uniqueValues(['Id', ...(query.fields ?? []), ...sectionFields]);
+  }
+
+  private extractColumnFieldPaths(columns: Array<string | { field?: unknown }>): string[] {
+    const fieldPaths = columns
+      .map((column) => {
+        if (typeof column === 'string') {
+          return column.trim();
+        }
+
+        const field = column.field;
+        return typeof field === 'string' ? field.trim() : '';
+      })
+      .filter((fieldPath) => fieldPath.length > 0);
+
+    return this.uniqueValues(fieldPaths);
+  }
+
+  private async resolveLookupProjectionFields(objectApiName: string, fieldPaths: string[]): Promise<string[]> {
+    if (fieldPaths.length === 0) {
+      return [];
+    }
+
+    const sourceDescribeMap = await this.getDescribeFieldMap(objectApiName);
+    const projections: string[] = [];
+
+    for (const fieldPath of fieldPaths) {
+      const fieldName = fieldPath.trim();
+      if (!fieldName || fieldName.includes('.')) {
+        continue;
+      }
+
+      const describe = sourceDescribeMap.get(fieldName);
+      if (!describe || describe.type.toLowerCase() !== 'reference') {
+        continue;
+      }
+
+      const relationshipName = describe.relationshipName?.trim() ?? '';
+      const referenceTargets = (describe.referenceTo ?? []).map((entry) => entry.trim()).filter((entry) => entry.length > 0);
+      if (!relationshipName || referenceTargets.length === 0) {
+        continue;
+      }
+
+      const displayField = await this.resolveLookupDisplayFieldAcrossTargets(referenceTargets);
+      if (!displayField) {
+        continue;
+      }
+
+      projections.push(`${relationshipName}.${displayField}`);
+    }
+
+    return this.uniqueValues(projections);
+  }
+
+  private async resolveLookupDisplayFieldAcrossTargets(targetObjectApiNames: string[]): Promise<string | null> {
+    if (targetObjectApiNames.length === 0) {
+      return null;
+    }
+
+    const candidateSets: Array<Set<string>> = [];
+
+    for (const targetObjectApiName of targetObjectApiNames) {
+      try {
+        const describeMap = await this.getDescribeFieldMap(targetObjectApiName);
+        const candidates = this.resolveLookupDisplayFieldCandidates(describeMap);
+        if (candidates.length === 0) {
+          return null;
+        }
+
+        candidateSets.push(new Set(candidates));
+      } catch {
+        return null;
+      }
+    }
+
+    for (const candidate of this.lookupDisplayFieldPriority()) {
+      if (candidateSets.every((candidateSet) => candidateSet.has(candidate))) {
+        return candidate;
+      }
+    }
+
+    return null;
+  }
+
+  private resolveLookupDisplayFieldCandidates(describeMap: Map<string, SalesforceFieldSummary>): string[] {
+    const candidates: string[] = [];
+    for (const candidate of this.lookupDisplayFieldPriority()) {
+      if (describeMap.has(candidate)) {
+        candidates.push(candidate);
+      }
+    }
+
+    return candidates;
+  }
+
+  private lookupDisplayFieldPriority(): string[] {
+    const candidates = ['Name', 'CaseNumber', 'Subject', 'Title'];
+    return candidates;
   }
 
   private collectFormFieldNames(sections: EntityFormSectionResponse[]): string[] {

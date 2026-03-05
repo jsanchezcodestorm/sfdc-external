@@ -5,7 +5,7 @@ import {
   formatFieldValue,
   getRecordId,
   resolveActionTarget,
-  resolveFieldValue,
+  resolveDisplayFieldValue,
   toColumns,
 } from '../entity-helpers'
 import type { EntityAction, EntityColumn, EntityRecord } from '../entity-types'
@@ -63,7 +63,7 @@ export function EntityRecordTable({
                 <tr key={rowId || JSON.stringify(record)} className="transition hover:bg-sky-50/50">
                   {normalizedColumns.map((column) => (
                     <td key={`${rowId}-${column.field}`} className="border-b border-slate-100 px-4 py-3 text-slate-700">
-                      {formatFieldValue(resolveFieldValue(record, column.field))}
+                      {formatFieldValue(resolveDisplayFieldValue(record, column.field))}
                     </td>
                   ))}
                   {hasActions && (
