@@ -19,6 +19,7 @@ export class AuthService {
   private readonly googleClient: OAuth2Client;
   private readonly jwtSecret: string;
   private readonly jwtExpiresInSeconds: number;
+  private readonly adminFallbackEmail: string | null;
 
   constructor(
     private readonly configService: ConfigService,
@@ -28,7 +29,8 @@ export class AuthService {
     this.googleClient = new OAuth2Client(googleClientId || undefined);
 
     this.jwtSecret = this.configService.get<string>('JWT_SECRET', 'change-me-in-production');
-    this.jwtExpiresInSeconds = this.configService.get<number>('JWT_EXPIRES_IN_SECONDS', 3600);
+    this.jwtExpiresInSeconds = this.readPositiveIntEnv('JWT_EXPIRES_IN_SECONDS', 3600);
+    this.adminFallbackEmail = this.readNormalizedEmailEnv('ADMIN_FALLBACK_EMAIL');
   }
 
   async loginWithGoogleIdToken(idToken: string): Promise<{ token: string; user: SessionUser }> {
@@ -126,7 +128,34 @@ export class AuthService {
     );
   }
 
-  private resolveInitialPermissions(_payload: TokenPayload): string[] {
-    return this.aclService.getDefaultPermissions();
+  private resolveInitialPermissions(payload: TokenPayload): string[] {
+    const permissions = new Set<string>(this.aclService.getDefaultPermissions());
+    const userEmail = this.normalizeEmail(payload.email);
+
+    if (this.adminFallbackEmail && userEmail === this.adminFallbackEmail) {
+      permissions.add('PORTAL_ADMIN');
+    }
+
+    return [...permissions];
+  }
+
+  private readPositiveIntEnv(key: string, fallback: number): number {
+    const raw = this.configService.get<string>(key);
+    const parsed = Number.parseInt(raw ?? '', 10);
+
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return parsed;
+    }
+
+    return fallback;
+  }
+
+  private readNormalizedEmailEnv(key: string): string | null {
+    return this.normalizeEmail(this.configService.get<string>(key));
+  }
+
+  private normalizeEmail(value?: string): string | null {
+    const normalized = value?.trim().toLowerCase();
+    return normalized ? normalized : null;
   }
 }
