@@ -476,6 +476,7 @@ Rules
 * Avoid static mutable state
 * Keep services testable
 * Mandatory (cannot be ignored): Every backend and frontend component must be designed for scalability and reusability, and must remain small and modular (no oversized components).
+* Mandatory (cannot be ignored): When implementing changes, do not add fallback behavior solely to preserve backward compatibility; update contracts and consumers explicitly.
 
 ---
 
