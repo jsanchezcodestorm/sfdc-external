@@ -14,6 +14,28 @@ export type EntityAction = {
   entityId?: string
 }
 
+export type EntityQueryWhereObject = {
+  raw?: string
+  field?: string
+  operator?: string
+  value?: string | number | boolean | null | Array<string | number | boolean | null>
+}
+
+export type EntityQueryWhere = string | EntityQueryWhereObject
+
+export type EntityQueryOrderBy = {
+  field: string
+  direction?: 'ASC' | 'DESC' | 'asc' | 'desc'
+}
+
+export type EntityQueryConfig = {
+  object: string
+  fields?: string[]
+  where?: EntityQueryWhere[]
+  orderBy?: EntityQueryOrderBy[]
+  limit?: number
+}
+
 export type EntityListSearchConfig = {
   fields?: string[]
   minLength?: number
@@ -25,7 +47,7 @@ export type EntityListViewConfig = {
   description?: string
   default?: boolean
   pageSize?: number
-  query?: unknown
+  query?: EntityQueryConfig
   columns: Array<EntityColumn | string>
   search?: EntityListSearchConfig
   primaryAction?: EntityAction
@@ -44,6 +66,7 @@ export type RelatedListConfig = {
   label: string
   description?: string
   entityId?: string
+  query?: EntityQueryConfig
   columns?: Array<EntityColumn | string>
   actions?: EntityAction[]
   rowActions?: EntityAction[]
@@ -130,8 +153,12 @@ export type EntityConfig = {
   }
   list?: EntityListConfig
   detail?: {
+    query?: EntityQueryConfig
     sections?: DetailSectionConfig[]
     relatedLists?: RelatedListConfig[]
+    titleTemplate?: string
+    fallbackTitle?: string
+    subtitle?: string
     actions?: EntityAction[]
     pathStatus?: PathStatusConfig
   }
@@ -140,6 +167,7 @@ export type EntityConfig = {
       create?: string
       edit?: string
     }
+    query?: EntityQueryConfig
     subtitle?: string
     sections?: FormSectionConfig[]
   }

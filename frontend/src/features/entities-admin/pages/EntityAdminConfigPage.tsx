@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
-import type { EntityConfig } from '../../entities/entity-types'
+import type {
+  EntityConfig,
+} from '../../entities/entity-types'
 import {
   fetchEntityAdminConfig,
   fetchEntityAdminConfigList,
@@ -15,6 +17,25 @@ import type {
 } from '../entity-admin-types'
 import { EntityAdminSidebar } from '../components/EntityAdminSidebar'
 import { EntityConfigBaseForm } from '../components/EntityConfigBaseForm'
+import { EntityConfigDetailForm } from '../components/EntityConfigDetailForm'
+import {
+  createDetailFormDraft,
+  createEmptyDetailFormDraft,
+  parseDetailFormDraft,
+} from '../components/detail-form/detail-form.mapper'
+import type { DetailFormDraft } from '../components/detail-form/detail-form.types'
+import { EntityConfigListForm } from '../components/EntityConfigListForm'
+import {
+  createEmptyListFormDraft,
+  createEmptyListViewDraft,
+  createListFormDraft,
+  parseListFormDraft,
+} from '../list-form/list-form.mapper'
+import type {
+  ListActionDraft,
+  ListFormDraft,
+  ListViewDraft,
+} from '../list-form/list-form.types'
 import { EntityConfigSectionEditor } from '../components/EntityConfigSectionEditor'
 
 const sectionLabels: Record<EntityConfigSectionKey, string> = {
@@ -39,6 +60,11 @@ export function EntityAdminConfigPage() {
   const [entities, setEntities] = useState<EntityAdminConfigSummary[]>([])
   const [selectedEntityConfig, setSelectedEntityConfig] = useState<EntityConfig | null>(null)
   const [baseFormDraft, setBaseFormDraft] = useState<BaseFormDraft>(createEmptyBaseFormDraft())
+  const [listFormDraft, setListFormDraft] = useState<ListFormDraft>(createEmptyListFormDraft())
+  const [detailFormDraft, setDetailFormDraft] = useState<DetailFormDraft>(
+    createEmptyDetailFormDraft(),
+  )
+  const [selectedListViewIndex, setSelectedListViewIndex] = useState(0)
   const [sectionDraft, setSectionDraft] = useState('')
   const [objectApiNameSearchInput, setObjectApiNameSearchInput] = useState('')
   const [objectApiNameSuggestions, setObjectApiNameSuggestions] = useState<
@@ -149,6 +175,9 @@ export function EntityAdminConfigPage() {
   useEffect(() => {
     if (!selectedEntityConfig) {
       setBaseFormDraft(createEmptyBaseFormDraft())
+      setListFormDraft(createEmptyListFormDraft())
+      setDetailFormDraft(createEmptyDetailFormDraft())
+      setSelectedListViewIndex(0)
       setSectionDraft('')
       setObjectApiNameSearchInput('')
       setObjectApiNameSuggestions([])
@@ -157,14 +186,23 @@ export function EntityAdminConfigPage() {
     }
 
     setBaseFormDraft(createBaseFormDraft(selectedEntityConfig))
+    setListFormDraft(createListFormDraft(selectedEntityConfig.list))
+    setDetailFormDraft(createDetailFormDraft(selectedEntityConfig.detail))
+    setSelectedListViewIndex(0)
 
-    if (selectedSection === 'base') {
+    if (
+      selectedSection === 'base' ||
+      selectedSection === 'list' ||
+      selectedSection === 'detail'
+    ) {
       setSectionDraft('')
       setEditorError(null)
       return
     }
 
     setObjectApiNameSearchInput('')
+    setObjectApiNameSuggestions([])
+    setObjectApiNameSuggestionsError(null)
 
     const sectionValue = extractSectionValue(selectedEntityConfig, selectedSection)
     setSectionDraft(JSON.stringify(sectionValue, null, 2))
@@ -263,6 +301,208 @@ export function EntityAdminConfigPage() {
     setObjectApiNameSuggestionsError(null)
   }
 
+  const updateListField = (field: 'title' | 'subtitle', value: string) => {
+    setListFormDraft((current) => ({
+      ...current,
+      [field]: value,
+    }))
+    setSaveInfo(null)
+    setEditorError(null)
+  }
+
+  const updateListPrimaryActionField = (
+    field: keyof ListActionDraft,
+    value: string,
+  ) => {
+    setListFormDraft((current) => ({
+      ...current,
+      primaryAction: {
+        ...current.primaryAction,
+        [field]: value,
+      },
+    }))
+    setSaveInfo(null)
+    setEditorError(null)
+  }
+
+  const updateListViewField = (
+    index: number,
+    field: Exclude<
+      keyof ListViewDraft,
+      'default' | 'primaryAction' | 'queryFields' | 'searchFields'
+    >,
+    value: string,
+  ) => {
+    setListFormDraft((current) => {
+      if (!current.views[index]) {
+        return current
+      }
+
+      const nextViews = [...current.views]
+      nextViews[index] = {
+        ...nextViews[index],
+        [field]: value,
+      }
+
+      return {
+        ...current,
+        views: nextViews,
+      }
+    })
+
+    setSaveInfo(null)
+    setEditorError(null)
+  }
+
+  const updateListViewSelectionField = (
+    index: number,
+    field: 'queryFields' | 'searchFields',
+    value: string[],
+  ) => {
+    setListFormDraft((current) => {
+      if (!current.views[index]) {
+        return current
+      }
+
+      const nextViews = [...current.views]
+      nextViews[index] = {
+        ...nextViews[index],
+        [field]: value,
+      }
+
+      return {
+        ...current,
+        views: nextViews,
+      }
+    })
+    setSaveInfo(null)
+    setEditorError(null)
+  }
+
+  const updateListViewPrimaryActionField = (
+    index: number,
+    field: keyof ListActionDraft,
+    value: string,
+  ) => {
+    setListFormDraft((current) => {
+      if (!current.views[index]) {
+        return current
+      }
+
+      const nextViews = [...current.views]
+      nextViews[index] = {
+        ...nextViews[index],
+        primaryAction: {
+          ...nextViews[index].primaryAction,
+          [field]: value,
+        },
+      }
+
+      return {
+        ...current,
+        views: nextViews,
+      }
+    })
+    setSaveInfo(null)
+    setEditorError(null)
+  }
+
+  const toggleListViewDefault = (index: number, checked: boolean) => {
+    setListFormDraft((current) => {
+      const nextViews = current.views.map((view, currentIndex) => ({
+        ...view,
+        default: checked ? currentIndex === index : currentIndex === index ? false : view.default,
+      }))
+
+      return {
+        ...current,
+        views: nextViews,
+      }
+    })
+    setSaveInfo(null)
+    setEditorError(null)
+  }
+
+  const addListViewDraft = () => {
+    const nextViewIndex = listFormDraft.views.length
+    setListFormDraft((current) => ({
+      ...current,
+      views: [
+        ...current.views,
+        createEmptyListViewDraft(`view-${current.views.length + 1}`),
+      ],
+    }))
+    setSelectedListViewIndex(nextViewIndex)
+    setSaveInfo(null)
+    setEditorError(null)
+  }
+
+  const removeListViewDraft = (index: number) => {
+    setListFormDraft((current) => {
+      if (current.views.length <= 1 || !current.views[index]) {
+        return current
+      }
+
+      return {
+        ...current,
+        views: current.views.filter((_, currentIndex) => currentIndex !== index),
+      }
+    })
+    setSaveInfo(null)
+    setEditorError(null)
+  }
+
+  const handleSelectListView = (index: number) => {
+    setSelectedListViewIndex(index)
+  }
+
+  const applyListDraft = () => {
+    if (!selectedEntityConfig) {
+      return
+    }
+
+    try {
+      const parsedList = parseListFormDraft(
+        listFormDraft,
+        selectedEntityConfig.objectApiName ?? '',
+      )
+      const nextConfig = applySectionToEntityConfig(selectedEntityConfig, 'list', parsedList)
+      setSelectedEntityConfig(nextConfig)
+      setEditorError(null)
+      setSaveInfo('Sezione List applicata in locale')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Valori form non validi per la sezione List'
+      setEditorError(message)
+    }
+  }
+
+  const updateDetailDraft = (nextDraft: DetailFormDraft) => {
+    setDetailFormDraft(nextDraft)
+    setSaveInfo(null)
+    setEditorError(null)
+  }
+
+  const applyDetailDraft = () => {
+    if (!selectedEntityConfig) {
+      return
+    }
+
+    try {
+      const parsedDetail = parseDetailFormDraft(
+        detailFormDraft,
+        selectedEntityConfig.objectApiName ?? '',
+      )
+      const nextConfig = applySectionToEntityConfig(selectedEntityConfig, 'detail', parsedDetail)
+      setSelectedEntityConfig(nextConfig)
+      setEditorError(null)
+      setSaveInfo('Sezione Detail applicata in locale')
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Valori form non validi per la sezione Detail'
+      setEditorError(message)
+    }
+  }
+
   const saveSelectedEntityConfig = async () => {
     if (!selectedEntityConfig) {
       return
@@ -289,6 +529,17 @@ export function EntityAdminConfigPage() {
       setSaving(false)
     }
   }
+
+  useEffect(() => {
+    setSelectedListViewIndex((current) => {
+      if (listFormDraft.views.length === 0) {
+        return 0
+      }
+
+      const maxIndex = listFormDraft.views.length - 1
+      return current > maxIndex ? maxIndex : current
+    })
+  }, [listFormDraft.views.length])
 
   const canSearchObjectApiNameSuggestions =
     selectedSection === 'base' && selectedEntityConfig !== null
@@ -511,6 +762,31 @@ export function EntityAdminConfigPage() {
                 showSuggestions={shouldShowObjectApiNameSuggestions}
                 onSelectSuggestion={selectObjectApiNameSuggestion}
                 onApply={applyBaseDraft}
+              />
+            ) : selectedSection === 'list' ? (
+              <EntityConfigListForm
+                value={listFormDraft}
+                error={editorError}
+                baseObjectApiName={selectedEntityConfig.objectApiName ?? ''}
+                selectedViewIndex={selectedListViewIndex}
+                onChangeField={updateListField}
+                onChangePrimaryAction={updateListPrimaryActionField}
+                onSelectView={handleSelectListView}
+                onAddView={addListViewDraft}
+                onRemoveView={removeListViewDraft}
+                onChangeViewField={updateListViewField}
+                onChangeViewSelectionField={updateListViewSelectionField}
+                onChangeViewPrimaryAction={updateListViewPrimaryActionField}
+                onToggleViewDefault={toggleListViewDefault}
+                onApply={applyListDraft}
+              />
+            ) : selectedSection === 'detail' ? (
+              <EntityConfigDetailForm
+                value={detailFormDraft}
+                error={editorError}
+                baseObjectApiName={selectedEntityConfig.objectApiName ?? ''}
+                onChange={updateDetailDraft}
+                onApply={applyDetailDraft}
               />
             ) : (
               <EntityConfigSectionEditor
