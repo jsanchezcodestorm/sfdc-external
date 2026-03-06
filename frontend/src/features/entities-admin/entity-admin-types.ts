@@ -32,4 +32,15 @@ export type SalesforceObjectApiNameSuggestionResponse = {
   items: SalesforceObjectApiNameSuggestion[]
 }
 
+export type SalesforceObjectFieldSuggestion = {
+  name: string
+  label: string
+  type: string
+  filterable: boolean
+}
+
+export type SalesforceObjectFieldSuggestionResponse = {
+  items: SalesforceObjectFieldSuggestion[]
+}
+
 export type EntityConfigSectionKey = 'base' | 'list' | 'detail' | 'form'

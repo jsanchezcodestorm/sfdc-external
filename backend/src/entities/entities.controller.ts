@@ -8,6 +8,7 @@ import { AclGuard } from '../common/guards/acl.guard';
 
 import { GetEntityListDto } from './dto/get-entity-list.dto';
 import { GetEntityRelatedListDto } from './dto/get-entity-related-list.dto';
+import { SearchSalesforceObjectFieldsDto } from './dto/search-salesforce-object-fields.dto';
 import { SearchSalesforceObjectsDto } from './dto/search-salesforce-objects.dto';
 import { UpsertEntityAdminConfigDto } from './dto/upsert-entity-admin-config.dto';
 import { EntitiesService } from './entities.service';
@@ -46,6 +47,16 @@ export class EntitiesController {
   @AclResource('rest:entities-config-admin')
   searchSalesforceObjectApiNames(@Query() query: SearchSalesforceObjectsDto): Promise<unknown> {
     return this.entityAdminConfigService.searchSalesforceObjectApiNames(query.q, query.limit);
+  }
+
+  @Get('admin/configs/object-fields/suggestions')
+  @AclResource('rest:entities-config-admin')
+  searchSalesforceObjectFields(@Query() query: SearchSalesforceObjectFieldsDto): Promise<unknown> {
+    return this.entityAdminConfigService.searchSalesforceObjectFields(
+      query.objectApiName,
+      query.q,
+      query.limit
+    );
   }
 
   @Get(':entityId/config')

@@ -3,6 +3,7 @@ import type {
   EntityAdminConfigListResponse,
   EntityAdminConfigResponse,
   SalesforceObjectApiNameSuggestionResponse,
+  SalesforceObjectFieldSuggestionResponse,
 } from './entity-admin-types'
 import type { EntityConfig } from '../entities/entity-types'
 
@@ -42,5 +43,21 @@ export async function searchEntityAdminObjectApiNames(
 
   return apiFetch<SalesforceObjectApiNameSuggestionResponse>(
     `/entities/admin/configs/object-api-name/suggestions?${params.toString()}`,
+  )
+}
+
+export async function searchEntityAdminObjectFields(
+  objectApiName: string,
+  query: string,
+  limit = 20,
+): Promise<SalesforceObjectFieldSuggestionResponse> {
+  const params = new URLSearchParams({
+    objectApiName,
+    q: query,
+    limit: String(limit),
+  })
+
+  return apiFetch<SalesforceObjectFieldSuggestionResponse>(
+    `/entities/admin/configs/object-fields/suggestions?${params.toString()}`,
   )
 }
