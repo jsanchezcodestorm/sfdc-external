@@ -80,6 +80,8 @@ Regole:
 - i query template non contengono una policy autorizzativa propria
 - la risorsa ACL `query:<templateId>` va gestita nel modulo admin ACL o via migration
 - la UI admin dei template puo segnalare una risorsa ACL mancante, ma non la crea automaticamente
+- ogni esecuzione runtime produce anche un evento nel nuovo stream audit `query`
+- lo stream `query` salva il SOQL finale gia risolto e scoped, oltre a `baseWhere`/`finalWhere`, stato, contatori e metadati del template
 
 ## 6) Endpoint admin
 Endpoint disponibili:
@@ -104,3 +106,13 @@ Per aggiungere un nuovo template:
 - `400`: payload admin invalido, placeholder mancante, `limit` non valido
 - `403`: ACL o visibility negano l accesso
 - `404`: template non trovato
+
+## 9) Audit runtime query
+Per `POST /query/template/:templateId` il backend registra:
+- stream `visibility`: decisione finale ALLOW/DENY con reason code
+- stream `query`: esecuzione della query risolta con SOQL completo, `templateId`, parametri, campi selezionati, row count, durata e stato finale
+
+Regole operative:
+- l evento `query` viene creato solo dopo la compilazione/scoping finale del SOQL
+- errori di input o compilazione prima del SOQL finale non generano un evento `query`
+- in caso di failure Salesforce dopo un ALLOW visibility, restano tracciati sia `visibility` sia `query`

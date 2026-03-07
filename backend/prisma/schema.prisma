@@ -171,6 +171,39 @@ model ApplicationAuditLog {
   @@map("application_audit_log")
 }
 
+model QueryAuditLog {
+  id            BigInt                 @id @default(autoincrement())
+  requestId     String                 @db.VarChar(64)
+  createdAt     DateTime               @default(now())
+  completedAt   DateTime?
+  contactId     String                 @db.VarChar(18)
+  queryKind     String                 @db.VarChar(64)
+  targetId      String                 @db.VarChar(128)
+  objectApiName String                 @db.VarChar(128)
+  recordId      String?                @db.VarChar(18)
+  status        ApplicationAuditStatus
+  resolvedSoql  String                 @db.Text
+  baseWhere     String                 @db.Text
+  baseWhereHash String                 @db.VarChar(128)
+  finalWhere    String                 @db.Text
+  finalWhereHash String                @db.VarChar(128)
+  rowCount      Int
+  durationMs    Int
+  errorCode     String?                @db.VarChar(128)
+  metadataJson  Json?
+  resultJson    Json?
+
+  @@index([createdAt])
+  @@index([requestId])
+  @@index([contactId, createdAt])
+  @@index([queryKind, createdAt])
+  @@index([status, createdAt])
+  @@index([targetId, createdAt])
+  @@index([objectApiName, createdAt])
+  @@index([recordId, createdAt])
+  @@map("query_audit_log")
+}
+
 model SalesforceSObjectDescribeCache {
   cacheKey      String   @id @db.VarChar(64)
   cacheScope    String   @db.VarChar(512)

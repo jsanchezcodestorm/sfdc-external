@@ -239,6 +239,34 @@ Retention:
 - dettaglio audit: 180 giorni
 - aggregati: 24 mesi
 
+### 16.3 Audit query runtime (post-visibility)
+Scope:
+- query SOQL runtime gia risolte e scoped, eseguite dopo un esito `ALLOW` del gateway auth/ACL/visibility
+
+Campi minimi:
+- `request_id`
+- `created_at`
+- `completed_at`
+- `contact_id`
+- `query_kind`
+- `target_id`
+- `object_api_name`
+- `record_id` (nullable)
+- `status` (`PENDING|SUCCESS|FAILURE`)
+- `resolved_soql`
+- `base_where`
+- `base_where_hash`
+- `final_where`
+- `final_where_hash`
+- `row_count`
+- `duration_ms`
+- `error_code`
+
+Regole:
+- lo stream `query` e separato da `application`
+- il SOQL completo puo essere persistito solo per gli stream esplicitamente approvati; per questo runtime la persistenza completa e voluta
+- ogni failure Salesforce successiva a un `ALLOW` visibility deve lasciare evidenza sia nello stream `visibility` sia nello stream `query`
+
 ## 17) Cache security e propagation SLA
 Regole:
 - cache keyed by utente/perms/recordType/oggetto/versione policy

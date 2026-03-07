@@ -62,6 +62,27 @@ export interface ApplicationAuditSuccessInput {
   status?: Exclude<ApplicationAuditStatus, 'PENDING'>;
 }
 
+export interface QueryAuditIntentInput {
+  contactId?: string;
+  queryKind: string;
+  targetId: string;
+  objectApiName: string;
+  recordId?: string;
+  resolvedSoql: string;
+  baseWhere?: string;
+  finalWhere?: string;
+  metadata?: unknown;
+}
+
+export interface QueryAuditOutcomeInput {
+  auditId: bigint;
+  status: ApplicationAuditStatus;
+  rowCount: number;
+  durationMs: number;
+  result?: unknown;
+  errorCode?: string;
+}
+
 export interface CursorPageResponse<T> {
   items: T[];
   nextCursor: string | null;
@@ -125,6 +146,32 @@ export interface ApplicationAuditSummary {
 
 export interface ApplicationAuditDetail extends ApplicationAuditSummary {
   payloadHash: string;
+  metadata: Prisma.JsonValue | null;
+  result: Prisma.JsonValue | null;
+}
+
+export interface QueryAuditSummary {
+  id: string;
+  requestId: string;
+  createdAt: string;
+  completedAt: string | null;
+  contactId: string;
+  queryKind: string;
+  targetId: string;
+  objectApiName: string;
+  recordId: string | null;
+  status: ApplicationAuditStatus;
+  rowCount: number;
+  durationMs: number;
+  errorCode: string | null;
+}
+
+export interface QueryAuditDetail extends QueryAuditSummary {
+  resolvedSoql: string;
+  baseWhere: string;
+  baseWhereHash: string;
+  finalWhere: string;
+  finalWhereHash: string;
   metadata: Prisma.JsonValue | null;
   result: Prisma.JsonValue | null;
 }

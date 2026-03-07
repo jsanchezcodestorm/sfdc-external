@@ -111,3 +111,30 @@ export class ListApplicationAuditDto extends ListAuditBaseDto {
   @MaxLength(128)
   objectApiName?: string;
 }
+
+export class ListQueryAuditDto extends ListAuditBaseDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  queryKind?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsIn(APP_STATUSES)
+  status?: (typeof APP_STATUSES)[number];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  targetId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  objectApiName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(18)
+  recordId?: string;
+}

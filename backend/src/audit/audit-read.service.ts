@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import type {
   ApplicationAuditLog,
   Prisma,
+  QueryAuditLog,
   SecurityAuditLog,
   VisibilityAuditLog,
   VisibilityDecision,
@@ -13,6 +14,8 @@ import type {
   ApplicationAuditDetail,
   ApplicationAuditSummary,
   CursorPageResponse,
+  QueryAuditDetail,
+  QueryAuditSummary,
   SecurityAuditDetail,
   SecurityAuditSummary,
   VisibilityAuditDetail,
@@ -20,6 +23,7 @@ import type {
 } from './audit.types';
 import type {
   ListApplicationAuditDto,
+  ListQueryAuditDto,
   ListSecurityAuditDto,
   ListVisibilityAuditDto,
 } from './dto/list-audit.dto';
@@ -127,6 +131,40 @@ export class AuditReadService {
     };
   }
 
+  async listQueryAudit(
+    query: ListQueryAuditDto,
+  ): Promise<CursorPageResponse<QueryAuditSummary>> {
+    const limit = query.limit ?? 50;
+    const rows = await this.prismaService.queryAuditLog.findMany({
+      where: this.buildQueryWhere(query),
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: limit + 1,
+    });
+
+    return this.paginate(rows, limit, (row) => this.mapQuerySummary(row));
+  }
+
+  async getQueryAudit(id: string): Promise<QueryAuditDetail> {
+    const row = await this.prismaService.queryAuditLog.findUnique({
+      where: { id: this.parseId(id) },
+    });
+
+    if (!row) {
+      throw new NotFoundException(`Query audit ${id} not found`);
+    }
+
+    return {
+      ...this.mapQuerySummary(row),
+      resolvedSoql: row.resolvedSoql,
+      baseWhere: row.baseWhere,
+      baseWhereHash: row.baseWhereHash,
+      finalWhere: row.finalWhere,
+      finalWhereHash: row.finalWhereHash,
+      metadata: row.metadataJson,
+      result: row.resultJson,
+    };
+  }
+
   private mapSecuritySummary(
     row: SecurityAuditLog,
   ): SecurityAuditSummary {
@@ -179,6 +217,24 @@ export class AuditReadService {
     };
   }
 
+  private mapQuerySummary(row: QueryAuditLog): QueryAuditSummary {
+    return {
+      id: row.id.toString(),
+      requestId: row.requestId,
+      createdAt: row.createdAt.toISOString(),
+      completedAt: row.completedAt?.toISOString() ?? null,
+      contactId: row.contactId,
+      queryKind: row.queryKind,
+      targetId: row.targetId,
+      objectApiName: row.objectApiName,
+      recordId: row.recordId,
+      status: row.status,
+      rowCount: row.rowCount,
+      durationMs: row.durationMs,
+      errorCode: row.errorCode,
+    };
+  }
+
   private buildSecurityWhere(query: ListSecurityAuditDto): Prisma.SecurityAuditLogWhereInput {
     return {
       AND: [
@@ -222,6 +278,19 @@ export class AuditReadService {
         query.status ? { status: query.status } : {},
         query.targetType ? { targetType: query.targetType.trim() } : {},
         query.objectApiName ? { objectApiName: query.objectApiName.trim() } : {},
+      ],
+    };
+  }
+
+  private buildQueryWhere(query: ListQueryAuditDto): Prisma.QueryAuditLogWhereInput {
+    return {
+      AND: [
+        ...(this.buildBaseWhere(query) as Prisma.QueryAuditLogWhereInput[]),
+        query.queryKind ? { queryKind: query.queryKind.trim() } : {},
+        query.status ? { status: query.status } : {},
+        query.targetId ? { targetId: query.targetId.trim() } : {},
+        query.objectApiName ? { objectApiName: query.objectApiName.trim() } : {},
+        query.recordId ? { recordId: query.recordId.trim() } : {},
       ],
     };
   }

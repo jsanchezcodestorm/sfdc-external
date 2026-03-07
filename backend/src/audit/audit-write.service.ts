@@ -14,6 +14,8 @@ import type {
   ApplicationAuditIntentInput,
   ApplicationAuditOutcomeInput,
   ApplicationAuditSuccessInput,
+  QueryAuditIntentInput,
+  QueryAuditOutcomeInput,
   SecurityAuditWriteInput,
   VisibilityAuditWriteInput,
 } from './audit.types';
@@ -195,6 +197,67 @@ export class AuditWriteService {
     }
   }
 
+  async createQueryAuditIntentOrThrow(input: QueryAuditIntentInput): Promise<bigint> {
+    const normalizedBaseWhere = input.baseWhere?.trim() ?? '';
+    const normalizedFinalWhere = input.finalWhere?.trim() ?? '';
+
+    try {
+      const created = await this.prismaService.queryAuditLog.create({
+        data: {
+          requestId: this.requestContextService.getRequestId(),
+          contactId: input.contactId ?? this.requestContextService.get()?.userContactId ?? 'unknown',
+          queryKind: input.queryKind,
+          targetId: input.targetId,
+          objectApiName: input.objectApiName,
+          recordId: input.recordId ?? null,
+          status: 'PENDING',
+          resolvedSoql: input.resolvedSoql,
+          baseWhere: normalizedBaseWhere,
+          baseWhereHash: this.hashText(normalizedBaseWhere),
+          finalWhere: normalizedFinalWhere,
+          finalWhereHash: this.hashText(normalizedFinalWhere),
+          rowCount: 0,
+          durationMs: 0,
+          metadataJson: this.normalizeJson(input.metadata),
+          resultJson: Prisma.JsonNull,
+          errorCode: null,
+        },
+      });
+
+      return created.id;
+    } catch (error) {
+      this.logger.error(
+        `Failed to persist query audit intent ${input.queryKind}/${input.targetId}: ${
+          error instanceof Error ? error.message : 'unknown error'
+        }`,
+      );
+      throw new ServiceUnavailableException('Unable to persist query audit event');
+    }
+  }
+
+  async completeQueryAuditOrThrow(input: QueryAuditOutcomeInput): Promise<void> {
+    try {
+      await this.prismaService.queryAuditLog.update({
+        where: { id: input.auditId },
+        data: {
+          status: input.status,
+          completedAt: new Date(),
+          rowCount: Math.max(0, input.rowCount),
+          durationMs: Math.max(0, input.durationMs),
+          errorCode: input.errorCode ?? null,
+          resultJson: this.normalizeJson(input.result),
+        },
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to finalize query audit ${input.auditId.toString()}: ${
+          error instanceof Error ? error.message : 'unknown error'
+        }`,
+      );
+      throw new ServiceUnavailableException('Unable to finalize query audit event');
+    }
+  }
+
   hashPayload(value: unknown): string {
     return this.hashText(JSON.stringify(this.normalizeUnknown(value)));
   }
@@ -256,7 +319,7 @@ export class AuditWriteService {
     }
 
     const entries = Object.entries(value as Record<string, unknown>)
-      .filter(([key]) => !this.isSensitiveKey(key))
+      .filter(([key, entry]) => entry !== undefined && !this.isSensitiveKey(key))
       .slice(0, 50)
       .map(([key, entry]) => [key, this.normalizeUnknown(entry)] as const);
 

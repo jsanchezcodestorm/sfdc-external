@@ -9,6 +9,8 @@ function createAuditWriteService() {
   const visibilityCreateCalls: Array<Record<string, unknown>> = [];
   const applicationCreateCalls: Array<Record<string, unknown>> = [];
   const applicationUpdateCalls: Array<Record<string, unknown>> = [];
+  const queryCreateCalls: Array<Record<string, unknown>> = [];
+  const queryUpdateCalls: Array<Record<string, unknown>> = [];
 
   const configService = {
     get(key: string, fallback?: string) {
@@ -43,6 +45,16 @@ function createAuditWriteService() {
         return args;
       },
     },
+    queryAuditLog: {
+      async create(args: { data: Record<string, unknown> }) {
+        queryCreateCalls.push(args.data);
+        return { id: 99n, ...args.data };
+      },
+      async update(args: Record<string, unknown>) {
+        queryUpdateCalls.push(args);
+        return args;
+      },
+    },
   };
 
   const requestContextService = new RequestContextService();
@@ -60,6 +72,8 @@ function createAuditWriteService() {
       visibilityCreateCalls,
       applicationCreateCalls,
       applicationUpdateCalls,
+      queryCreateCalls,
+      queryUpdateCalls,
     },
   };
 }
@@ -171,4 +185,67 @@ test('completeApplicationAuditOrThrow updates status and result payload', async 
   };
   assert.equal(updateCall.where.id, 42n);
   assert.equal(updateCall.data.status, 'SUCCESS');
+});
+
+test('createQueryAuditIntentOrThrow stores resolved SOQL and WHERE hashes', async () => {
+  const { auditWriteService, requestContextService, calls } = createAuditWriteService();
+  const { req, res } = createHttpContext('req-789');
+
+  const auditId = await new Promise<bigint>((resolve, reject) => {
+    requestContextService.run(req as never, res as never, () => {
+      requestContextService.setUser({
+        sub: '003000000000003',
+        email: 'query@example.com',
+        permissions: ['PORTAL_ADMIN'],
+      });
+
+      void auditWriteService
+        .createQueryAuditIntentOrThrow({
+          queryKind: 'ENTITY_LIST',
+          targetId: 'account',
+          objectApiName: 'Account',
+          resolvedSoql: 'SELECT Id FROM Account',
+          baseWhere: "Name LIKE 'Acme%'",
+          finalWhere: "(Name LIKE 'Acme%') AND (OwnerId = '005')",
+          metadata: {
+            entityId: 'account',
+            page: 2,
+          },
+        })
+        .then(resolve, reject);
+    });
+  });
+
+  assert.equal(auditId, 99n);
+  assert.equal(calls.queryCreateCalls.length, 1);
+  assert.equal(calls.queryCreateCalls[0].requestId, 'req-789');
+  assert.equal(calls.queryCreateCalls[0].contactId, '003000000000003');
+  assert.equal(calls.queryCreateCalls[0].resolvedSoql, 'SELECT Id FROM Account');
+  assert.equal(calls.queryCreateCalls[0].baseWhere, "Name LIKE 'Acme%'");
+  assert.equal(calls.queryCreateCalls[0].finalWhere, "(Name LIKE 'Acme%') AND (OwnerId = '005')");
+  assert.notEqual(calls.queryCreateCalls[0].baseWhereHash, "Name LIKE 'Acme%'");
+  assert.notEqual(calls.queryCreateCalls[0].finalWhereHash, "(Name LIKE 'Acme%') AND (OwnerId = '005')");
+});
+
+test('completeQueryAuditOrThrow updates status, counters and result payload', async () => {
+  const { auditWriteService, calls } = createAuditWriteService();
+
+  await auditWriteService.completeQueryAuditOrThrow({
+    auditId: 99n,
+    status: 'FAILURE',
+    rowCount: 0,
+    durationMs: 17,
+    errorCode: 'QUERY_FAILED',
+    result: { message: 'boom' },
+  });
+
+  assert.equal(calls.queryUpdateCalls.length, 1);
+  const updateCall = calls.queryUpdateCalls[0] as {
+    where: { id: bigint }
+    data: { status: string; durationMs: number; errorCode: string }
+  };
+  assert.equal(updateCall.where.id, 99n);
+  assert.equal(updateCall.data.status, 'FAILURE');
+  assert.equal(updateCall.data.durationMs, 17);
+  assert.equal(updateCall.data.errorCode, 'QUERY_FAILED');
 });

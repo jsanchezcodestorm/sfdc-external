@@ -7,6 +7,7 @@ import { AclGuard } from '../common/guards/acl.guard';
 import { AuditReadService } from './audit-read.service';
 import {
   ListApplicationAuditDto,
+  ListQueryAuditDto,
   ListSecurityAuditDto,
   ListVisibilityAuditDto,
 } from './dto/list-audit.dto';
@@ -50,5 +51,17 @@ export class AuditController {
   @AclResource('rest:audit-read')
   getApplication(@Param('id') id: string): Promise<unknown> {
     return this.auditReadService.getApplicationAudit(id);
+  }
+
+  @Get('query')
+  @AclResource('rest:audit-read')
+  listQuery(@Query() query: ListQueryAuditDto): Promise<unknown> {
+    return this.auditReadService.listQueryAudit(query);
+  }
+
+  @Get('query/:id')
+  @AclResource('rest:audit-read')
+  getQuery(@Param('id') id: string): Promise<unknown> {
+    return this.auditReadService.getQueryAudit(id);
   }
 }

@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 
 import { AuditWriteService } from '../audit/audit-write.service';
+import { QueryAuditService } from '../audit/query-audit.service';
 import type { SessionUser } from '../auth/session-user.interface';
 import { ResourceAccessService } from '../common/services/resource-access.service';
 import { SalesforceService } from '../salesforce/salesforce.service';
@@ -149,6 +150,7 @@ interface EntityRelatedListResponse {
 export class EntitiesService {
   constructor(
     private readonly auditWriteService: AuditWriteService,
+    private readonly queryAuditService: QueryAuditService,
     private readonly resourceAccessService: ResourceAccessService,
     private readonly entityConfigRepository: EntityConfigRepository,
     private readonly salesforceService: SalesforceService,
@@ -218,18 +220,25 @@ export class EntitiesService {
       extraFields: lookupProjectionFields,
       visibility
     });
-
-    const startedAt = Date.now();
-    const rawQueryResult = await this.salesforceService.executeReadOnlyQuery(scopedQuery.soql);
-    const { records, totalSize } = this.extractRecords(rawQueryResult);
-    await this.visibilityService.recordAudit({
-      evaluation: visibility,
+    const rawQueryResult = await this.queryAuditService.executeReadOnlyQueryWithAudit({
+      contactId: user.sub,
       queryKind: 'ENTITY_LIST',
+      targetId: entityId,
+      objectApiName: selectedView.query.object,
+      resolvedSoql: scopedQuery.soql,
+      visibility,
       baseWhere: scopedQuery.baseWhere,
       finalWhere: scopedQuery.finalWhere,
-      rowCount: records.length,
-      durationMs: Date.now() - startedAt
+      metadata: {
+        entityId,
+        viewId: selectedView.id,
+        page,
+        pageSize,
+        search,
+        selectedFields: scopedQuery.selectFields,
+      }
     });
+    const { records, totalSize } = this.extractRecords(rawQueryResult);
 
     return {
       title: listConfig.title,
@@ -287,17 +296,22 @@ export class EntitiesService {
       extraFields: lookupProjectionFields,
       visibility
     });
-    const startedAt = Date.now();
-    const rawQueryResult = await this.salesforceService.executeReadOnlyQuery(scopedQuery.soql);
-    const { records } = this.extractRecords(rawQueryResult);
-    await this.visibilityService.recordAudit({
-      evaluation: visibility,
+    const rawQueryResult = await this.queryAuditService.executeReadOnlyQueryWithAudit({
+      contactId: user.sub,
       queryKind: 'ENTITY_DETAIL',
+      targetId: entityId,
+      objectApiName: detailConfig.query.object,
+      recordId,
+      resolvedSoql: scopedQuery.soql,
+      visibility,
       baseWhere: scopedQuery.baseWhere,
       finalWhere: scopedQuery.finalWhere,
-      rowCount: records.length,
-      durationMs: Date.now() - startedAt
+      metadata: {
+        entityId,
+        selectedFields: scopedQuery.selectFields,
+      }
     });
+    const { records } = this.extractRecords(rawQueryResult);
 
     if (records.length === 0) {
       throw new NotFoundException(`Record ${recordId} not found`);
@@ -384,18 +398,23 @@ export class EntitiesService {
       forcedLimit: 1,
       visibility
     });
-
-    const startedAt = Date.now();
-    const rawQueryResult = await this.salesforceService.executeReadOnlyQuery(scopedQuery.soql);
-    const { records } = this.extractRecords(rawQueryResult);
-    await this.visibilityService.recordAudit({
-      evaluation: visibility,
+    const rawQueryResult = await this.queryAuditService.executeReadOnlyQueryWithAudit({
+      contactId: user.sub,
       queryKind: 'ENTITY_FORM',
+      targetId: entityId,
+      objectApiName: formConfig.query.object,
+      recordId,
+      resolvedSoql: scopedQuery.soql,
+      visibility,
       baseWhere: scopedQuery.baseWhere,
       finalWhere: scopedQuery.finalWhere,
-      rowCount: records.length,
-      durationMs: Date.now() - startedAt
+      metadata: {
+        entityId,
+        recordId,
+        selectedFields: scopedQuery.selectFields,
+      }
     });
+    const { records } = this.extractRecords(rawQueryResult);
 
     if (records.length === 0) {
       throw new NotFoundException(`Record ${recordId} not found`);
@@ -460,17 +479,26 @@ export class EntitiesService {
       extraFields: lookupProjectionFields,
       visibility
     });
-    const startedAt = Date.now();
-    const rawQueryResult = await this.salesforceService.executeReadOnlyQuery(scopedQuery.soql);
-    const { records, totalSize } = this.extractRecords(rawQueryResult);
-    await this.visibilityService.recordAudit({
-      evaluation: visibility,
+    const rawQueryResult = await this.queryAuditService.executeReadOnlyQueryWithAudit({
+      contactId: user.sub,
       queryKind: 'ENTITY_RELATED_LIST',
+      targetId: entityId,
+      objectApiName: relatedList.query.object,
+      recordId,
+      resolvedSoql: scopedQuery.soql,
+      visibility,
       baseWhere: scopedQuery.baseWhere,
       finalWhere: scopedQuery.finalWhere,
-      rowCount: records.length,
-      durationMs: Date.now() - startedAt
+      metadata: {
+        entityId,
+        relatedListId,
+        recordId,
+        page,
+        pageSize,
+        selectedFields: scopedQuery.selectFields,
+      }
     });
+    const { records, totalSize } = this.extractRecords(rawQueryResult);
 
     return {
       relatedList,
