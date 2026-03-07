@@ -23,11 +23,8 @@ type EntityConfigBaseFormProps = {
   suggestionsError: string | null
   showSuggestions: boolean
   onSelectSuggestion: (objectApiName: string) => void
-  onApply: () => void
   eyebrow?: string
   title?: string
-  applyLabel?: string
-  showApplyButton?: boolean
   disableIdField?: boolean
   idHelperText?: string
 }
@@ -41,32 +38,20 @@ export function EntityConfigBaseForm({
   suggestionsError,
   showSuggestions,
   onSelectSuggestion,
-  onApply,
   eyebrow = 'Form',
   title = 'Sezione BASE',
-  applyLabel = 'Applica Modifiche Base',
-  showApplyButton = true,
   disableIdField = false,
   idHelperText,
 }: EntityConfigBaseFormProps) {
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div>
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
             {eyebrow}
           </p>
           <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
         </div>
-        {showApplyButton ? (
-          <button
-            type="button"
-            onClick={onApply}
-            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
-          >
-            {applyLabel}
-          </button>
-        ) : null}
       </div>
 
       <div className="mt-4 grid gap-4 md:grid-cols-2">

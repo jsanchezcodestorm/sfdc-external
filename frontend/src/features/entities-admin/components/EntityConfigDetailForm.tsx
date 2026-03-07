@@ -12,7 +12,6 @@ type EntityConfigDetailFormProps = {
   error: string | null
   baseObjectApiName: string
   onChange: (value: DetailFormDraft) => void
-  onApply: () => void
 }
 
 export function EntityConfigDetailForm({
@@ -20,7 +19,6 @@ export function EntityConfigDetailForm({
   error,
   baseObjectApiName,
   onChange,
-  onApply,
 }: EntityConfigDetailFormProps) {
   const updateField = (
     field: keyof DetailFormDraft,
@@ -34,20 +32,13 @@ export function EntityConfigDetailForm({
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div>
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
             Form
           </p>
           <h2 className="text-lg font-semibold text-slate-900">Sezione DETAIL</h2>
         </div>
-        <button
-          type="button"
-          onClick={onApply}
-          className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
-        >
-          Applica Modifiche Detail
-        </button>
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-2">

@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from 'react-router-dom'
+import { Navigate, Route, RouterProvider, createHashRouter, createRoutesFromElements } from 'react-router-dom'
 import { AdminShell } from './components/AdminShell'
 import { AppShell } from './components/AppShell'
 import { RequireAuth } from './features/auth/components/RequireAuth'
@@ -43,9 +43,9 @@ import { VisibilityRulesPage } from './features/visibility-admin/pages/Visibilit
 import { HomePage } from './pages/HomePage'
 import { LoginPage } from './pages/LoginPage'
 
-function App() {
-  return (
-    <Routes>
+const router = createHashRouter(
+  createRoutesFromElements(
+    <>
       <Route path="/login" element={<LoginPage />} />
 
       <Route element={<AppShell />}>
@@ -145,8 +145,12 @@ function App() {
           element={<Navigate replace to="/" />}
         />
       </Route>
-    </Routes>
-  )
+    </>,
+  ),
+)
+
+function App() {
+  return <RouterProvider router={router} />
 }
 
 export default App

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useLocation, useNavigate, useParams } from 'react-router-dom'
+import { matchPath, useBeforeUnload, useBlocker, useLocation, useNavigate, useParams } from 'react-router-dom'
 
 import type { EntityConfig } from '../../entities/entity-types'
 import {
@@ -20,6 +20,7 @@ import {
   buildEntityCreatePath,
   buildEntityEditPath,
   buildEntityViewPath,
+  ENTITY_CONFIG_SECTION_LABELS,
   isEntityConfigSection,
   NEW_ENTITY_SENTINEL,
 } from '../entity-admin-routing'
@@ -83,6 +84,8 @@ export function EntityAdminConfigPage() {
     createEmptyDetailFormDraft(),
   )
   const [formFormDraft, setFormFormDraft] = useState<FormFormDraft>(createEmptyFormDraft())
+  const [persistedDraftSnapshot, setPersistedDraftSnapshot] =
+    useState<EntityConfigDraftSnapshot | null>(null)
   const [selectedListViewIndex, setSelectedListViewIndex] = useState(0)
   const [resourceQuery, setResourceQuery] = useState('')
   const [objectApiNameSearchInput, setObjectApiNameSearchInput] = useState('')
@@ -121,6 +124,28 @@ export function EntityAdminConfigPage() {
         .includes(normalizedQuery),
     )
   }, [entities, resourceQuery])
+
+  const hasUnsavedChanges = useMemo(() => {
+    if (!isEditRoute || persistedDraftSnapshot === null) {
+      return false
+    }
+
+    return (
+      serializeDraftSnapshot({
+        base: baseFormDraft,
+        list: listFormDraft,
+        detail: detailFormDraft,
+        form: formFormDraft,
+      }) !== serializeDraftSnapshot(persistedDraftSnapshot)
+    )
+  }, [
+    baseFormDraft,
+    detailFormDraft,
+    formFormDraft,
+    isEditRoute,
+    listFormDraft,
+    persistedDraftSnapshot,
+  ])
 
   const refreshEntityList = useCallback(async () => {
     setLoadingList(true)
@@ -206,6 +231,7 @@ export function EntityAdminConfigPage() {
       setListFormDraft(createEmptyListFormDraft())
       setDetailFormDraft(createEmptyDetailFormDraft())
       setFormFormDraft(createEmptyFormDraft())
+      setPersistedDraftSnapshot(null)
       setSelectedListViewIndex(0)
       setObjectApiNameSearchInput('')
       setObjectApiNameSuggestions([])
@@ -213,10 +239,12 @@ export function EntityAdminConfigPage() {
       return
     }
 
-    setBaseFormDraft(createBaseFormDraft(selectedEntityConfig))
-    setListFormDraft(createListFormDraft(selectedEntityConfig.list))
-    setDetailFormDraft(createDetailFormDraft(selectedEntityConfig.detail))
-    setFormFormDraft(createFormDraft(selectedEntityConfig.form))
+    const snapshot = createDraftSnapshot(selectedEntityConfig)
+    setBaseFormDraft(snapshot.base)
+    setListFormDraft(snapshot.list)
+    setDetailFormDraft(snapshot.detail)
+    setFormFormDraft(snapshot.form)
+    setPersistedDraftSnapshot(snapshot)
     setSelectedListViewIndex(0)
     setObjectApiNameSearchInput('')
     setObjectApiNameSuggestions([])
@@ -237,6 +265,61 @@ export function EntityAdminConfigPage() {
   useEffect(() => {
     setSaveInfo(null)
   }, [activeSection, isCreateRoute, isEditRoute, selectedEntityId])
+
+  const shouldBlockDirtyNavigation = useCallback(
+    ({
+      currentLocation,
+      nextLocation,
+    }: {
+      currentLocation: { pathname: string; search: string; hash: string }
+      nextLocation: { pathname: string; search: string; hash: string }
+    }) => {
+      if (!isEditRoute || !selectedEntityId || !hasUnsavedChanges || saving) {
+        return false
+      }
+
+      if (
+        currentLocation.pathname === nextLocation.pathname &&
+        currentLocation.search === nextLocation.search &&
+        currentLocation.hash === nextLocation.hash
+      ) {
+        return false
+      }
+
+      return !isSameEntityEditSessionPath(nextLocation.pathname, selectedEntityId)
+    },
+    [hasUnsavedChanges, isEditRoute, saving, selectedEntityId],
+  )
+
+  const navigationBlocker = useBlocker(shouldBlockDirtyNavigation)
+
+  useEffect(() => {
+    if (navigationBlocker.state !== 'blocked') {
+      return
+    }
+
+    const shouldLeave = window.confirm('Hai modifiche non salvate. Vuoi uscire e perderle?')
+    if (shouldLeave) {
+      navigationBlocker.proceed()
+      return
+    }
+
+    navigationBlocker.reset()
+  }, [navigationBlocker])
+
+  useBeforeUnload(
+    useCallback(
+      (event: BeforeUnloadEvent) => {
+        if (!isEditRoute || !hasUnsavedChanges || saving) {
+          return
+        }
+
+        event.preventDefault()
+        event.returnValue = ''
+      },
+      [hasUnsavedChanges, isEditRoute, saving],
+    ),
+  )
 
   const canSearchObjectApiNameSuggestions =
     (isCreateRoute || isEditRoute) && activeSection === 'base' && selectedEntityConfig !== null
@@ -327,33 +410,6 @@ export function EntityAdminConfigPage() {
 
     setSaveInfo(null)
     setEditorError(null)
-  }
-
-  const applyBaseDraft = () => {
-    if (!selectedEntityConfig) {
-      return
-    }
-
-    const parsedSection = {
-      id: baseFormDraft.id,
-      label: baseFormDraft.label,
-      description: baseFormDraft.description,
-      objectApiName: baseFormDraft.objectApiName,
-      navigation: {
-        basePath: baseFormDraft.basePath,
-      },
-    }
-
-    try {
-      const nextConfig = applySectionToEntityConfig(selectedEntityConfig, 'base', parsedSection)
-      setSelectedEntityConfig(nextConfig)
-      setEditorError(null)
-      setSaveInfo('Sezione Base applicata in locale')
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'Valori form non validi per la sezione Base'
-      setEditorError(message)
-    }
   }
 
   const selectObjectApiNameSuggestion = (value: string) => {
@@ -518,72 +574,10 @@ export function EntityAdminConfigPage() {
     setSelectedListViewIndex(index)
   }
 
-  const applyListDraft = () => {
-    if (!selectedEntityConfig) {
-      return
-    }
-
-    try {
-      const parsedList = parseListFormDraft(
-        listFormDraft,
-        selectedEntityConfig.objectApiName ?? '',
-      )
-      const nextConfig = applySectionToEntityConfig(selectedEntityConfig, 'list', parsedList)
-      setSelectedEntityConfig(nextConfig)
-      setEditorError(null)
-      setSaveInfo('Sezione List applicata in locale')
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Valori form non validi per la sezione List'
-      setEditorError(message)
-    }
-  }
-
   const updateDetailDraft = (nextDraft: DetailFormDraft) => {
     setDetailFormDraft(nextDraft)
     setSaveInfo(null)
     setEditorError(null)
-  }
-
-  const applyDetailDraft = () => {
-    if (!selectedEntityConfig) {
-      return
-    }
-
-    try {
-      const parsedDetail = parseDetailFormDraft(
-        detailFormDraft,
-        selectedEntityConfig.objectApiName ?? '',
-      )
-      const nextConfig = applySectionToEntityConfig(selectedEntityConfig, 'detail', parsedDetail)
-      setSelectedEntityConfig(nextConfig)
-      setEditorError(null)
-      setSaveInfo('Sezione Detail applicata in locale')
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'Valori form non validi per la sezione Detail'
-      setEditorError(message)
-    }
-  }
-
-  const applyFormDraft = () => {
-    if (!selectedEntityConfig) {
-      return
-    }
-
-    try {
-      const parsedForm = parseFormDraft(
-        formFormDraft,
-        selectedEntityConfig.objectApiName ?? '',
-      )
-      const nextConfig = applySectionToEntityConfig(selectedEntityConfig, 'form', parsedForm)
-      setSelectedEntityConfig(nextConfig)
-      setEditorError(null)
-      setSaveInfo('Sezione Form applicata in locale')
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'Valori form non validi per la sezione Form'
-      setEditorError(message)
-    }
   }
 
   const saveSelectedEntityConfig = async () => {
@@ -591,15 +585,35 @@ export function EntityAdminConfigPage() {
       return
     }
 
+    let nextConfig: EntityConfig
+
+    try {
+      nextConfig = buildEntityConfigFromDrafts(selectedEntityConfig, {
+        base: baseFormDraft,
+        list: listFormDraft,
+        detail: detailFormDraft,
+        form: formFormDraft,
+      })
+      setEditorError(null)
+    } catch (error) {
+      const validationError = normalizeDraftValidationError(error)
+      setPageError(null)
+      setSaveInfo(null)
+      setEditorError(validationError.message)
+
+      if (selectedEntityId && validationError.section !== activeSection) {
+        navigate(buildEntityEditPath(selectedEntityId, validationError.section))
+      }
+      return
+    }
+
     setSaving(true)
     setSaveInfo(null)
     setPageError(null)
+    setEditorError(null)
 
     try {
-      const payload = await updateEntityAdminConfig(
-        selectedEntityConfig.id,
-        selectedEntityConfig,
-      )
+      const payload = await updateEntityAdminConfig(selectedEntityConfig.id, nextConfig)
       setSelectedEntityConfig(payload.entity)
       setAclResourceConfigured(payload.aclResourceConfigured)
       setSaveInfo('Configurazione salvata')
@@ -618,11 +632,7 @@ export function EntityAdminConfigPage() {
     const nextConfig = createEntityConfigFromBaseDraft(baseFormDraft)
 
     if (!nextConfig) {
-      setEditorError(
-        baseFormDraft.id.trim() === NEW_ENTITY_SENTINEL
-          ? `Entity Id non puo essere ${NEW_ENTITY_SENTINEL}`
-          : 'Compila id, label e objectApiName per creare la entity',
-      )
+      setEditorError(getBaseDraftValidationMessage(baseFormDraft, 'creare'))
       return
     }
 
@@ -737,7 +747,12 @@ export function EntityAdminConfigPage() {
               </button>
             </div>
           ) : isEditRoute && selectedEntityId ? (
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              {hasUnsavedChanges ? (
+                <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-amber-800">
+                  Modifiche non salvate
+                </span>
+              ) : null}
               <button
                 type="button"
                 onClick={() => navigate(buildEntityViewPath(selectedEntityId))}
@@ -806,10 +821,8 @@ export function EntityAdminConfigPage() {
             suggestionsError={objectApiNameSuggestionsError}
             showSuggestions={shouldShowObjectApiNameSuggestions}
             onSelectSuggestion={selectObjectApiNameSuggestion}
-            onApply={applyBaseDraft}
             eyebrow="Create"
             title="Nuova entity"
-            showApplyButton={false}
           />
         </>
       ) : null}
@@ -851,7 +864,6 @@ export function EntityAdminConfigPage() {
               suggestionsError={objectApiNameSuggestionsError}
               showSuggestions={shouldShowObjectApiNameSuggestions}
               onSelectSuggestion={selectObjectApiNameSuggestion}
-              onApply={applyBaseDraft}
               disableIdField
               idHelperText="L'entity id è immutabile dopo la creazione."
             />
@@ -859,7 +871,7 @@ export function EntityAdminConfigPage() {
             <EntityConfigListForm
               value={listFormDraft}
               error={editorError}
-              baseObjectApiName={selectedEntityConfig.objectApiName ?? ''}
+              baseObjectApiName={baseFormDraft.objectApiName}
               selectedViewIndex={selectedListViewIndex}
               onChangeField={updateListField}
               onChangePrimaryAction={updateListPrimaryActionField}
@@ -870,23 +882,20 @@ export function EntityAdminConfigPage() {
               onChangeViewSelectionField={updateListViewSelectionField}
               onChangeViewPrimaryAction={updateListViewPrimaryActionField}
               onToggleViewDefault={toggleListViewDefault}
-              onApply={applyListDraft}
             />
           ) : activeSection === 'detail' ? (
             <EntityConfigDetailForm
               value={detailFormDraft}
               error={editorError}
-              baseObjectApiName={selectedEntityConfig.objectApiName ?? ''}
+              baseObjectApiName={baseFormDraft.objectApiName}
               onChange={updateDetailDraft}
-              onApply={applyDetailDraft}
             />
           ) : (
             <EntityConfigFormForm
               value={formFormDraft}
               error={editorError}
-              baseObjectApiName={selectedEntityConfig.objectApiName ?? ''}
+              baseObjectApiName={baseFormDraft.objectApiName}
               onChange={setFormFormDraft}
-              onApply={applyFormDraft}
             />
           )}
         </>
@@ -1106,71 +1115,6 @@ function formatTimestamp(value: string): string {
   }).format(date)
 }
 
-function applySectionToEntityConfig(
-  entity: EntityConfig,
-  section: EntityConfigSectionKey,
-  parsedSection: unknown,
-): EntityConfig {
-  if (!isObjectRecord(entity)) {
-    throw new Error('Config entity non valida')
-  }
-
-  if (section === 'base') {
-    if (!isObjectRecord(parsedSection)) {
-      throw new Error('La sezione base deve essere un oggetto JSON')
-    }
-
-    const navigationSource = isObjectRecord(parsedSection.navigation)
-      ? parsedSection.navigation
-      : undefined
-    const navigationBasePath = navigationSource
-      ? readOptionalString(navigationSource.basePath)
-      : undefined
-
-    return {
-      ...entity,
-      id: readStringOrFallback(parsedSection.id, entity.id),
-      label: readStringOrFallback(parsedSection.label, entity.label ?? entity.id),
-      description: readOptionalString(parsedSection.description),
-      objectApiName: readStringOrFallback(
-        parsedSection.objectApiName,
-        entity.objectApiName ?? '',
-      ),
-      navigation: navigationBasePath ? { basePath: navigationBasePath } : undefined,
-    }
-  }
-
-  if (section === 'list') {
-    return {
-      ...entity,
-      list: parsedSection === null ? undefined : (parsedSection as EntityConfig['list']),
-    }
-  }
-
-  if (section === 'detail') {
-    return {
-      ...entity,
-      detail:
-        parsedSection === null
-          ? undefined
-          : (parsedSection as EntityConfig['detail']),
-    }
-  }
-
-  return {
-    ...entity,
-    form: parsedSection === null ? undefined : (parsedSection as EntityConfig['form']),
-  }
-}
-
-function readStringOrFallback(value: unknown, fallback: string): string {
-  if (typeof value !== 'string' || value.trim().length === 0) {
-    return fallback
-  }
-
-  return value.trim()
-}
-
 function readOptionalString(value: unknown): string | undefined {
   if (typeof value !== 'string') {
     return undefined
@@ -1179,11 +1123,6 @@ function readOptionalString(value: unknown): string | undefined {
   const trimmed = value.trim()
   return trimmed.length > 0 ? trimmed : undefined
 }
-
-function isObjectRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
 type BaseFormDraft = {
   id: string
   label: string
@@ -1193,6 +1132,23 @@ type BaseFormDraft = {
 }
 
 type BaseFormDraftKey = keyof BaseFormDraft
+
+type EntityConfigDraftSnapshot = {
+  base: BaseFormDraft
+  list: ListFormDraft
+  detail: DetailFormDraft
+  form: FormFormDraft
+}
+
+class EntityConfigDraftValidationError extends Error {
+  section: EntityConfigSectionKey
+
+  constructor(section: EntityConfigSectionKey, message: string) {
+    super(message)
+    this.name = 'EntityConfigDraftValidationError'
+    this.section = section
+  }
+}
 
 function createEmptyEntityConfig(): EntityConfig {
   return {
@@ -1243,11 +1199,142 @@ function createEntityConfigFromBaseDraft(baseDraft: BaseFormDraft): EntityConfig
   return {
     id,
     label,
-    description: baseDraft.description.trim(),
+    description: readOptionalString(baseDraft.description),
     objectApiName,
     navigation:
       baseDraft.basePath.trim().length > 0
         ? { basePath: baseDraft.basePath.trim() }
         : undefined,
   }
+}
+
+function createDraftSnapshot(entity: EntityConfig): EntityConfigDraftSnapshot {
+  return {
+    base: createBaseFormDraft(entity),
+    list: createListFormDraft(entity.list),
+    detail: createDetailFormDraft(entity.detail),
+    form: createFormDraft(entity.form),
+  }
+}
+
+function serializeDraftSnapshot(snapshot: EntityConfigDraftSnapshot): string {
+  return JSON.stringify(snapshot)
+}
+
+function buildEntityConfigFromDrafts(
+  persistedEntity: EntityConfig,
+  drafts: EntityConfigDraftSnapshot,
+): EntityConfig {
+  const baseConfig = createEntityConfigFromBaseDraft(drafts.base)
+  if (!baseConfig) {
+    throw new EntityConfigDraftValidationError(
+      'base',
+      getPrefixedSectionMessage('base', getBaseDraftValidationMessage(drafts.base, 'salvare')),
+    )
+  }
+
+  const baseObjectApiName = baseConfig.objectApiName ?? ''
+  const list =
+    persistedEntity.list !== undefined || !isListFormDraftEmpty(drafts.list)
+      ? parseDraftSection('list', () => parseListFormDraft(drafts.list, baseObjectApiName))
+      : undefined
+  const detail =
+    persistedEntity.detail !== undefined || !isDetailFormDraftEmpty(drafts.detail)
+      ? parseDraftSection('detail', () => parseDetailFormDraft(drafts.detail, baseObjectApiName))
+      : undefined
+  const form =
+    persistedEntity.form !== undefined || !isFormFormDraftEmpty(drafts.form)
+      ? parseDraftSection('form', () => parseFormDraft(drafts.form, baseObjectApiName))
+      : undefined
+
+  return {
+    ...baseConfig,
+    list,
+    detail,
+    form,
+  }
+}
+
+function parseDraftSection<T>(
+  section: EntityConfigSectionKey,
+  parser: () => T,
+): T {
+  try {
+    return parser()
+  } catch (error) {
+    const fallback = `Valori form non validi per la sezione ${ENTITY_CONFIG_SECTION_LABELS[section]}`
+    throw new EntityConfigDraftValidationError(
+      section,
+      getPrefixedSectionMessage(
+        section,
+        error instanceof Error ? error.message : fallback,
+      ),
+    )
+  }
+}
+
+function normalizeDraftValidationError(error: unknown): EntityConfigDraftValidationError {
+  if (error instanceof EntityConfigDraftValidationError) {
+    return error
+  }
+
+  return new EntityConfigDraftValidationError(
+    'base',
+    getPrefixedSectionMessage(
+      'base',
+      error instanceof Error ? error.message : 'Valori form non validi',
+    ),
+  )
+}
+
+function getBaseDraftValidationMessage(
+  baseDraft: BaseFormDraft,
+  action: 'creare' | 'salvare',
+): string {
+  if (baseDraft.id.trim() === NEW_ENTITY_SENTINEL) {
+    return `Entity Id non puo essere ${NEW_ENTITY_SENTINEL}`
+  }
+
+  return `Compila id, label e objectApiName per ${action} la entity`
+}
+
+function getPrefixedSectionMessage(
+  section: EntityConfigSectionKey,
+  message: string,
+): string {
+  const sectionLabel = ENTITY_CONFIG_SECTION_LABELS[section]
+  const normalizedMessage = message.trim().toLowerCase()
+  const normalizedLabel = sectionLabel.toLowerCase()
+  const normalizedPrefix = `sezione ${normalizedLabel}`
+
+  if (
+    normalizedMessage.startsWith(normalizedPrefix) ||
+    normalizedMessage.startsWith(`${normalizedLabel}:`) ||
+    normalizedMessage.startsWith(`${normalizedLabel} `)
+  ) {
+    return message
+  }
+
+  return `Sezione ${sectionLabel}: ${message}`
+}
+
+function isListFormDraftEmpty(draft: ListFormDraft): boolean {
+  return JSON.stringify(draft) === JSON.stringify(createEmptyListFormDraft())
+}
+
+function isDetailFormDraftEmpty(draft: DetailFormDraft): boolean {
+  return JSON.stringify(draft) === JSON.stringify(createEmptyDetailFormDraft())
+}
+
+function isFormFormDraftEmpty(draft: FormFormDraft): boolean {
+  return JSON.stringify(draft) === JSON.stringify(createEmptyFormDraft())
+}
+
+function isSameEntityEditSessionPath(pathname: string, entityId: string): boolean {
+  const match = matchPath('/admin/entity-config/:entityId/edit/:section', pathname)
+  if (!match?.params.entityId || !isEntityConfigSection(match.params.section)) {
+    return false
+  }
+
+  return decodeURIComponent(match.params.entityId) === entityId
 }
