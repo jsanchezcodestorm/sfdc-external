@@ -5,6 +5,7 @@ Questo documento definisce come progettare, implementare e governare ACL nel pro
 
 Obiettivi:
 - rendere PostgreSQL l unica sorgente di verita per permission catalog, default permissions e risorse
+- rendere PostgreSQL la sorgente di verita anche per le assegnazioni permission -> Contact
 - mantenere enforcement backend fail-closed
 - dare una mappa operativa dei resource id usati dall applicazione
 
@@ -22,6 +23,10 @@ Comportamento runtime (`AclService`):
 Gestione amministrativa:
 - `GET /acl/admin/config`
 - `PUT /acl/admin/config`
+- `GET /acl/admin/contact-permissions`
+- `GET /acl/admin/contact-permissions/:contactId`
+- `PUT /acl/admin/contact-permissions/:contactId`
+- `DELETE /acl/admin/contact-permissions/:contactId`
 
 Il `PUT` sostituisce in modo atomico l intero snapshot:
 ```json
@@ -39,7 +44,12 @@ Permission catalog:
 - `aliases[]` opzionali, univoci globalmente
 
 Default permissions:
-- elenco ordinato di codici permission assegnati quando l utente non risolve permission esplicite
+- elenco ordinato di codici permission assegnati a tutti gli utenti al login
+
+Direct contact permissions:
+- codici permission espliciti assegnati a uno specifico `Contact`
+- si combinano in modo additivo con i default permissions
+- diventano effettivi alla sessione successiva
 
 Resource types supportati:
 - `rest`

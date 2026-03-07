@@ -2,7 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 
 import { AuditWriteService } from '../audit/audit-write.service';
 
-import { AclAdminConfigRepository } from './acl-admin-config.repository';
+import { AclAdminConfigRepository, type ReplaceAclSnapshotOptions } from './acl-admin-config.repository';
 import type {
   AclAdminDefaultPermissionsResponse,
   AclAdminPermissionListResponse,
@@ -72,7 +72,17 @@ export class AclAdminConfigService {
 
     const permission = normalizeAclPermissionDefinitionInput(payload, 'permission');
     const persisted = await this.persistSnapshot(
-      upsertPermissionInSnapshot(snapshot, permission, previousCode)
+      upsertPermissionInSnapshot(snapshot, permission, previousCode),
+      previousCode !== permission.code
+        ? {
+            renamedPermissionCodes: [
+              {
+                previousCode,
+                nextCode: permission.code,
+              },
+            ],
+          }
+        : undefined
     );
     const nextPermission = this.requirePermission(persisted, permission.code);
     await this.auditWriteService.recordApplicationSuccessOrThrow({
@@ -92,7 +102,9 @@ export class AclAdminConfigService {
     const normalizedCode = normalizeCanonicalPermissionCode(permissionCode, 'permissionCode');
     const snapshot = await this.loadSnapshot();
     this.requirePermission(snapshot, normalizedCode);
-    await this.persistSnapshot(deletePermissionFromSnapshot(snapshot, normalizedCode));
+    await this.persistSnapshot(deletePermissionFromSnapshot(snapshot, normalizedCode), {
+      deletedPermissionCodes: [normalizedCode],
+    });
     await this.auditWriteService.recordApplicationSuccessOrThrow({
       action: 'ACL_PERMISSION_DELETE',
       targetType: 'acl-permission',
@@ -221,9 +233,12 @@ export class AclAdminConfigService {
     return this.aclConfigRepository.loadSnapshot();
   }
 
-  private async persistSnapshot(snapshot: AclConfigSnapshot): Promise<AclConfigSnapshot> {
+  private async persistSnapshot(
+    snapshot: AclConfigSnapshot,
+    options?: ReplaceAclSnapshotOptions
+  ): Promise<AclConfigSnapshot> {
     const normalizedSnapshot = normalizeAclConfigSnapshot(snapshot);
-    await this.aclAdminConfigRepository.replaceSnapshot(normalizedSnapshot);
+    await this.aclAdminConfigRepository.replaceSnapshot(normalizedSnapshot, options);
     await this.aclService.reload();
     return this.aclConfigRepository.loadSnapshot();
   }

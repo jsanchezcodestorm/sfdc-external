@@ -147,6 +147,40 @@ export class SalesforceService {
     };
   }
 
+  async findContactById(
+    contactId: string,
+  ): Promise<{ id: string; name?: string; email?: string; recordTypeDeveloperName?: string } | null> {
+    const normalizedContactId = contactId.trim();
+    if (!SALESFORCE_ID_QUERY_PATTERN.test(normalizedContactId)) {
+      return null;
+    }
+
+    const result = (await this.executeReadOnlyQuery(
+      [
+        'SELECT Id, Name, Email, RecordType.DeveloperName',
+        'FROM Contact',
+        `WHERE Id = '${this.escapeSoqlLiteral(normalizedContactId)}'`,
+        'LIMIT 1',
+      ].join(' '),
+    )) as { records?: SalesforceContactRecord[] };
+
+    const records = Array.isArray(result.records) ? result.records : [];
+    if (records.length === 0) {
+      return null;
+    }
+
+    const contact = records[0];
+    return {
+      id: String(contact.Id),
+      name: typeof contact.Name === 'string' ? contact.Name : undefined,
+      email: typeof contact.Email === 'string' ? contact.Email : undefined,
+      recordTypeDeveloperName:
+        typeof contact.RecordType?.DeveloperName === 'string'
+          ? contact.RecordType.DeveloperName
+          : undefined,
+    };
+  }
+
   async searchContactsByIdOrName(
     query: string,
     limit: number

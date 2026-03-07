@@ -271,6 +271,10 @@ Regola obbligatoria in produzione:
 - `permissions`
 - `ip` o altro claim di binding sessione
 
+Nota operativa:
+- `permissions` nel JWT interno derivano dal merge tra default permissions ACL globali e assegnazioni dirette al `Contact` salvate su PostgreSQL
+- una modifica alle assegnazioni dirette diventa effettiva dal login successivo
+
 ### 8.4 Practice sicurezza sessione e CSRF
 
 - cookie `HttpOnly`, `Secure` in produzione, `SameSite` adeguato (`Lax` default; `None` solo se strettamente necessario cross-site)
@@ -291,6 +295,7 @@ Gestire ACL via store PostgreSQL:
 
 - `permissions`
 - `defaults`
+- `contact_permissions`
 - `resources`
 
 ### 9.2 Tipi risorsa

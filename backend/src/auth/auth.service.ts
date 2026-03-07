@@ -4,6 +4,7 @@ import type { CookieOptions } from 'express';
 import { OAuth2Client, type TokenPayload } from 'google-auth-library';
 import { sign, verify, type JwtPayload } from 'jsonwebtoken';
 
+import { AclContactPermissionsRepository } from '../acl/acl-contact-permissions.repository';
 import { AclService } from '../acl/acl.service';
 import { SalesforceService } from '../salesforce/salesforce.service';
 
@@ -26,6 +27,7 @@ export class AuthService {
   constructor(
     private readonly configService: ConfigService,
     private readonly aclService: AclService,
+    private readonly aclContactPermissionsRepository: AclContactPermissionsRepository,
     @Inject(forwardRef(() => SalesforceService))
     private readonly salesforceService: SalesforceService
   ) {
@@ -44,7 +46,7 @@ export class AuthService {
     const user: SessionUser = {
       sub: contact.id,
       email: payload.email ?? '',
-      permissions: this.resolveInitialPermissions(payload),
+      permissions: await this.resolveInitialPermissions(contact.id, payload),
       contactRecordTypeDeveloperName: contact.recordTypeDeveloperName
     };
 
@@ -139,15 +141,18 @@ export class AuthService {
     );
   }
 
-  private resolveInitialPermissions(payload: TokenPayload): string[] {
-    const permissions = new Set<string>(this.aclService.getDefaultPermissions());
+  private async resolveInitialPermissions(contactId: string, payload: TokenPayload): Promise<string[]> {
+    const permissions = [
+      ...this.aclService.getDefaultPermissions(),
+      ...(await this.aclContactPermissionsRepository.listPermissionCodesByContactId(contactId))
+    ];
     const userEmail = this.normalizeEmail(payload.email);
 
     if (this.adminFallbackEmail && userEmail === this.adminFallbackEmail) {
-      permissions.add('PORTAL_ADMIN');
+      permissions.push('PORTAL_ADMIN');
     }
 
-    return [...permissions];
+    return this.aclService.normalizePermissions(permissions);
   }
 
   private async resolveSalesforceContact(

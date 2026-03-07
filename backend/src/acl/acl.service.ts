@@ -44,6 +44,10 @@ export class AclService implements OnModuleInit {
     return this.defaultPermissions.map((permission) => this.toCanonicalPermission(permission));
   }
 
+  normalizePermissions(permissions: string[]): string[] {
+    return [...new Set(permissions.map((permission) => this.toCanonicalPermission(permission)))];
+  }
+
   canAccess(userPermissions: string[], resourceId: string): boolean {
     const resource = this.resources.get(resourceId);
 
@@ -56,9 +60,7 @@ export class AclService implements OnModuleInit {
     }
 
     const effectivePermissions = new Set<string>(
-      (userPermissions.length > 0 ? userPermissions : this.getDefaultPermissions()).map((permission) =>
-        this.toCanonicalPermission(permission)
-      )
+      this.normalizePermissions(userPermissions.length > 0 ? userPermissions : this.getDefaultPermissions())
     );
 
     return resource.permissions.some((permission) => effectivePermissions.has(permission));

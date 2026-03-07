@@ -7,12 +7,48 @@ import { PrismaService } from '../prisma/prisma.service';
 
 import type { AclConfigSnapshot, AclResourceType } from './acl.types';
 
+export interface ReplaceAclSnapshotOptions {
+  renamedPermissionCodes?: Array<{
+    previousCode: string;
+    nextCode: string;
+  }>;
+  deletedPermissionCodes?: string[];
+}
+
 @Injectable()
 export class AclAdminConfigRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  async replaceSnapshot(snapshot: AclConfigSnapshot): Promise<void> {
+  async replaceSnapshot(snapshot: AclConfigSnapshot, options?: ReplaceAclSnapshotOptions): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
+      for (const rename of options?.renamedPermissionCodes ?? []) {
+        if (rename.previousCode === rename.nextCode) {
+          continue;
+        }
+
+        await tx.aclContactPermissionRecord.updateMany({
+          where: {
+            permissionCode: rename.previousCode,
+          },
+          data: {
+            permissionCode: rename.nextCode,
+          },
+        });
+      }
+
+      const explicitCodesToDelete = [
+        ...new Set([...(options?.deletedPermissionCodes ?? []), ...snapshot.defaultPermissions]),
+      ];
+      if (explicitCodesToDelete.length > 0) {
+        await tx.aclContactPermissionRecord.deleteMany({
+          where: {
+            permissionCode: {
+              in: explicitCodesToDelete,
+            },
+          },
+        });
+      }
+
       await tx.aclResourcePermissionRecord.deleteMany();
       await tx.aclDefaultPermissionRecord.deleteMany();
       await tx.aclPermissionAliasRecord.deleteMany();

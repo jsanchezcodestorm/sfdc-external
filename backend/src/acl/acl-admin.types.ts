@@ -46,3 +46,34 @@ export interface AclAdminDefaultPermissionItem {
 export interface AclAdminDefaultPermissionsResponse {
   items: AclAdminDefaultPermissionItem[];
 }
+
+export interface AclAdminContactPermissionSummary {
+  contactId: string;
+  permissionCodes: string[];
+  permissionCount: number;
+  updatedAt: string;
+}
+
+export interface AclAdminContactPermissionListResponse {
+  items: AclAdminContactPermissionSummary[];
+}
+
+export interface AclAdminContactPermission {
+  contactId: string;
+  permissionCodes: string[];
+  updatedAt?: string;
+}
+
+export interface AclAdminContactPermissionResponse {
+  contactPermissions: AclAdminContactPermission;
+}
+
+export interface AclAdminContactSuggestion {
+  id: string;
+  name?: string;
+  recordTypeDeveloperName?: string;
+}
+
+export interface AclAdminContactSuggestionResponse {
+  items: AclAdminContactSuggestion[];
+}

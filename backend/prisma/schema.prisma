@@ -357,6 +357,18 @@ model AclDefaultPermissionRecord {
   @@map("acl_default_permissions")
 }
 
+model AclContactPermissionRecord {
+  contactId      String   @db.VarChar(18)
+  permissionCode String   @db.VarChar(80)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@id([contactId, permissionCode])
+  @@index([contactId])
+  @@index([permissionCode])
+  @@map("acl_contact_permissions")
+}
+
 model AclResourceRecord {
   id          String                      @id @db.VarChar(128)
   type        AclResourceKind

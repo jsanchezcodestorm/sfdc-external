@@ -8,6 +8,7 @@ import {
   Param,
   Post,
   Put,
+  Query,
   UseGuards
 } from '@nestjs/common';
 
@@ -17,12 +18,18 @@ import { AclGuard } from '../common/guards/acl.guard';
 
 import { AclAdminConfigService } from './acl-admin-config.service';
 import type {
+  AclAdminContactPermissionListResponse,
+  AclAdminContactPermissionResponse,
+  AclAdminContactSuggestionResponse,
   AclAdminDefaultPermissionsResponse,
   AclAdminPermissionListResponse,
   AclAdminPermissionResponse,
   AclAdminResourceListResponse,
   AclAdminResourceResponse
 } from './acl-admin.types';
+import { AclContactPermissionsAdminService } from './acl-contact-permissions-admin.service';
+import { SearchAclContactSuggestionsDto } from './dto/search-acl-contact-suggestions.dto';
+import { UpdateContactPermissionsDto } from './dto/update-contact-permissions.dto';
 import { UpdateDefaultPermissionsDto } from './dto/update-default-permissions.dto';
 import { UpsertAclPermissionDto } from './dto/upsert-acl-permission.dto';
 import { UpsertAclResourceDto } from './dto/upsert-acl-resource.dto';
@@ -30,7 +37,10 @@ import { UpsertAclResourceDto } from './dto/upsert-acl-resource.dto';
 @Controller('acl')
 @UseGuards(JwtAuthGuard, AclGuard)
 export class AclController {
-  constructor(private readonly aclAdminConfigService: AclAdminConfigService) {}
+  constructor(
+    private readonly aclAdminConfigService: AclAdminConfigService,
+    private readonly aclContactPermissionsAdminService: AclContactPermissionsAdminService
+  ) {}
 
   @Get('admin/permissions')
   @AclResource('rest:acl-config-admin')
@@ -112,5 +122,46 @@ export class AclController {
     @Body() dto: UpdateDefaultPermissionsDto
   ): Promise<AclAdminDefaultPermissionsResponse> {
     return this.aclAdminConfigService.updateDefaultPermissions(dto.permissionCodes);
+  }
+
+  @Get('admin/contact-permissions')
+  @AclResource('rest:acl-config-admin')
+  listContactPermissions(): Promise<AclAdminContactPermissionListResponse> {
+    return this.aclContactPermissionsAdminService.listContactPermissions();
+  }
+
+  @Get('admin/contact-permissions/:contactId')
+  @AclResource('rest:acl-config-admin')
+  getContactPermissions(
+    @Param('contactId') contactId: string
+  ): Promise<AclAdminContactPermissionResponse> {
+    return this.aclContactPermissionsAdminService.getContactPermissions(contactId);
+  }
+
+  @Put('admin/contact-permissions/:contactId')
+  @AclResource('rest:acl-config-admin')
+  updateContactPermissions(
+    @Param('contactId') contactId: string,
+    @Body() dto: UpdateContactPermissionsDto
+  ): Promise<AclAdminContactPermissionResponse> {
+    return this.aclContactPermissionsAdminService.updateContactPermissions(
+      contactId,
+      dto.permissionCodes
+    );
+  }
+
+  @Delete('admin/contact-permissions/:contactId')
+  @AclResource('rest:acl-config-admin')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async deleteContactPermissions(@Param('contactId') contactId: string): Promise<void> {
+    await this.aclContactPermissionsAdminService.deleteContactPermissions(contactId);
+  }
+
+  @Get('admin/contact-suggestions')
+  @AclResource('rest:acl-config-admin')
+  searchContacts(
+    @Query() query: SearchAclContactSuggestionsDto
+  ): Promise<AclAdminContactSuggestionResponse> {
+    return this.aclContactPermissionsAdminService.searchContacts(query.q, query.limit);
   }
 }

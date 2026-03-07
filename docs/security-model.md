@@ -81,7 +81,7 @@ Error handling:
 ## 8) Autorizzazione applicativa (ACL)
 Modello:
 - risorse versionate per categorie: `rest:*`, `entity:*`, `query:*`, `route:*`
-- permessi risolti da profilo utente autenticato
+- permessi risolti da profilo utente autenticato come merge di default globali e assegnazioni dirette al Contact
 
 Regole:
 - controllo ACL obbligatorio su ogni endpoint protetto
