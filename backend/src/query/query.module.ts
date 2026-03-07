@@ -8,13 +8,22 @@ import { VisibilityModule } from '../visibility/visibility.module';
 
 import { QueryController } from './query.controller';
 import { QueryService } from './query.service';
+import { QueryAdminTemplateRepository } from './services/query-admin-template.repository';
+import { QueryAdminTemplateService } from './services/query-admin-template.service';
 import { QueryTemplateCompiler } from './services/query-template.compiler';
 import { QueryTemplateRepository } from './services/query-template.repository';
 
 @Module({
   imports: [AuthModule, AclModule, VisibilityModule, SalesforceModule],
   controllers: [QueryController],
-  providers: [QueryService, QueryTemplateRepository, QueryTemplateCompiler, ResourceAccessService],
+  providers: [
+    QueryService,
+    QueryTemplateRepository,
+    QueryAdminTemplateRepository,
+    QueryAdminTemplateService,
+    QueryTemplateCompiler,
+    ResourceAccessService
+  ],
   exports: [QueryService]
 })
 export class QueryModule {}
