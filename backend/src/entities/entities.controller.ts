@@ -8,6 +8,7 @@ import { AclGuard } from '../common/guards/acl.guard';
 
 import { GetEntityListDto } from './dto/get-entity-list.dto';
 import { GetEntityRelatedListDto } from './dto/get-entity-related-list.dto';
+import { PreviewEntityAdminBootstrapDto } from './dto/preview-entity-admin-bootstrap.dto';
 import { SearchSalesforceObjectFieldsDto } from './dto/search-salesforce-object-fields.dto';
 import { SearchSalesforceObjectsDto } from './dto/search-salesforce-objects.dto';
 import { UpsertEntityAdminConfigDto } from './dto/upsert-entity-admin-config.dto';
@@ -38,6 +39,12 @@ export class EntitiesController {
   @AclResource('rest:entities-config-admin')
   createEntityAdminConfig(@Body() payload: UpsertEntityAdminConfigDto): Promise<unknown> {
     return this.entityAdminConfigService.createEntityConfig(payload);
+  }
+
+  @Post('admin/configs/bootstrap-preview')
+  @AclResource('rest:entities-config-admin')
+  previewEntityAdminBootstrap(@Body() payload: PreviewEntityAdminBootstrapDto): Promise<unknown> {
+    return this.entityAdminConfigService.previewEntityBootstrap(payload);
   }
 
   @Put('admin/configs/:entityId')

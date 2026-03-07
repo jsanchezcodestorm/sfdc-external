@@ -31,6 +31,11 @@ export interface EntityAdminConfigResponse {
   aclResourceConfigured: boolean;
 }
 
+export interface EntityAdminBootstrapPreviewResponse {
+  entity: EntityConfig;
+  warnings: string[];
+}
+
 interface SalesforceObjectSuggestion {
   name: string;
   label: string;
@@ -49,10 +54,49 @@ interface SalesforceFieldSuggestion {
   filterable: boolean;
 }
 
+interface SalesforceFieldDescribe {
+  name: string;
+  label: string;
+  type: string;
+  nillable: boolean;
+  createable: boolean;
+  updateable: boolean;
+  filterable: boolean;
+  relationshipName?: string;
+  referenceTo?: string[];
+}
+
 interface SalesforceFieldSuggestionCache {
   fetchedAtMs: number;
   items: SalesforceFieldSuggestion[];
 }
+
+interface BootstrapListPreset {
+  config: EntityListConfig;
+  displayFieldNames: string[];
+}
+
+const TEXT_SEARCH_TYPES = new Set([
+  'string',
+  'textarea',
+  'longtextarea',
+  'richtextarea',
+  'phone',
+  'email',
+  'url',
+  'id',
+  'reference',
+  'picklist',
+  'multipicklist'
+]);
+
+const SAFE_TEXT_INPUT_SOURCE_TYPES = new Set(['string', 'id', 'url', 'encryptedstring']);
+const DETAIL_FORMAT_FIELD_TYPES = new Set(['date', 'datetime']);
+const MAX_LIST_DISPLAY_FIELDS = 5;
+const MAX_DETAIL_EXTRA_FIELDS = 6;
+const MAX_DETAIL_OVERVIEW_FIELDS = 4;
+const MAX_FORM_FIELDS = 12;
+const MAX_FORM_SECTION_FIELDS = 6;
 
 @Injectable()
 export class EntityAdminConfigService {
@@ -111,6 +155,23 @@ export class EntityAdminConfigService {
     return {
       entity: await this.repository.getEntityConfig(entity.id),
       aclResourceConfigured: this.aclService.hasResource(`entity:${entity.id}`)
+    };
+  }
+
+  async previewEntityBootstrap(
+    payload: UpsertEntityAdminConfigPayload
+  ): Promise<EntityAdminBootstrapPreviewResponse> {
+    const entity = this.normalizeBootstrapEntityBase(payload.entity);
+    this.resourceAccessService.assertKebabCaseId(entity.id, 'entity.id');
+
+    const describedFields = (await this.salesforceService.describeObjectFields(
+      entity.objectApiName
+    )) as SalesforceFieldDescribe[];
+
+    const preview = this.buildBootstrapPreview(entity, describedFields);
+    return {
+      entity: this.normalizeEntityConfig(undefined, preview.entity),
+      warnings: preview.warnings
     };
   }
 
@@ -226,6 +287,561 @@ export class EntityAdminConfigService {
       relatedLists: entity.detail?.relatedLists?.length ?? 0,
       formSections: entity.form?.sections.length ?? 0
     };
+  }
+
+  private normalizeBootstrapEntityBase(value: unknown): EntityConfig {
+    const entity = this.requireObject(value, 'entity payload must be an object');
+    if (entity.list !== undefined || entity.detail !== undefined || entity.form !== undefined) {
+      throw new BadRequestException('bootstrap preview accepts base entity fields only');
+    }
+
+    return {
+      id: this.requireString(entity.id, 'entity.id is required'),
+      label: this.requireString(entity.label, 'entity.label is required'),
+      objectApiName: this.requireString(entity.objectApiName, 'entity.objectApiName is required'),
+      description: this.asOptionalString(entity.description),
+      navigation: this.normalizeNavigation(entity.navigation)
+    };
+  }
+
+  private buildBootstrapPreview(
+    entity: EntityConfig,
+    describedFields: SalesforceFieldDescribe[]
+  ): EntityAdminBootstrapPreviewResponse {
+    const normalizedFields = this.normalizeBootstrapFields(describedFields);
+    const warnings: string[] = [
+      `Configura manualmente la risorsa ACL entity:${entity.id} prima di esporre la nuova entity.`
+    ];
+    const listPreset = this.buildBootstrapListPreset(entity, normalizedFields, warnings);
+    const detailPreset = this.buildBootstrapDetailConfig(
+      entity,
+      normalizedFields,
+      listPreset,
+      warnings
+    );
+    const formPreset = this.buildBootstrapFormConfig(entity, normalizedFields, warnings);
+
+    return {
+      entity: {
+        ...entity,
+        list: listPreset.config,
+        detail: detailPreset,
+        form: formPreset
+      },
+      warnings
+    };
+  }
+
+  private normalizeBootstrapFields(fields: SalesforceFieldDescribe[]): SalesforceFieldDescribe[] {
+    return fields
+      .map((field) => ({
+        ...field,
+        name: field.name.trim(),
+        label: field.label.trim()
+      }))
+      .filter((field) => field.name.length > 0)
+      .sort((left, right) => left.name.localeCompare(right.name, 'en', { sensitivity: 'base' }));
+  }
+
+  private buildBootstrapListPreset(
+    entity: EntityConfig,
+    fields: SalesforceFieldDescribe[],
+    warnings: string[]
+  ): BootstrapListPreset {
+    const displayFields = this.rankBootstrapFields(fields, 'list')
+      .filter((field) => field.name !== 'Id')
+      .slice(0, MAX_LIST_DISPLAY_FIELDS);
+    const fallbackDisplayField = this.getFieldByName(fields, 'Id') ?? this.createSyntheticIdField();
+    const resolvedDisplayFields =
+      displayFields.length > 0 ? displayFields : fallbackDisplayField ? [fallbackDisplayField] : [];
+
+    if (displayFields.length === 0) {
+      warnings.push(
+        'Preset list/detail: nessun campo business evidente, il bootstrap userà il solo Id come campo di fallback.'
+      );
+    }
+
+    const searchFields = this.rankBootstrapFields(fields, 'search')
+      .filter((field) => field.name !== 'Id')
+      .slice(0, 3)
+      .map((field) => field.name);
+    if (searchFields.length === 0) {
+      warnings.push(
+        'Preset list: nessun campo testuale filterable disponibile per la ricerca iniziale.'
+      );
+    }
+
+    const orderByField = this.selectBootstrapListOrderField(resolvedDisplayFields, fields);
+    const queryFields = this.uniqueValues(['Id', ...resolvedDisplayFields.map((field) => field.name)]);
+    const view: EntityListViewConfig = {
+      id: 'all',
+      label: 'Tutti',
+      default: true,
+      query: {
+        object: entity.objectApiName,
+        fields: queryFields,
+        orderBy: orderByField
+          ? [
+              {
+                field: orderByField.field,
+                direction: orderByField.direction
+              }
+            ]
+          : undefined
+      },
+      columns: resolvedDisplayFields.map((field) => this.toBootstrapColumn(field)),
+      search:
+        searchFields.length > 0
+          ? {
+              fields: searchFields,
+              minLength: 2
+            }
+          : undefined,
+      rowActions: [
+        { type: 'link', label: 'Apri' },
+        { type: 'edit', label: 'Modifica' },
+        { type: 'delete', label: 'Elimina' }
+      ]
+    };
+
+    return {
+      config: {
+        title: entity.label ?? entity.id,
+        subtitle: entity.description,
+        primaryAction: {
+          type: 'link',
+          label: 'Nuovo'
+        },
+        views: [view]
+      },
+      displayFieldNames: resolvedDisplayFields.map((field) => field.name)
+    };
+  }
+
+  private buildBootstrapDetailConfig(
+    entity: EntityConfig,
+    fields: SalesforceFieldDescribe[],
+    listPreset: BootstrapListPreset,
+    warnings: string[]
+  ): EntityDetailConfig {
+    const extraFields = this.rankBootstrapFields(fields, 'detail')
+      .filter((field) => !listPreset.displayFieldNames.includes(field.name) && field.name !== 'Id')
+      .slice(0, MAX_DETAIL_EXTRA_FIELDS);
+    const detailFields = this.uniqueFieldOrder(
+      listPreset.displayFieldNames
+        .map((fieldName) => this.getFieldByName(fields, fieldName))
+        .concat(extraFields)
+        .filter((field): field is SalesforceFieldDescribe => Boolean(field))
+    );
+    if (detailFields.length === 0) {
+      detailFields.push(this.getFieldByName(fields, 'Id') ?? this.createSyntheticIdField());
+    }
+    const overviewFields = detailFields.slice(0, MAX_DETAIL_OVERVIEW_FIELDS);
+    const remainingFields = detailFields.slice(MAX_DETAIL_OVERVIEW_FIELDS);
+    const sections: EntityDetailSectionConfig[] = [];
+
+    if (overviewFields.length > 0) {
+      sections.push({
+        title: 'Panoramica',
+        fields: overviewFields.map((field) => this.toBootstrapDetailField(field))
+      });
+    }
+
+    if (remainingFields.length > 0) {
+      sections.push({
+        title: 'Dettagli',
+        fields: remainingFields.map((field) => this.toBootstrapDetailField(field))
+      });
+    } else {
+      warnings.push(
+        'Preset detail: sezione "Dettagli" omessa perché non ci sono altri campi ad alto valore.'
+      );
+    }
+
+    const queryFields = this.uniqueValues([
+      'Id',
+      this.getFieldByName(fields, 'Name') ? 'Name' : '',
+      ...detailFields.map((field) => field.name)
+    ]);
+
+    return {
+      query: {
+        object: entity.objectApiName,
+        fields: queryFields,
+        where: [
+          {
+            field: 'Id',
+            operator: '=',
+            value: '{{id}}'
+          }
+        ],
+        limit: 1
+      },
+      sections,
+      titleTemplate: '{{Name || Id}}',
+      fallbackTitle: entity.label ?? entity.id,
+      actions: [
+        { type: 'edit', label: 'Modifica' },
+        { type: 'delete', label: 'Elimina' }
+      ]
+    };
+  }
+
+  private buildBootstrapFormConfig(
+    entity: EntityConfig,
+    fields: SalesforceFieldDescribe[],
+    warnings: string[]
+  ): EntityFormConfig | undefined {
+    const writableFields = this.rankBootstrapFields(fields, 'form')
+      .filter((field) => field.name !== 'Id' && (field.createable || field.updateable))
+      .slice(0, MAX_FORM_FIELDS);
+
+    if (writableFields.length === 0) {
+      warnings.push(
+        'Preset form: nessun campo Salesforce createable/updateable disponibile, la sezione Form viene omessa.'
+      );
+      return undefined;
+    }
+
+    const fallbackTextFields = writableFields.filter((field) =>
+      this.usesBootstrapTextFallback(field)
+    );
+    if (fallbackTextFields.length > 0) {
+      warnings.push(
+        `Preset form: input text di fallback per ${this.formatWarningFieldList(
+          fallbackTextFields
+        )}.`
+      );
+    }
+
+    const sections = this.chunkFields(writableFields, MAX_FORM_SECTION_FIELDS).map(
+      (chunk, index) => ({
+        title: index === 0 ? 'Dati principali' : 'Altri campi',
+        fields: chunk.map((field) => this.toBootstrapFormField(field))
+      })
+    );
+
+    return {
+      title: {
+        create: `Nuovo ${entity.label ?? entity.id}`,
+        edit: `Modifica ${entity.label ?? entity.id}`
+      },
+      query: {
+        object: entity.objectApiName,
+        fields: this.uniqueValues(['Id', ...writableFields.map((field) => field.name)]),
+        where: [
+          {
+            field: 'Id',
+            operator: '=',
+            value: '{{id}}'
+          }
+        ],
+        limit: 1
+      },
+      subtitle: entity.description,
+      sections
+    };
+  }
+
+  private rankBootstrapFields(
+    fields: SalesforceFieldDescribe[],
+    context: 'list' | 'detail' | 'form' | 'search'
+  ): SalesforceFieldDescribe[] {
+    const scored = fields
+      .filter((field) => field.name.length > 0)
+      .filter((field) => {
+        if (context === 'search') {
+          return field.filterable && TEXT_SEARCH_TYPES.has(field.type.toLowerCase());
+        }
+
+        return true;
+      })
+      .map((field) => ({
+        field,
+        score: this.computeBootstrapFieldScore(field, context)
+      }))
+      .sort((left, right) => {
+        if (left.score !== right.score) {
+          return left.score - right.score;
+        }
+
+        return left.field.name.localeCompare(right.field.name, 'en', { sensitivity: 'base' });
+      });
+
+    return scored.map((entry) => entry.field);
+  }
+
+  private computeBootstrapFieldScore(
+    field: SalesforceFieldDescribe,
+    context: 'list' | 'detail' | 'form' | 'search'
+  ): number {
+    const name = field.name.toLowerCase();
+    const label = field.label.toLowerCase();
+    const type = field.type.toLowerCase();
+    let score = 100;
+
+    if (name === 'id') {
+      score -= context === 'detail' ? 5 : 0;
+    }
+
+    if (name === 'name') {
+      score -= 90;
+    }
+
+    if (
+      name.endsWith('name') ||
+      label.includes('name') ||
+      name.includes('subject') ||
+      name.includes('title')
+    ) {
+      score -= 55;
+    }
+
+    if (name.includes('status')) {
+      score -= 50;
+    }
+
+    if (name.includes('stage')) {
+      score -= 48;
+    }
+
+    if (name.includes('type')) {
+      score -= 42;
+    }
+
+    if (name.includes('email')) {
+      score -= 40;
+    }
+
+    if (name.includes('phone') || name.includes('mobile') || name.includes('fax')) {
+      score -= 38;
+    }
+
+    if (name.includes('amount') || name.includes('total') || name.includes('value')) {
+      score -= 30;
+    }
+
+    if (
+      name.includes('date') ||
+      name.includes('deadline') ||
+      name.includes('start') ||
+      name.includes('end') ||
+      name.includes('close')
+    ) {
+      score -= 26;
+    }
+
+    if (type === 'date') {
+      score -= context === 'detail' ? 18 : 12;
+    } else if (type === 'datetime') {
+      score -= context === 'detail' ? 14 : 8;
+    } else if (type === 'email' || type === 'phone') {
+      score -= 20;
+    } else if (type === 'string' || type === 'picklist') {
+      score -= 16;
+    } else if (type === 'textarea' || type === 'longtextarea' || type === 'richtextarea') {
+      score += context === 'list' ? 32 : 10;
+    } else if (type === 'reference') {
+      score += 24;
+    } else if (type === 'boolean') {
+      score += context === 'form' ? 8 : 18;
+    }
+
+    if (name !== 'id' && name.endsWith('id')) {
+      score += 34;
+    }
+
+    if (this.isBootstrapSystemField(name)) {
+      score += 70;
+    } else if (this.isBootstrapAuditField(name)) {
+      score += 30;
+    }
+
+    if (context === 'form') {
+      if (field.createable || field.updateable) {
+        score -= 12;
+      }
+
+      if (!field.nillable) {
+        score -= 8;
+      }
+    }
+
+    if (context === 'search' && type === 'reference') {
+      score += 8;
+    }
+
+    return score;
+  }
+
+  private isBootstrapSystemField(name: string): boolean {
+    return [
+      'createdbyid',
+      'lastmodifiedbyid',
+      'systemmodstamp',
+      'isdeleted',
+      'ownerid',
+      'recordtypeid',
+      'lastreferenceddate',
+      'lastvieweddate'
+    ].includes(name);
+  }
+
+  private isBootstrapAuditField(name: string): boolean {
+    return ['createddate', 'lastmodifieddate', 'lastactivitydate'].includes(name);
+  }
+
+  private selectBootstrapListOrderField(
+    displayFields: SalesforceFieldDescribe[],
+    allFields: SalesforceFieldDescribe[]
+  ): { field: string; direction: 'ASC' | 'DESC' } | undefined {
+    if (displayFields.some((field) => field.name === 'Name')) {
+      return {
+        field: 'Name',
+        direction: 'ASC'
+      };
+    }
+
+    if (this.getFieldByName(allFields, 'CreatedDate')) {
+      return {
+        field: 'CreatedDate',
+        direction: 'DESC'
+      };
+    }
+
+    if (this.getFieldByName(allFields, 'LastModifiedDate')) {
+      return {
+        field: 'LastModifiedDate',
+        direction: 'DESC'
+      };
+    }
+
+    const firstField = displayFields[0];
+    if (!firstField || firstField.name === 'Id') {
+      return undefined;
+    }
+
+    return {
+      field: firstField.name,
+      direction: 'ASC'
+    };
+  }
+
+  private getFieldByName(
+    fields: SalesforceFieldDescribe[],
+    fieldName: string
+  ): SalesforceFieldDescribe | undefined {
+    return fields.find((field) => field.name === fieldName);
+  }
+
+  private createSyntheticIdField(): SalesforceFieldDescribe {
+    return {
+      name: 'Id',
+      label: 'Record ID',
+      type: 'id',
+      nillable: false,
+      createable: false,
+      updateable: false,
+      filterable: true
+    };
+  }
+
+  private uniqueValues(values: string[]): string[] {
+    return [...new Set(values.filter((value) => value.trim().length > 0))];
+  }
+
+  private uniqueFieldOrder(fields: SalesforceFieldDescribe[]): SalesforceFieldDescribe[] {
+    const seen = new Set<string>();
+    return fields.filter((field) => {
+      if (seen.has(field.name)) {
+        return false;
+      }
+
+      seen.add(field.name);
+      return true;
+    });
+  }
+
+  private toBootstrapColumn(field: SalesforceFieldDescribe): EntityListViewConfig['columns'][number] {
+    return {
+      field: field.name,
+      label: field.label || field.name
+    };
+  }
+
+  private toBootstrapDetailField(
+    field: SalesforceFieldDescribe
+  ): EntityDetailSectionConfig['fields'][number] {
+    return {
+      field: field.name,
+      label: field.label || field.name,
+      format: DETAIL_FORMAT_FIELD_TYPES.has(field.type.toLowerCase())
+        ? (field.type.toLowerCase() as 'date' | 'datetime')
+        : undefined
+    };
+  }
+
+  private toBootstrapFormField(
+    field: SalesforceFieldDescribe
+  ): NonNullable<EntityFormSectionConfig['fields']>[number] {
+    return {
+      field: field.name,
+      label: field.label || field.name,
+      inputType: this.mapBootstrapFormInputType(field.type),
+      required: field.nillable ? undefined : true
+    };
+  }
+
+  private mapBootstrapFormInputType(type: string): string {
+    const normalizedType = type.toLowerCase();
+
+    if (normalizedType === 'email') {
+      return 'email';
+    }
+
+    if (normalizedType === 'phone') {
+      return 'tel';
+    }
+
+    if (normalizedType === 'date') {
+      return 'date';
+    }
+
+    if (
+      normalizedType === 'textarea' ||
+      normalizedType === 'longtextarea' ||
+      normalizedType === 'richtextarea'
+    ) {
+      return 'textarea';
+    }
+
+    return 'text';
+  }
+
+  private usesBootstrapTextFallback(field: SalesforceFieldDescribe): boolean {
+    return (
+      this.mapBootstrapFormInputType(field.type) === 'text' &&
+      !SAFE_TEXT_INPUT_SOURCE_TYPES.has(field.type.toLowerCase())
+    );
+  }
+
+  private formatWarningFieldList(fields: SalesforceFieldDescribe[]): string {
+    const visibleFields = fields.slice(0, 5).map((field) => `${field.name} (${field.type})`);
+    if (fields.length <= 5) {
+      return visibleFields.join(', ');
+    }
+
+    return `${visibleFields.join(', ')} e altri ${fields.length - 5}`;
+  }
+
+  private chunkFields<T>(items: T[], size: number): T[][] {
+    const chunks: T[][] = [];
+
+    for (let index = 0; index < items.length; index += size) {
+      chunks.push(items.slice(index, index + size));
+    }
+
+    return chunks;
   }
 
   private normalizeNavigation(value: unknown): EntityConfig['navigation'] | undefined {
