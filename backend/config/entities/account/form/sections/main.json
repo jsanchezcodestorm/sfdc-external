@@ -1,9 +1,0 @@
-{
-  "title": "Main Information",
-  "fields": [
-    { "label": "Name", "field": "Name", "inputType": "text", "required": true },
-    { "label": "Type", "field": "Type", "inputType": "text" },
-    { "label": "Industry", "field": "Industry", "inputType": "text" },
-    { "label": "Owner Id", "field": "OwnerId", "inputType": "text" }
-  ]
-}

@@ -4,6 +4,7 @@ export type EntityAdminConfigSummary = {
   id: string
   label: string
   objectApiName: string
+  aclResourceConfigured: boolean
   hasList: boolean
   hasDetail: boolean
   hasForm: boolean
@@ -20,6 +21,7 @@ export type EntityAdminConfigListResponse = {
 
 export type EntityAdminConfigResponse = {
   entity: EntityConfig
+  aclResourceConfigured: boolean
 }
 
 export type SalesforceObjectApiNameSuggestion = {

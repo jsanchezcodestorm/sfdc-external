@@ -1,5 +1,6 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 
+import { AclService } from '../../acl/acl.service';
 import { ResourceAccessService } from '../../common/services/resource-access.service';
 import { SalesforceService } from '../../salesforce/salesforce.service';
 import {
@@ -17,11 +18,16 @@ import {
 import { EntityAdminConfigRepository, EntityAdminConfigSummary } from './entity-admin-config.repository';
 
 export interface EntityAdminConfigListResponse {
-  items: EntityAdminConfigSummary[];
+  items: Array<EntityAdminConfigSummary & { aclResourceConfigured: boolean }>;
 }
 
 export interface UpsertEntityAdminConfigPayload {
   entity: unknown;
+}
+
+export interface EntityAdminConfigResponse {
+  entity: EntityConfig;
+  aclResourceConfigured: boolean;
 }
 
 interface SalesforceObjectSuggestion {
@@ -57,6 +63,7 @@ export class EntityAdminConfigService {
   private readonly salesforceFieldRefreshPromises = new Map<string, Promise<SalesforceFieldSuggestion[]>>();
 
   constructor(
+    private readonly aclService: AclService,
     private readonly resourceAccessService: ResourceAccessService,
     private readonly repository: EntityAdminConfigRepository,
     private readonly salesforceService: SalesforceService
@@ -64,23 +71,65 @@ export class EntityAdminConfigService {
 
   async listEntityConfigs(): Promise<EntityAdminConfigListResponse> {
     const items = await this.repository.listSummaries();
-    return { items };
+    return {
+      items: items.map((item) => ({
+        ...item,
+        aclResourceConfigured: this.aclService.hasResource(`entity:${item.id}`)
+      }))
+    };
   }
 
-  async getEntityConfig(entityId: string): Promise<{ entity: EntityConfig }> {
+  async getEntityConfig(entityId: string): Promise<EntityAdminConfigResponse> {
     this.resourceAccessService.assertKebabCaseId(entityId, 'entityId');
     const entity = await this.repository.getEntityConfig(entityId);
-    return { entity };
+    return {
+      entity,
+      aclResourceConfigured: this.aclService.hasResource(`entity:${entityId}`)
+    };
   }
 
-  async upsertEntityConfig(entityId: string, payload: UpsertEntityAdminConfigPayload): Promise<{ entity: EntityConfig }> {
+  async createEntityConfig(payload: UpsertEntityAdminConfigPayload): Promise<EntityAdminConfigResponse> {
+    const entity = this.normalizeEntityConfig(undefined, payload.entity);
+    this.resourceAccessService.assertKebabCaseId(entity.id, 'entity.id');
+
+    if (await this.repository.hasEntityConfig(entity.id)) {
+      throw new ConflictException(`Entity config ${entity.id} already exists`);
+    }
+
+    await this.repository.upsertEntityConfig(entity);
+
+    return {
+      entity: await this.repository.getEntityConfig(entity.id),
+      aclResourceConfigured: this.aclService.hasResource(`entity:${entity.id}`)
+    };
+  }
+
+  async updateEntityConfig(entityId: string, payload: UpsertEntityAdminConfigPayload): Promise<EntityAdminConfigResponse> {
     this.resourceAccessService.assertKebabCaseId(entityId, 'entityId');
+
+    if (!(await this.repository.hasEntityConfig(entityId))) {
+      throw new NotFoundException(`Entity config ${entityId} not found`);
+    }
+
     const normalizedEntityConfig = this.normalizeEntityConfig(entityId, payload.entity);
 
     await this.repository.upsertEntityConfig(normalizedEntityConfig);
     const entity = await this.repository.getEntityConfig(entityId);
 
-    return { entity };
+    return {
+      entity,
+      aclResourceConfigured: this.aclService.hasResource(`entity:${entityId}`)
+    };
+  }
+
+  async deleteEntityConfig(entityId: string): Promise<void> {
+    this.resourceAccessService.assertKebabCaseId(entityId, 'entityId');
+
+    if (!(await this.repository.hasEntityConfig(entityId))) {
+      throw new NotFoundException(`Entity config ${entityId} not found`);
+    }
+
+    await this.repository.deleteEntityConfig(entityId);
   }
 
   async searchSalesforceObjectApiNames(
@@ -117,11 +166,11 @@ export class EntityAdminConfigService {
     };
   }
 
-  private normalizeEntityConfig(entityId: string, value: unknown): EntityConfig {
+  private normalizeEntityConfig(entityId: string | undefined, value: unknown): EntityConfig {
     const entity = this.requireObject(value, 'entity payload must be an object');
     const id = this.requireString(entity.id, 'entity.id is required');
 
-    if (id !== entityId) {
+    if (entityId && id !== entityId) {
       throw new BadRequestException('entity.id must match route entityId');
     }
 

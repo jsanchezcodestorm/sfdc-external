@@ -240,7 +240,7 @@ Conseguenza:
 2. inserire blocco `list` in `entity_list_configs` + almeno una view in `entity_list_view_configs`
 3. inserire blocco `detail` in `entity_detail_configs` + sezioni in `entity_detail_section_configs`
 4. inserire blocco `form` in `entity_form_configs` + sezioni in `entity_form_section_configs` (se entita editabile)
-5. aggiungere risorsa ACL `entity:<entity-id>` in `backend/config/acl/resources/entity.json`
+5. aggiungere risorsa ACL `entity:<entity-id>` nello snapshot ACL PostgreSQL (UI admin ACL o migration Prisma)
 6. applicare migrazione (`prisma migrate dev|deploy`) e rigenerare client Prisma
 7. testare endpoint:
    - `GET /entities/:entityId/config`

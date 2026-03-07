@@ -100,6 +100,15 @@ export class EntityAdminConfigRepository {
     return this.entityConfigRepository.getEntityConfig(entityId);
   }
 
+  async hasEntityConfig(entityId: string): Promise<boolean> {
+    const row = await this.prisma.entityConfigRecord.findUnique({
+      where: { id: entityId },
+      select: { id: true }
+    });
+
+    return Boolean(row);
+  }
+
   async upsertEntityConfig(entityConfig: EntityConfig): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
       await tx.entityConfigRecord.upsert({
@@ -271,5 +280,13 @@ export class EntityAdminConfigRepository {
     });
 
     this.entityConfigRepository.evictEntityConfig(entityConfig.id);
+  }
+
+  async deleteEntityConfig(entityId: string): Promise<void> {
+    await this.prisma.entityConfigRecord.delete({
+      where: { id: entityId }
+    });
+
+    this.entityConfigRepository.evictEntityConfig(entityId);
   }
 }

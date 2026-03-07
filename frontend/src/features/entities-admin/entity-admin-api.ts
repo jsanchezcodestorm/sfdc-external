@@ -19,7 +19,16 @@ export async function fetchEntityAdminConfig(
   )
 }
 
-export async function upsertEntityAdminConfig(
+export async function createEntityAdminConfig(
+  entity: EntityConfig,
+): Promise<EntityAdminConfigResponse> {
+  return apiFetch<EntityAdminConfigResponse>('/entities/admin/configs', {
+    method: 'POST',
+    body: { entity },
+  })
+}
+
+export async function updateEntityAdminConfig(
   entityId: string,
   entity: EntityConfig,
 ): Promise<EntityAdminConfigResponse> {
@@ -30,6 +39,12 @@ export async function upsertEntityAdminConfig(
       body: { entity },
     },
   )
+}
+
+export async function deleteEntityAdminConfig(entityId: string): Promise<void> {
+  await apiFetch<void>(`/entities/admin/configs/${encodeURIComponent(entityId)}`, {
+    method: 'DELETE',
+  })
 }
 
 export async function searchEntityAdminObjectApiNames(

@@ -9,7 +9,7 @@
 - Connettore Salesforce: servizio centralizzato con retry, caching, describe, query/CRUD uniformi.
 - Auth/sessione: login Google, validazione Contact Salesforce, cookie JWT `HttpOnly`, restore via `/auth/session`.
 - ACL: controllo capability su risorse `rest:*`, `entity:*`, `query:*`, `route:*`.
-- Layer config-driven: entita e query definite in JSON (`entities/*`, `queries/templates/*`), non hardcoded.
+- Layer config-driven: entita, ACL e query definite in configurazione versionata su PostgreSQL, non hardcoded.
 - Visibilita row-level: engine a coni con regole `ALLOW/DENY` e modello `deny-by-default`.
 - Postgres + Prisma: storage unico policy visibility, cache coni compilati e audit log.
 - Sicurezza: whitelist, validazione input, blocco query non read-only, enforcement centralizzato ACL + visibility.
@@ -22,7 +22,7 @@ Questa guida descrive come replicare da zero una piattaforma middleware stile `c
 
 - backend NestJS con connettore Salesforce centralizzato
 - frontend React/Vite con autenticazione Google e sessione cookie
-- modello config-driven per entity, query e navigation
+- modello config-driven per entity, query e navigation con source of truth PostgreSQL
 - ACL applicativa e visibilita row-level
 - practice operative su sicurezza, performance, audit e rilascio
 
@@ -41,7 +41,7 @@ flowchart LR
   U["Utente Web"] --> F["Frontend React/Vite"]
   F -->|"/api + cookie sessione"| B["Backend NestJS"]
   B --> A["Auth Module (Google + JWT session)"]
-  B --> Q["Query/Entities Engine (config-driven)"]
+  B --> Q["Query/Entities Engine (PostgreSQL-backed config)"]
   B --> V["Visibility Engine (coni)"]
   B --> S["Salesforce Connector (jsforce)"]
   V --> P[("PostgreSQL policy store\ncache/audit coni")]
@@ -287,7 +287,7 @@ Regola obbligatoria in produzione:
 
 ### 9.1 Design
 
-Gestire ACL via configurazione file o store esterno:
+Gestire ACL via store PostgreSQL:
 
 - `permissions`
 - `defaults`
@@ -308,12 +308,12 @@ Prima si verifica l accesso alla capability (ACL), poi si applica visibilita row
 
 ### 10.1 Struttura consigliata
 
-`backend/config/entities/<entityId>/` con:
+record PostgreSQL per `entity_configs` e tabelle correlate con:
 
-- `base.json`
-- `list/index.json` + `list/views/*.json`
-- `detail/index.json` + `detail/sections/*.json` + `detail/related-lists/*.json`
-- `form/index.json` + `form/sections/*.json`
+- blocco `base`
+- blocco `list` + views ordinate
+- blocco `detail` + sections/related lists ordinate
+- blocco `form` + sections ordinate
 
 ### 10.2 Vantaggi
 
@@ -336,7 +336,7 @@ Prima si verifica l accesso alla capability (ACL), poi si applica visibilita row
 
 ### 11.1 Obiettivo
 
-Gestire query complesse e riusabili via template JSON, evitando SOQL sparsa nei service.
+Gestire query complesse e riusabili via template persistiti in PostgreSQL, evitando SOQL sparsa nei service.
 
 ### 11.2 Tipi supportati
 
@@ -345,7 +345,7 @@ Gestire query complesse e riusabili via template JSON, evitando SOQL sparsa nei 
 
 ### 11.3 File struttura
 
-`backend/config/queries/templates/*.json`
+tabella PostgreSQL `query_templates`
 
 ### 11.4 Capacita da prevedere
 
@@ -798,7 +798,7 @@ Gate di rilascio:
 
 ### Fase C - Data layer
 
-- Entities config-driven
+- Entities config-driven su PostgreSQL
 - Query templates DSL
 - global search
 
@@ -820,7 +820,7 @@ La piattaforma e pronta quando:
 
 - il login utente e stabile e ripristinabile via `/auth/session`
 - ogni endpoint dati applica ACL + visibility
-- nuove entity/query si configurano via JSON senza modifica codice core
+- nuove entity/query si configurano via PostgreSQL senza modifica codice core
 - i log consentono di spiegare chi ha visto cosa e perche
 - i tempi risposta restano entro SLA definiti
 

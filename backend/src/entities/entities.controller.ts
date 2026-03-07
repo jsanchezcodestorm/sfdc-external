@@ -34,13 +34,26 @@ export class EntitiesController {
     return this.entityAdminConfigService.getEntityConfig(entityId);
   }
 
+  @Post('admin/configs')
+  @AclResource('rest:entities-config-admin')
+  createEntityAdminConfig(@Body() payload: UpsertEntityAdminConfigDto): Promise<unknown> {
+    return this.entityAdminConfigService.createEntityConfig(payload);
+  }
+
   @Put('admin/configs/:entityId')
   @AclResource('rest:entities-config-admin')
-  upsertEntityAdminConfig(
+  updateEntityAdminConfig(
     @Param('entityId') entityId: string,
     @Body() payload: UpsertEntityAdminConfigDto
   ): Promise<unknown> {
-    return this.entityAdminConfigService.upsertEntityConfig(entityId, payload);
+    return this.entityAdminConfigService.updateEntityConfig(entityId, payload);
+  }
+
+  @Delete('admin/configs/:entityId')
+  @AclResource('rest:entities-config-admin')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async deleteEntityAdminConfig(@Param('entityId') entityId: string): Promise<void> {
+    await this.entityAdminConfigService.deleteEntityConfig(entityId);
   }
 
   @Get('admin/configs/object-api-name/suggestions')
