@@ -1,5 +1,6 @@
 import { apiFetch } from '../../lib/api'
 import type {
+  EntityAdminBootstrapPreviewResponse,
   EntityAdminConfigListResponse,
   EntityAdminConfigResponse,
   SalesforceObjectApiNameSuggestionResponse,
@@ -26,6 +27,18 @@ export async function createEntityAdminConfig(
     method: 'POST',
     body: { entity },
   })
+}
+
+export async function previewEntityAdminBootstrap(
+  entity: EntityConfig,
+): Promise<EntityAdminBootstrapPreviewResponse> {
+  return apiFetch<EntityAdminBootstrapPreviewResponse>(
+    '/entities/admin/configs/bootstrap-preview',
+    {
+      method: 'POST',
+      body: { entity },
+    },
+  )
 }
 
 export async function updateEntityAdminConfig(

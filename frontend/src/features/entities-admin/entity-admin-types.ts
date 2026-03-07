@@ -24,6 +24,11 @@ export type EntityAdminConfigResponse = {
   aclResourceConfigured: boolean
 }
 
+export type EntityAdminBootstrapPreviewResponse = {
+  entity: EntityConfig
+  warnings: string[]
+}
+
 export type SalesforceObjectApiNameSuggestion = {
   name: string
   label: string

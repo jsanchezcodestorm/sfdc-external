@@ -7,10 +7,12 @@ import {
   deleteEntityAdminConfig,
   fetchEntityAdminConfig,
   fetchEntityAdminConfigList,
+  previewEntityAdminBootstrap,
   searchEntityAdminObjectApiNames,
   updateEntityAdminConfig,
 } from '../entity-admin-api'
 import type {
+  EntityAdminBootstrapPreviewResponse,
   EntityAdminConfigSummary,
   EntityConfigSectionKey,
   SalesforceObjectApiNameSuggestion,
@@ -24,6 +26,7 @@ import {
   isEntityConfigSection,
   NEW_ENTITY_SENTINEL,
 } from '../entity-admin-routing'
+import { EntityBootstrapPreviewPanel } from '../components/EntityBootstrapPreviewPanel'
 import { EntityConfigBaseForm } from '../components/EntityConfigBaseForm'
 import { EntityConfigDetailForm } from '../components/EntityConfigDetailForm'
 import { EntityConfigFormForm } from '../components/EntityConfigFormForm'
@@ -55,6 +58,10 @@ import type {
 type RouteParams = {
   entityId?: string
   section?: string
+}
+
+type EntityAdminLocationState = {
+  saveInfo?: string
 }
 
 export function EntityAdminConfigPage() {
@@ -104,6 +111,13 @@ export function EntityAdminConfigPage() {
   const [editorError, setEditorError] = useState<string | null>(null)
   const [saveInfo, setSaveInfo] = useState<string | null>(null)
   const [aclResourceConfigured, setAclResourceConfigured] = useState(true)
+  const [bootstrapPreview, setBootstrapPreview] =
+    useState<EntityAdminBootstrapPreviewResponse | null>(null)
+  const [bootstrapPreviewFingerprint, setBootstrapPreviewFingerprint] = useState<string | null>(
+    null,
+  )
+  const [loadingBootstrapPreview, setLoadingBootstrapPreview] = useState(false)
+  const [bootstrapPreviewError, setBootstrapPreviewError] = useState<string | null>(null)
 
   const selectedEntitySummary = useMemo(
     () => entities.find((entity) => entity.id === selectedEntityId) ?? null,
@@ -146,6 +160,13 @@ export function EntityAdminConfigPage() {
     listFormDraft,
     persistedDraftSnapshot,
   ])
+
+  const currentBaseFingerprint = useMemo(
+    () => createBaseDraftFingerprint(baseFormDraft),
+    [baseFormDraft],
+  )
+  const hasCurrentBootstrapPreview =
+    bootstrapPreview !== null && bootstrapPreviewFingerprint === currentBaseFingerprint
 
   const refreshEntityList = useCallback(async () => {
     setLoadingList(true)
@@ -265,6 +286,33 @@ export function EntityAdminConfigPage() {
   useEffect(() => {
     setSaveInfo(null)
   }, [activeSection, isCreateRoute, isEditRoute, selectedEntityId])
+
+  useEffect(() => {
+    const nextSaveInfo = readLocationSaveInfo(location.state)
+    if (!nextSaveInfo) {
+      return
+    }
+
+    setSaveInfo(nextSaveInfo)
+    navigate(
+      {
+        pathname: location.pathname,
+        search: location.search,
+        hash: location.hash,
+      },
+      {
+        replace: true,
+        state: null,
+      },
+    )
+  }, [location.hash, location.pathname, location.search, location.state, navigate])
+
+  useEffect(() => {
+    setBootstrapPreview(null)
+    setBootstrapPreviewFingerprint(null)
+    setBootstrapPreviewError(null)
+    setLoadingBootstrapPreview(false)
+  }, [isCreateRoute])
 
   const shouldBlockDirtyNavigation = useCallback(
     ({
@@ -410,6 +458,7 @@ export function EntityAdminConfigPage() {
 
     setSaveInfo(null)
     setEditorError(null)
+    setBootstrapPreviewError(null)
   }
 
   const selectObjectApiNameSuggestion = (value: string) => {
@@ -580,6 +629,33 @@ export function EntityAdminConfigPage() {
     setEditorError(null)
   }
 
+  const generateBootstrapPreview = async () => {
+    const nextConfig = createEntityConfigFromBaseDraft(baseFormDraft)
+
+    if (!nextConfig) {
+      setEditorError(getBaseDraftValidationMessage(baseFormDraft, 'generare il preset'))
+      setBootstrapPreviewError(null)
+      return
+    }
+
+    setLoadingBootstrapPreview(true)
+    setBootstrapPreviewError(null)
+    setEditorError(null)
+    setPageError(null)
+
+    try {
+      const payload = await previewEntityAdminBootstrap(nextConfig)
+      setBootstrapPreview(payload)
+      setBootstrapPreviewFingerprint(currentBaseFingerprint)
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Errore generazione bootstrap preview'
+      setBootstrapPreviewError(message)
+    } finally {
+      setLoadingBootstrapPreview(false)
+    }
+  }
+
   const saveSelectedEntityConfig = async () => {
     if (!selectedEntityConfig) {
       return
@@ -645,11 +721,49 @@ export function EntityAdminConfigPage() {
       const payload = await createEntityAdminConfig(nextConfig)
       setSelectedEntityConfig(payload.entity)
       setAclResourceConfigured(payload.aclResourceConfigured)
-      setSaveInfo('Entity creata')
       await refreshEntityList()
-      navigate(buildEntityEditPath(payload.entity.id, 'base'), { replace: true })
+      navigate(buildEntityEditPath(payload.entity.id, 'base'), {
+        replace: true,
+        state: {
+          saveInfo: 'Entity creata',
+        } satisfies EntityAdminLocationState,
+      })
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Errore creazione entity config'
+      setPageError(message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const createNewEntityFromBootstrapPreview = async () => {
+    if (!bootstrapPreview || !hasCurrentBootstrapPreview) {
+      setBootstrapPreviewError(
+        'Rigenera la preview prima di creare la entity con preset.',
+      )
+      return
+    }
+
+    setSaving(true)
+    setSaveInfo(null)
+    setPageError(null)
+    setEditorError(null)
+    setBootstrapPreviewError(null)
+
+    try {
+      const payload = await createEntityAdminConfig(bootstrapPreview.entity)
+      setSelectedEntityConfig(payload.entity)
+      setAclResourceConfigured(payload.aclResourceConfigured)
+      await refreshEntityList()
+      navigate(buildEntityEditPath(payload.entity.id, 'list'), {
+        replace: true,
+        state: {
+          saveInfo: 'Preset applicato, rivedi list/detail/form e configura ACL.',
+        } satisfies EntityAdminLocationState,
+      })
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Errore creazione entity con preset'
       setPageError(message)
     } finally {
       setSaving(false)
@@ -707,16 +821,6 @@ export function EntityAdminConfigPage() {
                 className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
               >
                 Torna al catalogo
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  void saveNewEntityConfig()
-                }}
-                disabled={saving}
-                className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-65"
-              >
-                {saving ? 'Creazione...' : 'Crea entity'}
               </button>
             </div>
           ) : isViewRoute && selectedEntityId ? (
@@ -805,12 +909,18 @@ export function EntityAdminConfigPage() {
 
       {isCreateRoute ? (
         <>
-          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-sm text-slate-600">
-              In creazione iniziale e disponibile solo la sezione Base. Dopo il primo save, la
-              navigazione passa all&apos;editor completo della nuova entity.
-            </p>
-          </section>
+          <EntityBootstrapPreviewPanel
+            preview={bootstrapPreview}
+            previewCurrent={hasCurrentBootstrapPreview}
+            previewLoading={loadingBootstrapPreview}
+            previewError={bootstrapPreviewError}
+            saving={saving}
+            onGeneratePreview={() => {
+              void generateBootstrapPreview()
+            }}
+            onCreateWithPreset={() => createNewEntityFromBootstrapPreview()}
+            onCreateBaseOnly={() => saveNewEntityConfig()}
+          />
 
           <EntityConfigBaseForm
             value={baseFormDraft}
@@ -1183,6 +1293,25 @@ function createBaseFormDraft(entity: EntityConfig): BaseFormDraft {
   }
 }
 
+function createBaseDraftFingerprint(baseDraft: BaseFormDraft): string {
+  return JSON.stringify({
+    id: baseDraft.id.trim(),
+    label: baseDraft.label.trim(),
+    description: baseDraft.description.trim(),
+    objectApiName: baseDraft.objectApiName.trim(),
+    basePath: baseDraft.basePath.trim(),
+  })
+}
+
+function readLocationSaveInfo(state: unknown): string | null {
+  if (!state || typeof state !== 'object') {
+    return null
+  }
+
+  const value = (state as EntityAdminLocationState).saveInfo
+  return typeof value === 'string' && value.trim().length > 0 ? value : null
+}
+
 function createEntityConfigFromBaseDraft(baseDraft: BaseFormDraft): EntityConfig | null {
   const id = baseDraft.id.trim()
   const label = baseDraft.label.trim()
@@ -1289,7 +1418,7 @@ function normalizeDraftValidationError(error: unknown): EntityConfigDraftValidat
 
 function getBaseDraftValidationMessage(
   baseDraft: BaseFormDraft,
-  action: 'creare' | 'salvare',
+  action: 'creare' | 'salvare' | 'generare il preset',
 ): string {
   if (baseDraft.id.trim() === NEW_ENTITY_SENTINEL) {
     return `Entity Id non puo essere ${NEW_ENTITY_SENTINEL}`
