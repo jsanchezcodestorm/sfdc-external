@@ -18,7 +18,10 @@ import { EntityListPage } from './features/entities/pages/EntityListPage'
 import { EntityRelatedListPage } from './features/entities/pages/EntityRelatedListPage'
 import { EntityRouteFallbackPage } from './features/entities/pages/EntityRouteFallbackPage'
 import { EntityAdminConfigPage } from './features/entities-admin/pages/EntityAdminConfigPage'
-import { QueryTemplateAdminPage } from './features/query-template-admin/pages/QueryTemplateAdminPage'
+import { QueryTemplateAdminLayout } from './features/query-template-admin/pages/QueryTemplateAdminLayout'
+import { QueryTemplateDetailPage } from './features/query-template-admin/pages/QueryTemplateDetailPage'
+import { QueryTemplateEditorPage } from './features/query-template-admin/pages/QueryTemplateEditorPage'
+import { QueryTemplateListPage } from './features/query-template-admin/pages/QueryTemplateListPage'
 import { HomePage } from './pages/HomePage'
 import { LoginPage } from './pages/LoginPage'
 
@@ -60,8 +63,15 @@ function App() {
               <Route path="resources/:resourceId" element={<AclResourceDetailPage />} />
               <Route path="resources/:resourceId/edit" element={<AclResourceEditorPage mode="edit" />} />
             </Route>
-            <Route path="query-templates" element={<QueryTemplateAdminPage />} />
-            <Route path="query-templates/:templateId" element={<QueryTemplateAdminPage />} />
+            <Route path="query-templates" element={<QueryTemplateAdminLayout />}>
+              <Route index element={<QueryTemplateListPage />} />
+              <Route path="__new__" element={<QueryTemplateEditorPage mode="create" />} />
+              <Route path=":templateId" element={<QueryTemplateDetailPage />} />
+              <Route
+                path=":templateId/edit"
+                element={<QueryTemplateEditorPage mode="edit" />}
+              />
+            </Route>
           </Route>
         </Route>
 
