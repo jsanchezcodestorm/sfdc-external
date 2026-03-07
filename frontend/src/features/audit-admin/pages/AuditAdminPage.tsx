@@ -228,7 +228,7 @@ export function AuditAdminPage() {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-7xl flex-col gap-5">
+    <div className="flex w-full flex-col gap-5">
       <header className="rounded-2xl border border-slate-200 bg-white/90 p-6 shadow-sm backdrop-blur-sm">
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-700">
           Admin
