@@ -28,7 +28,7 @@ export function AppTopBar() {
   }
 
   return (
-    <header className="border-b border-slate-200/80 bg-white/85 backdrop-blur-sm">
+    <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/85 backdrop-blur-sm">
       <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
         <Link
           to="/"

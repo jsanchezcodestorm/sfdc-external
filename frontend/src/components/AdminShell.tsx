@@ -15,7 +15,7 @@ export function AdminShell() {
       eyebrow: 'Amministrazione',
       title: 'Moduli admin',
       description: "La navigazione della colonna sinistra copre l'intero dominio /admin.",
-      itemCountLabel: '4 moduli',
+      itemCountLabel: '5 moduli',
       items: [
         {
           id: 'entity-config',
@@ -51,6 +51,15 @@ export function AdminShell() {
           isActive: location.pathname.startsWith('/admin/visibility'),
           onSelect: () => {
             navigate('/admin/visibility')
+          },
+        },
+        {
+          id: 'audit',
+          label: 'Audit',
+          description: 'Consultazione read-only degli stream audit su PostgreSQL.',
+          isActive: location.pathname.startsWith('/admin/audit'),
+          onSelect: () => {
+            navigate('/admin/audit')
           },
         },
       ],

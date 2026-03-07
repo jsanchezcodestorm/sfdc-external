@@ -11,6 +11,8 @@ import { AclPermissionsPage } from './features/acl-admin/pages/AclPermissionsPag
 import { AclResourceDetailPage } from './features/acl-admin/pages/AclResourceDetailPage'
 import { AclResourceEditorPage } from './features/acl-admin/pages/AclResourceEditorPage'
 import { AclResourcesPage } from './features/acl-admin/pages/AclResourcesPage'
+import { AuditAdminDetailPage } from './features/audit-admin/pages/AuditAdminDetailPage'
+import { AuditAdminPage } from './features/audit-admin/pages/AuditAdminPage'
 
 import { EntityDetailPage } from './features/entities/pages/EntityDetailPage'
 import { EntityFormPage } from './features/entities/pages/EntityFormPage'
@@ -114,6 +116,8 @@ function App() {
               />
               <Route path="debug" element={<VisibilityDebugPage />} />
             </Route>
+            <Route path="audit" element={<AuditAdminPage />} />
+            <Route path="audit/:stream/:auditId" element={<AuditAdminDetailPage />} />
           </Route>
         </Route>
 
