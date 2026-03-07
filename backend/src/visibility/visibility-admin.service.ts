@@ -9,6 +9,7 @@ import {
 import { Prisma, VisibilityRuleEffect } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
+import { SalesforceService } from '../salesforce/salesforce.service';
 
 import {
   compileVisibilityRuleNode,
@@ -76,11 +77,18 @@ export interface VisibilityAssignmentDetailResponse {
   assignment: VisibilityAssignmentDefinition;
 }
 
+export interface VisibilityDebugContactSuggestion {
+  id: string;
+  name?: string;
+  recordTypeDeveloperName?: string;
+}
+
 @Injectable()
 export class VisibilityAdminService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly visibilityService: VisibilityService,
+    private readonly salesforceService: SalesforceService,
   ) {}
 
   async listCones(): Promise<{ items: VisibilityConeSummaryResponse[] }> {
@@ -428,6 +436,29 @@ export class VisibilityAdminService {
     });
   }
 
+  async searchDebugContacts(
+    query: string,
+    limit: number | undefined,
+  ): Promise<{ items: VisibilityDebugContactSuggestion[] }> {
+    const normalizedQuery = this.requireString(query, 'q is required');
+    if (normalizedQuery.length < 2) {
+      throw new BadRequestException('q must be at least 2 characters');
+    }
+
+    if (normalizedQuery.length > 80) {
+      throw new BadRequestException('q must be at most 80 characters');
+    }
+
+    const items = await this.salesforceService.searchContactsByIdOrName(
+      normalizedQuery,
+      this.normalizeDebugContactSuggestionLimit(limit),
+    );
+
+    return {
+      items,
+    };
+  }
+
   async evaluateDebug(payload: {
     objectApiName: string;
     contactId: string;
@@ -731,6 +762,18 @@ export class VisibilityAdminService {
 
       return normalized;
     });
+  }
+
+  private normalizeDebugContactSuggestionLimit(value: unknown): number {
+    if (value === undefined || value === null) {
+      return 8;
+    }
+
+    if (typeof value !== 'number' || !Number.isInteger(value) || value < 1 || value > 8) {
+      throw new BadRequestException('limit must be an integer between 1 and 8');
+    }
+
+    return value;
   }
 
   private requireObject(value: unknown, message: string): Record<string, unknown> {

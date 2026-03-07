@@ -29,6 +29,7 @@ interface SalesforceFieldSummary {
 
 interface SalesforceContactRecord {
   Id: string;
+  Name?: string;
   Email?: string;
   RecordType?: {
     DeveloperName?: string;
@@ -50,6 +51,7 @@ interface SalesforceConnectionContext {
 }
 
 const DEFAULT_DESCRIBE_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const SALESFORCE_ID_QUERY_PATTERN = /^[A-Za-z0-9]{15}(?:[A-Za-z0-9]{3})?$/;
 
 @Injectable()
 export class SalesforceService {
@@ -143,6 +145,46 @@ export class SalesforceService {
           ? contact.RecordType.DeveloperName
           : undefined
     };
+  }
+
+  async searchContactsByIdOrName(
+    query: string,
+    limit: number
+  ): Promise<Array<{ id: string; name?: string; recordTypeDeveloperName?: string }>> {
+    const normalizedQuery = query.trim();
+    if (normalizedQuery.length < 2) {
+      throw new BadRequestException('query must be at least 2 characters');
+    }
+
+    if (!Number.isInteger(limit) || limit < 1 || limit > 8) {
+      throw new BadRequestException('limit must be an integer between 1 and 8');
+    }
+
+    const likePrefix = `${this.escapeSoqlLikeLiteral(normalizedQuery)}%`;
+    const filters = [`Name LIKE '${likePrefix}'`];
+    if (SALESFORCE_ID_QUERY_PATTERN.test(normalizedQuery)) {
+      filters.unshift(`Id = '${this.escapeSoqlLiteral(normalizedQuery)}'`);
+    }
+
+    const result = (await this.executeReadOnlyQuery(
+      [
+        'SELECT Id, Name, RecordType.DeveloperName',
+        'FROM Contact',
+        `WHERE ${filters.join(' OR ')}`,
+        'ORDER BY Name ASC, Id ASC',
+        `LIMIT ${limit}`
+      ].join(' ')
+    )) as { records?: SalesforceContactRecord[] };
+
+    const records = Array.isArray(result.records) ? result.records : [];
+    return records.map((contact) => ({
+      id: String(contact.Id),
+      name: typeof contact.Name === 'string' ? contact.Name : undefined,
+      recordTypeDeveloperName:
+        typeof contact.RecordType?.DeveloperName === 'string'
+          ? contact.RecordType.DeveloperName
+          : undefined
+    }));
   }
 
   async executeReadOnlyQuery(soql: string): Promise<unknown> {
@@ -606,6 +648,10 @@ export class SalesforceService {
 
   private escapeSoqlLiteral(value: string): string {
     return value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  }
+
+  private escapeSoqlLikeLiteral(value: string): string {
+    return this.escapeSoqlLiteral(value).replace(/%/g, '\\%').replace(/_/g, '\\_');
   }
 
   private isObjectRecord(value: unknown): value is Record<string, unknown> {

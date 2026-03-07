@@ -8,6 +8,7 @@ import {
   Param,
   Post,
   Put,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 
@@ -16,6 +17,7 @@ import { AclResource } from '../common/decorators/acl-resource.decorator';
 import { AclGuard } from '../common/guards/acl.guard';
 
 import { EvaluateVisibilityDebugDto } from './dto/evaluate-visibility-debug.dto';
+import { SearchVisibilityDebugContactsDto } from './dto/search-visibility-debug-contacts.dto';
 import { UpsertVisibilityAssignmentDto } from './dto/upsert-visibility-assignment.dto';
 import { UpsertVisibilityConeDto } from './dto/upsert-visibility-cone.dto';
 import { UpsertVisibilityRuleDto } from './dto/upsert-visibility-rule.dto';
@@ -126,6 +128,12 @@ export class VisibilityController {
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteAssignment(@Param('assignmentId') assignmentId: string): Promise<void> {
     await this.visibilityAdminService.deleteAssignment(assignmentId);
+  }
+
+  @Get('admin/debug/contact-suggestions')
+  @AclResource('rest:visibility-admin')
+  searchDebugContacts(@Query() query: SearchVisibilityDebugContactsDto): Promise<unknown> {
+    return this.visibilityAdminService.searchDebugContacts(query.q, query.limit);
   }
 
   @Post('admin/debug/evaluate')
