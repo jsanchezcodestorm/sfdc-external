@@ -1,6 +1,12 @@
 import { useEffect, useMemo } from 'react'
 import { Outlet, matchPath, useLocation } from 'react-router-dom'
 
+import {
+  buildAppsAdminCreatePath,
+  buildAppsAdminListPath,
+  buildAppsAdminEditPath,
+  buildAppsAdminViewPath,
+} from '../features/apps-admin/apps-admin-utils'
 import { AUDIT_TAB_COPY, buildAuditListPath, buildAuditSearch, parseAuditTab } from '../features/audit-admin/audit-admin-utils'
 import {
   buildEntityCatalogPath,
@@ -67,7 +73,6 @@ export function AdminShell() {
           <WorkspaceSidebar
             eyebrow="Admin"
             title="Backoffice"
-            description="Navigazione globale dei moduli amministrativi PostgreSQL-backed."
             modules={modules}
             onNavigate={closeSidebar}
           />
@@ -79,7 +84,6 @@ export function AdminShell() {
           <WorkspaceSidebar
             eyebrow="Admin"
             title="Backoffice"
-            description="Navigazione globale dei moduli amministrativi PostgreSQL-backed."
             modules={modules}
           />
         </div>
@@ -95,6 +99,7 @@ export function AdminShell() {
 function buildAdminSidebarModules(pathname: string, search: string): WorkspaceSidebarModule[] {
   return [
     buildEntityConfigModule(pathname),
+    buildAppsModule(pathname),
     buildAclModule(pathname),
     buildQueryTemplatesModule(pathname),
     buildVisibilityModule(pathname),
@@ -184,6 +189,65 @@ function buildEntityConfigModule(pathname: string): WorkspaceSidebarModule {
   }
 }
 
+function buildAppsModule(pathname: string): WorkspaceSidebarModule {
+  const isActive = pathname.startsWith('/admin/apps')
+  const isCatalogRoute = pathname === buildAppsAdminListPath()
+  const isCreateRoute = pathname === buildAppsAdminCreatePath()
+  const editMatch = matchPath('/admin/apps/:appId/edit', pathname)
+  const viewMatch = isCreateRoute ? null : matchPath('/admin/apps/:appId', pathname)
+  const appId = editMatch?.params.appId
+    ? decodeURIComponent(editMatch.params.appId)
+    : viewMatch?.params.appId
+    ? decodeURIComponent(viewMatch.params.appId)
+    : null
+
+  const items: WorkspaceSidebarItem[] = [
+    {
+      id: 'apps-catalog',
+      label: 'Catalogo',
+      to: buildAppsAdminListPath(),
+      caption: 'Lista app configurate',
+      isActive: isCatalogRoute,
+    },
+  ]
+
+  if (isCreateRoute) {
+    items.push({
+      id: 'apps-create',
+      label: 'Nuova app',
+      to: buildAppsAdminCreatePath(),
+      caption: 'Create flow',
+      isActive: true,
+    })
+  } else if (appId) {
+    items.push(
+      {
+        id: 'apps-overview',
+        label: 'Overview',
+        to: buildAppsAdminViewPath(appId),
+        caption: 'Dettaglio readonly',
+        isActive: Boolean(viewMatch),
+      },
+      {
+        id: 'apps-edit',
+        label: 'Edit',
+        to: buildAppsAdminEditPath(appId),
+        caption: 'Editor metadata',
+        isActive: Boolean(editMatch),
+      },
+    )
+  }
+
+  return {
+    id: 'apps',
+    label: 'Apps',
+    to: buildAppsAdminListPath(),
+    description: 'Catalogo UI con associazioni Entity e Permission.',
+    isActive,
+    items,
+  }
+}
+
 function buildAclModule(pathname: string): WorkspaceSidebarModule {
   const isActive = pathname.startsWith('/admin/acl')
 
@@ -233,7 +297,7 @@ function buildQueryTemplatesModule(pathname: string): WorkspaceSidebarModule {
     id: 'query-templates',
     label: 'Query Templates',
     to: '/admin/query-templates',
-    description: 'Catalogo template runtime.',
+    description: 'Catalogo template query.',
     isActive,
     items: [
       {
@@ -282,7 +346,7 @@ function buildVisibilityModule(pathname: string): WorkspaceSidebarModule {
         id: 'visibility-debug',
         label: 'Debug',
         to: '/admin/visibility/debug',
-        caption: 'Diagnostica runtime',
+        caption: 'Strumenti di verifica',
         isActive: pathname.startsWith('/admin/visibility/debug'),
       },
     ],

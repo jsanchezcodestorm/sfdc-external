@@ -15,6 +15,9 @@ import { AclResourceEditorPage } from './features/acl-admin/pages/AclResourceEdi
 import { AclResourcesPage } from './features/acl-admin/pages/AclResourcesPage'
 import { AuditAdminDetailPage } from './features/audit-admin/pages/AuditAdminDetailPage'
 import { AuditAdminPage } from './features/audit-admin/pages/AuditAdminPage'
+import { AppsAdminDetailPage } from './features/apps-admin/pages/AppsAdminDetailPage'
+import { AppsAdminEditorPage } from './features/apps-admin/pages/AppsAdminEditorPage'
+import { AppsAdminListPage } from './features/apps-admin/pages/AppsAdminListPage'
 
 import { EntityDetailPage } from './features/entities/pages/EntityDetailPage'
 import { EntityFormPage } from './features/entities/pages/EntityFormPage'
@@ -67,6 +70,10 @@ function App() {
             <Route path="entity-config/__new__/base" element={<EntityAdminConfigPage />} />
             <Route path="entity-config/:entityId" element={<EntityAdminConfigPage />} />
             <Route path="entity-config/:entityId/edit/:section" element={<EntityAdminConfigPage />} />
+            <Route path="apps" element={<AppsAdminListPage />} />
+            <Route path="apps/__new__" element={<AppsAdminEditorPage mode="create" />} />
+            <Route path="apps/:appId" element={<AppsAdminDetailPage />} />
+            <Route path="apps/:appId/edit" element={<AppsAdminEditorPage mode="edit" />} />
             <Route path="acl" element={<AclAdminLayout />}>
               <Route index element={<Navigate replace to="permissions" />} />
               <Route path="permissions" element={<AclPermissionsPage />} />

@@ -1,31 +1,13 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 
+import { AvailableAppsLauncher } from '../features/apps/components/AvailableAppsLauncher'
+import { clearStoredAppSelection } from '../features/apps/app-selection-storage'
 import { GoogleSignInButton } from '../features/auth/components/GoogleSignInButton'
 import { useAuth } from '../features/auth/useAuth'
 import { fetchHealthCheck, type HealthCheckResponse } from '../lib/api'
 
-const stack = [
-  {
-    title: 'React 19',
-    description: 'Component model and state management for the UI shell.',
-  },
-  {
-    title: 'Vite 7',
-    description: 'Fast local server, HMR, and optimized production builds.',
-  },
-  {
-    title: 'TypeScript 5',
-    description: 'Strict typing enabled by default in app and tooling configs.',
-  },
-  {
-    title: 'Tailwind 4',
-    description: 'Utility-first styling with zero custom PostCSS boilerplate.',
-  },
-]
-
 export function HomePage() {
-  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? '/api'
   const { user, isBootstrapping } = useAuth()
   const [health, setHealth] = useState<HealthCheckResponse | null>(null)
   const [healthError, setHealthError] = useState<string | null>(null)
@@ -46,6 +28,12 @@ export function HomePage() {
     void loadHealth()
   }, [])
 
+  useEffect(() => {
+    if (!isBootstrapping && !user) {
+      clearStoredAppSelection()
+    }
+  }, [isBootstrapping, user])
+
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top,_#e0f2fe_0%,_#f8fafc_45%,_#ffffff_100%)] px-6 py-12 text-slate-900">
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
@@ -54,12 +42,10 @@ export function HomePage() {
             SFDC External
           </p>
           <h1 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">
-            Frontend Base Stack
+            Workspace Launcher
           </h1>
           <p className="mt-4 max-w-2xl text-sm text-slate-600 sm:text-base">
-            Frontend pronto per integrare API backend NestJS tramite cookie
-            session (`credentials: "include"`), senza accesso diretto a
-            Salesforce dal client.
+            Portale per accedere alle applicazioni e ai flussi disponibili.
           </p>
         </header>
 
@@ -106,74 +92,49 @@ export function HomePage() {
           ) : null}
         </section>
 
-        <section className="grid gap-4 sm:grid-cols-2">
-          {stack.map((item) => (
-            <article
-              key={item.title}
-              className="rounded-2xl border border-slate-200/80 bg-white/90 p-5 shadow-sm"
-            >
-              <h2 className="text-lg font-semibold text-slate-900">
-                {item.title}
+        {!isBootstrapping && user ? <AvailableAppsLauncher key={user.sub} user={user} /> : null}
+
+        {!isBootstrapping && !user ? (
+          <>
+            <section className="rounded-2xl border border-slate-200/80 bg-white/90 p-5 shadow-sm">
+              <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-slate-700">
+                Percorsi rapidi
               </h2>
-              <p className="mt-2 text-sm text-slate-600">{item.description}</p>
-            </article>
-          ))}
-        </section>
-
-        <section className="rounded-2xl border border-slate-200/80 bg-slate-950 p-5 text-slate-100 shadow-sm">
-          <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-sky-300">
-            API Pattern
-          </h2>
-          <p className="mt-2 text-sm text-slate-300">
-            Base URL attiva: <code className="font-mono">{apiBaseUrl}</code>
-          </p>
-          <pre className="mt-4 overflow-x-auto rounded-xl bg-black/35 p-4 text-xs text-slate-200">
-            <code>{`await apiFetch('/query', {
-  method: 'POST',
-  body: { templateId: 'account.pipeline' },
-})`}</code>
-          </pre>
-        </section>
-
-        <section className="rounded-2xl border border-slate-200/80 bg-white/90 p-5 shadow-sm">
-          <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-slate-700">
-            Entity Sub Path
-          </h2>
-          <p className="mt-2 max-w-2xl text-sm text-slate-600">
-            Nuovo percorso generico in stile Salesforce disponibile su
-            <code className="ml-1 font-mono">#/s/:entityId</code> con list,
-            detail, quick actions, related list e form new/edit.
-          </p>
-          <div className="mt-4 flex flex-wrap gap-2">
-            <Link
-              to="/s/account"
-              className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700"
-            >
-              Apri Account List
-            </Link>
-            <Link
-              to="/s/account/new"
-              className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
-            >
-              Nuovo Account
-            </Link>
-          </div>
-        </section>
+              <p className="mt-2 max-w-2xl text-sm text-slate-600">
+                Apri direttamente alcune viste entita disponibili.
+              </p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Link
+                  to="/s/account"
+                  className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700"
+                >
+                  Apri lista Account
+                </Link>
+                <Link
+                  to="/s/account/new"
+                  className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
+                >
+                  Nuovo Account
+                </Link>
+              </div>
+            </section>
+          </>
+        ) : null}
 
         <section className="rounded-2xl border border-slate-200/80 bg-white/90 p-5 shadow-sm">
           <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-slate-700">
-            Backend Health Check
+            Stato servizio
           </h2>
           {health && !healthError && (
             <p className="mt-2 text-sm text-emerald-700">
-              Backend online ({health.status}) - {health.timestamp}
+              Servizio online ({health.status}) - {health.timestamp}
             </p>
           )}
           {!health && !healthError && (
-            <p className="mt-2 text-sm text-slate-600">Verifica stato backend in corso...</p>
+            <p className="mt-2 text-sm text-slate-600">Verifica stato in corso...</p>
           )}
           {healthError && (
-            <p className="mt-2 text-sm text-rose-700">Errore health check: {healthError}</p>
+            <p className="mt-2 text-sm text-rose-700">Errore verifica stato: {healthError}</p>
           )}
         </section>
       </div>
