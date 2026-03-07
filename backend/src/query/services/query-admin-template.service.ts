@@ -8,6 +8,7 @@ import {
   QueryAdminTemplateRepository,
   type QueryTemplateAdminSummary
 } from './query-admin-template.repository';
+import { QueryTemplateCompiler } from './query-template.compiler';
 import { QueryTemplateRepository } from './query-template.repository';
 
 export interface QueryTemplateAdminSummaryResponse extends QueryTemplateAdminSummary {
@@ -29,7 +30,8 @@ export class QueryAdminTemplateService {
     private readonly resourceAccessService: ResourceAccessService,
     private readonly queryAdminTemplateRepository: QueryAdminTemplateRepository,
     private readonly queryTemplateRepository: QueryTemplateRepository,
-    private readonly aclService: AclService
+    private readonly aclService: AclService,
+    private readonly queryTemplateCompiler: QueryTemplateCompiler
   ) {}
 
   async listTemplates(): Promise<QueryTemplateAdminListResponse> {
@@ -74,21 +76,24 @@ export class QueryAdminTemplateService {
   }
 
   private normalizeTemplate(value: unknown): QueryTemplate {
-    const template = this.requireObject(value, 'Query template payload must be an object');
-    const id = this.requireString(template.id, 'template.id is required');
-    const objectApiName = this.requireString(template.objectApiName, 'template.objectApiName is required');
-    const soql = this.requireString(template.soql, 'template.soql is required');
-    const defaultParams = this.normalizeDefaultParams(template.defaultParams);
-    const maxLimit = this.asOptionalInteger(template.maxLimit, 'template.maxLimit');
+    const payload = this.requireObject(value, 'Query template payload must be an object');
+    const id = this.requireString(payload.id, 'template.id is required');
+    const objectApiName = this.requireString(payload.objectApiName, 'template.objectApiName is required');
+    const soql = this.requireString(payload.soql, 'template.soql is required');
+    const defaultParams = this.normalizeDefaultParams(payload.defaultParams);
+    const maxLimit = this.asOptionalInteger(payload.maxLimit, 'template.maxLimit');
 
-    return {
+    const template: QueryTemplate = {
       id,
       objectApiName,
-      description: this.asOptionalString(template.description),
+      description: this.asOptionalString(payload.description),
       soql,
       defaultParams,
       maxLimit
     };
+
+    this.queryTemplateCompiler.validateVisibilityCompatibleTemplate(template);
+    return template;
   }
 
   private normalizeDefaultParams(value: unknown): QueryTemplate['defaultParams'] | undefined {

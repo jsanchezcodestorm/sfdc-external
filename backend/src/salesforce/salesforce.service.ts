@@ -26,6 +26,14 @@ interface SalesforceFieldSummary {
   referenceTo?: string[];
 }
 
+interface SalesforceContactRecord {
+  Id: string;
+  Email?: string;
+  RecordType?: {
+    DeveloperName?: string;
+  } | null;
+}
+
 type SalesforceMutationOperation = 'create' | 'update' | 'delete';
 
 interface SalesforceDescribeCacheContext {
@@ -99,6 +107,40 @@ export class SalesforceService {
             .filter((entry) => entry.length > 0)
         : undefined
     }));
+  }
+
+  async findContactByEmail(
+    email: string
+  ): Promise<{ id: string; email?: string; recordTypeDeveloperName?: string } | null> {
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail) {
+      return null;
+    }
+
+    const result = (await this.executeReadOnlyQuery(
+      `SELECT Id, Email, RecordType.DeveloperName FROM Contact WHERE Email = '${this.escapeSoqlLiteral(
+        normalizedEmail
+      )}' LIMIT 2`
+    )) as { records?: SalesforceContactRecord[] };
+
+    const records = Array.isArray(result.records) ? result.records : [];
+    if (records.length === 0) {
+      return null;
+    }
+
+    if (records.length > 1) {
+      throw new ForbiddenException(`Multiple Salesforce Contacts found for ${normalizedEmail}`);
+    }
+
+    const contact = records[0];
+    return {
+      id: String(contact.Id),
+      email: typeof contact.Email === 'string' ? contact.Email : undefined,
+      recordTypeDeveloperName:
+        typeof contact.RecordType?.DeveloperName === 'string'
+          ? contact.RecordType.DeveloperName
+          : undefined
+    };
   }
 
   async executeReadOnlyQuery(soql: string): Promise<unknown> {
@@ -545,6 +587,10 @@ export class SalesforceService {
     }
 
     throw new BadRequestException(`Salesforce ${operation} failed`);
+  }
+
+  private escapeSoqlLiteral(value: string): string {
+    return value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
   }
 
   private isObjectRecord(value: unknown): value is Record<string, unknown> {

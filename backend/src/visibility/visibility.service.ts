@@ -1,46 +1,261 @@
+import { createHash, randomUUID } from 'node:crypto';
+
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Prisma, VisibilityRuleEffect } from '@prisma/client';
 
 import type { SessionUser } from '../auth/session-user.interface';
 import { PrismaService } from '../prisma/prisma.service';
 
-import type { VisibilityContext, VisibilityEvaluation } from './visibility.types';
+import {
+  compileVisibilityRuleNode,
+  matchesVisibilityFieldPath,
+  normalizeVisibilityFieldList,
+  normalizeVisibilityRuleNode,
+} from './visibility-rule-dsl';
+import type {
+  VisibilityContext,
+  VisibilityEvaluation,
+  VisibilityRuleDefinition,
+} from './visibility.types';
+
+type RuntimeRuleRow = {
+  id: string;
+  objectApiName: string;
+  effect: VisibilityRuleEffect;
+  conditionJson: unknown;
+  fieldsAllowed: unknown;
+  fieldsDenied: unknown;
+  active: boolean;
+};
+
+type RuntimeConeRow = {
+  id: string;
+  code: string;
+  priority: number;
+  active: boolean;
+  rules: RuntimeRuleRow[];
+};
+
+type RuntimeAssignmentRow = {
+  id: string;
+  coneId: string;
+  contactId: string | null;
+  permissionCode: string | null;
+  recordType: string | null;
+  validFrom: Date | null;
+  validTo: Date | null;
+  cone: RuntimeConeRow;
+};
 
 @Injectable()
 export class VisibilityService {
   private readonly logger = new Logger(VisibilityService.name);
+  private readonly cacheTtlSeconds: number;
+  private readonly auditEnabled: boolean;
 
   constructor(
     private readonly configService: ConfigService,
     private readonly prismaService: PrismaService
-  ) {}
+  ) {
+    this.cacheTtlSeconds = this.readPositiveIntConfig('VISIBILITY_CACHE_TTL_SECONDS', 300);
+    this.auditEnabled = this.configService.get<string>('VISIBILITY_AUDIT_ENABLED', 'true') !== 'false';
+  }
 
   async evaluate(context: VisibilityContext): Promise<VisibilityEvaluation> {
-    const policyVersion = await this.getPolicyVersion();
-    const bootstrapAllow = this.configService.get<string>('VISIBILITY_BOOTSTRAP_ALLOW', 'false') === 'true';
+    const contactId = context.contactId ?? context.user?.sub;
+    const permissions = context.permissions ?? context.user?.permissions ?? [];
+    const recordType =
+      context.contactRecordTypeDeveloperName ??
+      context.user?.contactRecordTypeDeveloperName;
 
-    if (!bootstrapAllow) {
-      this.logger.debug(`Visibility deny-by-default for ${context.objectApiName} user=${context.user.sub}`);
-
-      return {
-        decision: 'DENY',
-        reasonCode: 'NO_ALLOW_RULE',
-        policyVersion,
-        objectApiName: context.objectApiName,
-        contactId: context.user.sub,
-        appliedCones: [],
-        appliedRules: []
-      };
+    if (!contactId) {
+      throw new Error('Visibility context requires contactId');
     }
 
-    return {
-      decision: 'ALLOW',
-      reasonCode: 'BOOTSTRAP_ALLOW',
+    const objectApiName = context.objectApiName.trim();
+    const policyVersion = await this.getPolicyVersion();
+    const permissionsHash = this.hashPermissions(permissions);
+    const cacheKey = this.buildCacheKey(
+      contactId,
+      permissionsHash,
+      recordType,
+      objectApiName,
       policyVersion,
-      objectApiName: context.objectApiName,
-      contactId: context.user.sub,
-      appliedCones: [],
-      appliedRules: []
+    );
+
+    const matchedAssignments = await this.prismaService.visibilityAssignment.findMany({
+      where: {
+        cone: {
+          active: true,
+          rules: {
+            some: {
+              objectApiName,
+              active: true,
+            },
+          },
+        },
+      },
+      include: {
+        cone: {
+          include: {
+            rules: {
+              where: {
+                objectApiName,
+                active: true,
+              },
+              orderBy: {
+                updatedAt: 'asc',
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const applicableAssignments = matchedAssignments.filter((assignment) =>
+      this.matchesAssignment(assignment, contactId, permissions, recordType),
+    );
+    const applicableCones = this.getApplicableCones(applicableAssignments);
+    const appliedCones = applicableCones.map((cone) => cone.code);
+    const appliedRules: string[] = [];
+    const allowPredicates: string[] = [];
+    const denyPredicates: string[] = [];
+    const allowFieldSets: string[][] = [];
+    const deniedFieldsSet = new Set<string>();
+
+    const cachedScope =
+      context.skipCache === true
+        ? null
+        : await this.prismaService.visibilityUserScopeCache.findUnique({
+            where: { cacheKey },
+          });
+
+    let compiledPredicate =
+      cachedScope && cachedScope.expiresAt.getTime() > Date.now()
+        ? cachedScope.compiledPredicate
+        : '';
+    let compiledFields =
+      cachedScope && cachedScope.expiresAt.getTime() > Date.now()
+        ? this.parseCompiledFields(cachedScope.compiledFields)
+        : undefined;
+
+    if (!compiledPredicate) {
+      for (const cone of applicableCones) {
+        for (const rule of cone.rules) {
+          try {
+            const normalizedRule = this.normalizeRuntimeRule(rule);
+            const compiledRule = compileVisibilityRuleNode(normalizedRule.condition);
+            appliedRules.push(rule.id);
+
+            if (normalizedRule.effect === VisibilityRuleEffect.ALLOW) {
+              allowPredicates.push(compiledRule);
+
+              if (normalizedRule.fieldsAllowed && normalizedRule.fieldsAllowed.length > 0) {
+                allowFieldSets.push(normalizedRule.fieldsAllowed);
+              }
+            } else {
+              denyPredicates.push(compiledRule);
+            }
+
+            for (const deniedField of normalizedRule.fieldsDenied ?? []) {
+              deniedFieldsSet.add(deniedField);
+            }
+          } catch (error) {
+            this.logger.warn(
+              `Dropping invalid visibility rule ${rule.id} for ${objectApiName}: ${
+                error instanceof Error ? error.message : 'unknown error'
+              }`,
+            );
+          }
+        }
+      }
+
+      compiledFields = this.resolveCompiledFields(allowFieldSets, [...deniedFieldsSet]);
+      compiledPredicate = this.composeCompiledPredicate(allowPredicates, denyPredicates);
+
+      if (context.skipCache !== true) {
+        await this.prismaService.visibilityUserScopeCache.upsert({
+          where: { cacheKey },
+          create: {
+            cacheKey,
+            objectApiName,
+            policyVersion: BigInt(policyVersion),
+            compiledPredicate,
+            compiledFields:
+              compiledFields && compiledFields.length > 0
+                ? (compiledFields as unknown as Prisma.InputJsonValue)
+                : Prisma.JsonNull,
+            expiresAt: new Date(Date.now() + this.cacheTtlSeconds * 1000),
+          },
+          update: {
+            objectApiName,
+            policyVersion: BigInt(policyVersion),
+            compiledPredicate,
+            compiledFields:
+              compiledFields && compiledFields.length > 0
+                ? (compiledFields as unknown as Prisma.InputJsonValue)
+                : Prisma.JsonNull,
+            expiresAt: new Date(Date.now() + this.cacheTtlSeconds * 1000),
+          },
+        });
+      }
+    } else {
+      for (const cone of applicableCones) {
+        for (const rule of cone.rules) {
+          try {
+            const normalizedRule = this.normalizeRuntimeRule(rule);
+            appliedRules.push(rule.id);
+            if (normalizedRule.fieldsAllowed && normalizedRule.fieldsAllowed.length > 0) {
+              allowFieldSets.push(normalizedRule.fieldsAllowed);
+            }
+
+            for (const deniedField of normalizedRule.fieldsDenied ?? []) {
+              deniedFieldsSet.add(deniedField);
+            }
+          } catch {
+            // Ignore invalid rules while reading cached scope.
+          }
+        }
+      }
+
+      if (!compiledFields) {
+        compiledFields = this.resolveCompiledFields(allowFieldSets, [...deniedFieldsSet]);
+      }
+    }
+
+    const deniedFields = [...deniedFieldsSet];
+    const hasAllow = compiledPredicate.length > 0;
+    const decision = hasAllow ? 'ALLOW' : 'DENY';
+    const reasonCode = hasAllow
+      ? compiledFields && compiledFields.length === 0
+        ? 'FIELDSET_EMPTY'
+        : 'ALLOW_MATCH'
+      : 'NO_ALLOW_RULE';
+
+    const finalWhere = this.composeFinalWhere(context.baseWhere, compiledPredicate);
+    return {
+      decision:
+        reasonCode === 'FIELDSET_EMPTY' ? 'DENY' : decision,
+      reasonCode,
+      policyVersion,
+      objectApiName,
+      contactId,
+      recordType,
+      appliedCones,
+      appliedRules,
+      matchedAssignments: applicableAssignments.map((assignment) => assignment.id),
+      permissionsHash,
+      compiledAllowPredicate:
+        allowPredicates.length > 0 ? this.composeOrPredicate(allowPredicates) : undefined,
+      compiledDenyPredicate:
+        denyPredicates.length > 0 ? this.composeOrPredicate(denyPredicates) : undefined,
+      compiledPredicate: compiledPredicate || undefined,
+      compiledFields,
+      deniedFields: deniedFields.length > 0 ? deniedFields : undefined,
+      cacheKey,
+      baseWhere: context.baseWhere,
+      finalWhere,
     };
   }
 
@@ -48,6 +263,64 @@ export class VisibilityService {
     return this.evaluate({
       user,
       objectApiName
+    });
+  }
+
+  applyFieldVisibility(
+    requestedFields: string[],
+    evaluation: VisibilityEvaluation,
+  ): string[] {
+    const uniqueFields = [...new Set(requestedFields.map((field) => field.trim()).filter(Boolean))];
+    let filtered = uniqueFields;
+
+    if (evaluation.compiledFields && evaluation.compiledFields.length > 0) {
+      filtered = filtered.filter((field) =>
+        evaluation.compiledFields?.some((entry) => matchesVisibilityFieldPath(field, entry)),
+      );
+    }
+
+    if (evaluation.deniedFields && evaluation.deniedFields.length > 0) {
+      filtered = filtered.filter(
+        (field) =>
+          !evaluation.deniedFields?.some((entry) => matchesVisibilityFieldPath(field, entry)),
+      );
+    }
+
+    return filtered;
+  }
+
+  async recordAudit(params: {
+    evaluation: VisibilityEvaluation;
+    queryKind: string;
+    baseWhere?: string;
+    finalWhere?: string;
+    rowCount: number;
+  }): Promise<void> {
+    if (!this.auditEnabled) {
+      return;
+    }
+
+    const { evaluation, queryKind, baseWhere, finalWhere, rowCount } = params;
+    const requestId = randomUUID();
+
+    await this.prismaService.visibilityAuditLog.create({
+      data: {
+        requestId,
+        contactId: evaluation.contactId,
+        permissionsHash: evaluation.permissionsHash ?? this.hashPermissions([]),
+        recordType: evaluation.recordType ?? null,
+        objectApiName: evaluation.objectApiName,
+        queryKind,
+        baseWhereHash: this.hashText(baseWhere ?? ''),
+        finalWhereHash: this.hashText(finalWhere ?? ''),
+        appliedCones: evaluation.appliedCones as unknown as Prisma.InputJsonValue,
+        appliedRules: evaluation.appliedRules as unknown as Prisma.InputJsonValue,
+        decision: evaluation.decision,
+        decisionReasonCode: evaluation.reasonCode,
+        rowCount,
+        durationMs: 0,
+        policyVersion: BigInt(evaluation.policyVersion),
+      },
     });
   }
 
@@ -61,5 +334,185 @@ export class VisibilityService {
     } catch {
       return 1;
     }
+  }
+
+  private normalizeRuntimeRule(rule: RuntimeRuleRow): VisibilityRuleDefinition {
+    return {
+      id: rule.id,
+      coneId: '',
+      objectApiName: rule.objectApiName,
+      effect: rule.effect,
+      condition: normalizeVisibilityRuleNode(rule.conditionJson),
+      fieldsAllowed: Array.isArray(rule.fieldsAllowed)
+        ? normalizeVisibilityFieldList(rule.fieldsAllowed, 'fieldsAllowed')
+        : undefined,
+      fieldsDenied: Array.isArray(rule.fieldsDenied)
+        ? normalizeVisibilityFieldList(rule.fieldsDenied, 'fieldsDenied')
+        : undefined,
+      active: rule.active,
+    };
+  }
+
+  private matchesAssignment(
+    assignment: RuntimeAssignmentRow,
+    contactId: string,
+    permissions: string[],
+    recordType: string | undefined,
+  ): boolean {
+    const nowMs = Date.now();
+    if (assignment.validFrom && assignment.validFrom.getTime() > nowMs) {
+      return false;
+    }
+
+    if (assignment.validTo && assignment.validTo.getTime() < nowMs) {
+      return false;
+    }
+
+    const hasSelector =
+      Boolean(assignment.contactId) ||
+      Boolean(assignment.permissionCode) ||
+      Boolean(assignment.recordType);
+    if (!hasSelector) {
+      return false;
+    }
+
+    if (assignment.contactId && assignment.contactId !== contactId) {
+      return false;
+    }
+
+    if (
+      assignment.permissionCode &&
+      !permissions.some((entry) => entry.trim().toUpperCase() === assignment.permissionCode)
+    ) {
+      return false;
+    }
+
+    if (assignment.recordType && assignment.recordType !== recordType) {
+      return false;
+    }
+
+    return true;
+  }
+
+  private getApplicableCones(assignments: RuntimeAssignmentRow[]): RuntimeConeRow[] {
+    const coneMap = new Map<string, RuntimeConeRow>();
+
+    for (const assignment of assignments) {
+      if (!coneMap.has(assignment.coneId)) {
+        coneMap.set(assignment.coneId, assignment.cone);
+      }
+    }
+
+    return [...coneMap.values()].sort((left, right) => {
+      if (left.priority !== right.priority) {
+        return right.priority - left.priority;
+      }
+
+      return left.code.localeCompare(right.code);
+    });
+  }
+
+  private resolveCompiledFields(
+    allowFieldSets: string[][],
+    deniedFields: string[],
+  ): string[] | undefined {
+    const deniedSet = new Set(deniedFields);
+    let allowed: string[] | undefined;
+
+    for (const fieldSet of allowFieldSets) {
+      const uniqueSet = [...new Set(fieldSet)];
+      allowed =
+        allowed === undefined
+          ? uniqueSet
+          : allowed.filter((field) =>
+              uniqueSet.some((candidate) => matchesVisibilityFieldPath(field, candidate)),
+            );
+    }
+
+    if (!allowed) {
+      return undefined;
+    }
+
+    return allowed.filter(
+      (field) => ![...deniedSet].some((candidate) => matchesVisibilityFieldPath(field, candidate)),
+    );
+  }
+
+  private composeCompiledPredicate(allowPredicates: string[], denyPredicates: string[]): string {
+    if (allowPredicates.length === 0) {
+      return '';
+    }
+
+    const allow = this.composeOrPredicate(allowPredicates);
+    if (denyPredicates.length === 0) {
+      return allow;
+    }
+
+    const deny = this.composeOrPredicate(denyPredicates);
+    return `(${allow}) AND NOT (${deny})`;
+  }
+
+  private composeOrPredicate(predicates: string[]): string {
+    return predicates.length === 1 ? predicates[0] : `(${predicates.join(' OR ')})`;
+  }
+
+  private composeFinalWhere(baseWhere: string | undefined, predicate: string): string | undefined {
+    const normalizedBase = baseWhere?.trim();
+    const normalizedPredicate = predicate.trim();
+
+    if (!normalizedBase && !normalizedPredicate) {
+      return undefined;
+    }
+
+    if (!normalizedBase) {
+      return normalizedPredicate;
+    }
+
+    if (!normalizedPredicate) {
+      return normalizedBase;
+    }
+
+    return `(${normalizedBase}) AND (${normalizedPredicate})`;
+  }
+
+  private parseCompiledFields(value: unknown): string[] | undefined {
+    if (!Array.isArray(value)) {
+      return undefined;
+    }
+
+    return value
+      .filter((entry): entry is string => typeof entry === 'string')
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+  }
+
+  private buildCacheKey(
+    contactId: string,
+    permissionsHash: string,
+    recordType: string | undefined,
+    objectApiName: string,
+    policyVersion: number,
+  ): string {
+    return this.hashText(
+      [contactId, permissionsHash, recordType ?? '', objectApiName, String(policyVersion)].join('|'),
+    );
+  }
+
+  private hashPermissions(permissions: string[]): string {
+    return this.hashText(
+      [...new Set(permissions.map((entry) => entry.trim().toUpperCase()).filter(Boolean))]
+        .sort()
+        .join('|'),
+    );
+  }
+
+  private hashText(value: string): string {
+    return createHash('sha256').update(value).digest('hex');
+  }
+
+  private readPositiveIntConfig(key: string, fallback: number): number {
+    const raw = this.configService.get<string>(key);
+    const parsed = Number.parseInt(raw ?? '', 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
   }
 }

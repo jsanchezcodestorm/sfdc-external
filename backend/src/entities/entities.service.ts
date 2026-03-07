@@ -1,13 +1,15 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 
 import type { SessionUser } from '../auth/session-user.interface';
 import { ResourceAccessService } from '../common/services/resource-access.service';
 import { SalesforceService } from '../salesforce/salesforce.service';
+import { VisibilityService } from '../visibility/visibility.service';
 import type { VisibilityEvaluation } from '../visibility/visibility.types';
 
 import type { GetEntityListDto } from './dto/get-entity-list.dto';
 import type {
   EntityActionConfig,
+  EntityColumnConfig,
   EntityConfig,
   EntityFormFieldConfig,
   EntityListSearchConfig,
@@ -76,6 +78,7 @@ interface SoqlBuildOptions {
   search?: string;
   searchConfig?: EntityListSearchConfig;
   extraFields?: string[];
+  visibility?: VisibilityEvaluation;
 }
 
 interface EntityListResponse {
@@ -146,14 +149,20 @@ export class EntitiesService {
   constructor(
     private readonly resourceAccessService: ResourceAccessService,
     private readonly entityConfigRepository: EntityConfigRepository,
-    private readonly salesforceService: SalesforceService
+    private readonly salesforceService: SalesforceService,
+    private readonly visibilityService: VisibilityService
   ) {}
 
   async getEntity(
     user: SessionUser,
     entityId: string
   ): Promise<{ entity: EntityConfig; visibility: VisibilityEvaluation }> {
-    const { entityConfig, visibility } = await this.loadAuthorizedEntityConfig(user, entityId);
+    const entityConfig = await this.loadEntityConfig(entityId);
+    const visibility = await this.resourceAccessService.authorizeObjectAccess(
+      user,
+      `entity:${entityId}`,
+      entityConfig.objectApiName
+    );
 
     return {
       entity: entityConfig,
@@ -162,7 +171,7 @@ export class EntitiesService {
   }
 
   async getEntityList(user: SessionUser, entityId: string, query: GetEntityListDto): Promise<EntityListResponse> {
-    const { entityConfig, visibility } = await this.loadAuthorizedEntityConfig(user, entityId);
+    const entityConfig = await this.loadEntityConfig(entityId);
     const listConfig = entityConfig.list;
 
     if (!listConfig || listConfig.views.length === 0) {
@@ -170,30 +179,46 @@ export class EntitiesService {
     }
 
     const selectedView = this.selectListView(listConfig.views, query.viewId);
+    const visibility = await this.resourceAccessService.authorizeObjectAccess(
+      user,
+      `entity:${entityId}`,
+      selectedView.query.object
+    );
     const page = this.clamp(query.page ?? 1, 1, Number.MAX_SAFE_INTEGER);
     const configuredPageSize = this.clamp(selectedView.pageSize ?? DEFAULT_PAGE_SIZE, 1, MAX_PAGE_SIZE);
     const pageSize = this.clamp(query.pageSize ?? configuredPageSize, 1, MAX_PAGE_SIZE);
     const search = this.normalizeSearchQuery(query.search);
+    const visibleColumns = this.filterVisibleColumns(selectedView.columns, visibility);
+    const visibleColumnFields = this.extractColumnFieldPaths(visibleColumns);
+    this.ensureVisibleFields(visibleColumnFields, visibility, 'No visible list field available');
     const lookupProjectionFields = await this.resolveLookupProjectionFields(
       selectedView.query.object,
-      this.extractColumnFieldPaths(selectedView.columns)
+      visibleColumnFields
     );
 
-    const soql = await this.buildSoqlFromQueryConfig(selectedView.query, {
+    const scopedQuery = await this.buildSoqlFromQueryConfig(selectedView.query, {
       page,
       pageSize,
       search,
       searchConfig: selectedView.search,
-      extraFields: lookupProjectionFields
+      extraFields: lookupProjectionFields,
+      visibility
     });
 
-    const rawQueryResult = await this.salesforceService.executeReadOnlyQuery(soql);
+    const rawQueryResult = await this.salesforceService.executeReadOnlyQuery(scopedQuery.soql);
     const { records, totalSize } = this.extractRecords(rawQueryResult);
+    await this.visibilityService.recordAudit({
+      evaluation: visibility,
+      queryKind: 'ENTITY_LIST',
+      baseWhere: scopedQuery.baseWhere,
+      finalWhere: scopedQuery.finalWhere,
+      rowCount: records.length
+    });
 
     return {
       title: listConfig.title,
       subtitle: listConfig.subtitle,
-      columns: selectedView.columns,
+      columns: visibleColumns,
       primaryAction: selectedView.primaryAction ?? listConfig.primaryAction,
       rowActions: selectedView.rowActions,
       records,
@@ -206,7 +231,7 @@ export class EntitiesService {
   }
 
   async getEntityRecord(user: SessionUser, entityId: string, recordId: string): Promise<EntityDetailResponse> {
-    const { entityConfig, visibility } = await this.loadAuthorizedEntityConfig(user, entityId);
+    const entityConfig = await this.loadEntityConfig(entityId);
     this.assertSalesforceRecordId(recordId);
 
     const detailConfig = entityConfig.detail;
@@ -214,16 +239,44 @@ export class EntitiesService {
       throw new NotFoundException(`Detail view is not configured for ${entityId}`);
     }
 
-    const detailFieldNames = this.collectDetailFieldNames(entityConfig, detailConfig.query);
+    const visibility = await this.resourceAccessService.authorizeObjectAccess(
+      user,
+      `entity:${entityId}`,
+      detailConfig.query.object
+    );
+    const visibleSections = this.filterVisibleDetailSections(detailConfig.sections, visibility);
+    const visibleRelatedLists = (detailConfig.relatedLists ?? []).map((relatedList) => ({
+      ...relatedList,
+      columns: this.filterVisibleColumns(relatedList.columns, visibility)
+    }));
+    const detailFieldNames = this.collectDetailFieldNames(
+      {
+        ...entityConfig,
+        detail: {
+          ...detailConfig,
+          sections: visibleSections
+        }
+      },
+      detailConfig.query
+    );
+    this.ensureVisibleFields(detailFieldNames, visibility, 'No visible detail field available');
     const lookupProjectionFields = await this.resolveLookupProjectionFields(detailConfig.query.object, detailFieldNames);
 
-    const soql = await this.buildSoqlFromQueryConfig(detailConfig.query, {
+    const scopedQuery = await this.buildSoqlFromQueryConfig(detailConfig.query, {
       context: { id: recordId, recordId },
       forcedLimit: 1,
-      extraFields: lookupProjectionFields
+      extraFields: lookupProjectionFields,
+      visibility
     });
-    const rawQueryResult = await this.salesforceService.executeReadOnlyQuery(soql);
+    const rawQueryResult = await this.salesforceService.executeReadOnlyQuery(scopedQuery.soql);
     const { records } = this.extractRecords(rawQueryResult);
+    await this.visibilityService.recordAudit({
+      evaluation: visibility,
+      queryKind: 'ENTITY_DETAIL',
+      baseWhere: scopedQuery.baseWhere,
+      finalWhere: scopedQuery.finalWhere,
+      rowCount: records.length
+    });
 
     if (records.length === 0) {
       throw new NotFoundException(`Record ${recordId} not found`);
@@ -241,19 +294,19 @@ export class EntitiesService {
     return {
       title,
       subtitle,
-      sections: detailConfig.sections,
+      sections: visibleSections,
       actions: detailConfig.actions,
       pathStatus: detailConfig.pathStatus,
       record,
       data: record,
-      relatedLists: detailConfig.relatedLists,
+      relatedLists: visibleRelatedLists,
       fieldDefinitions,
       visibility
     };
   }
 
   async getEntityForm(user: SessionUser, entityId: string, recordId?: string): Promise<EntityFormResponse> {
-    const { entityConfig, visibility } = await this.loadAuthorizedEntityConfig(user, entityId);
+    const entityConfig = await this.loadEntityConfig(entityId);
 
     const formConfig = entityConfig.form;
     if (!formConfig || !formConfig.sections || formConfig.sections.length === 0) {
@@ -265,7 +318,20 @@ export class EntitiesService {
     }
 
     const sections = this.resolveFormSections(formConfig.sections);
-    const fieldDefinitions = await this.buildFieldDefinitions(entityConfig.objectApiName, this.collectFormFieldNames(sections));
+    const visibility = await this.resourceAccessService.authorizeObjectAccess(
+      user,
+      `entity:${entityId}`,
+      formConfig.query.object
+    );
+    const visibleSections = sections
+      .map((section) => ({
+        ...section,
+        fields: section.fields.filter((field) => this.isFieldVisible(field.field, visibility))
+      }))
+      .filter((section) => section.fields.length > 0);
+    const visibleFormFields = this.collectFormFieldNames(visibleSections);
+    this.ensureVisibleFields(visibleFormFields, visibility, 'No visible form field available');
+    const fieldDefinitions = await this.buildFieldDefinitions(entityConfig.objectApiName, visibleFormFields);
     const formTitle = recordId ? formConfig.title?.edit : formConfig.title?.create;
     const title = formTitle && formTitle.trim().length > 0 ? formTitle : `${recordId ? 'Edit' : 'New'} ${entityConfig.label ?? entityConfig.id}`;
 
@@ -273,7 +339,7 @@ export class EntitiesService {
       return {
         title,
         subtitle: formConfig.subtitle,
-        sections,
+        sections: visibleSections,
         fieldDefinitions,
         visibility
       };
@@ -283,13 +349,21 @@ export class EntitiesService {
       throw new NotFoundException(`Form query is not configured for ${entityId}`);
     }
 
-    const soql = await this.buildSoqlFromQueryConfig(formConfig.query, {
+    const scopedQuery = await this.buildSoqlFromQueryConfig(formConfig.query, {
       context: { id: recordId, recordId },
-      forcedLimit: 1
+      forcedLimit: 1,
+      visibility
     });
 
-    const rawQueryResult = await this.salesforceService.executeReadOnlyQuery(soql);
+    const rawQueryResult = await this.salesforceService.executeReadOnlyQuery(scopedQuery.soql);
     const { records } = this.extractRecords(rawQueryResult);
+    await this.visibilityService.recordAudit({
+      evaluation: visibility,
+      queryKind: 'ENTITY_FORM',
+      baseWhere: scopedQuery.baseWhere,
+      finalWhere: scopedQuery.finalWhere,
+      rowCount: records.length
+    });
 
     if (records.length === 0) {
       throw new NotFoundException(`Record ${recordId} not found`);
@@ -300,7 +374,7 @@ export class EntitiesService {
     return {
       title,
       subtitle: this.renderRecordTemplate(formConfig.subtitle, record),
-      sections,
+      sections: visibleSections,
       values: record,
       record,
       fieldDefinitions,
@@ -314,7 +388,7 @@ export class EntitiesService {
     relatedListId: string,
     params: { recordId?: string; page?: number; pageSize?: number }
   ): Promise<EntityRelatedListResponse> {
-    const { entityConfig, visibility } = await this.loadAuthorizedEntityConfig(user, entityId);
+    const entityConfig = await this.loadEntityConfig(entityId);
 
     const recordId = params.recordId?.trim() ?? '';
     if (!recordId) {
@@ -328,27 +402,43 @@ export class EntitiesService {
       throw new NotFoundException(`Related list ${relatedListId} is not configured for ${entityId}`);
     }
 
+    const visibility = await this.resourceAccessService.authorizeObjectAccess(
+      user,
+      `entity:${entityId}`,
+      relatedList.query.object
+    );
     const page = this.clamp(params.page ?? 1, 1, Number.MAX_SAFE_INTEGER);
     const configuredPageSize = this.clamp(relatedList.pageSize ?? DEFAULT_PAGE_SIZE, 1, MAX_PAGE_SIZE);
     const pageSize = this.clamp(params.pageSize ?? configuredPageSize, 1, MAX_PAGE_SIZE);
+    const visibleColumns = this.filterVisibleColumns(relatedList.columns, visibility);
+    const visibleColumnFields = this.extractColumnFieldPaths(visibleColumns);
+    this.ensureVisibleFields(visibleColumnFields, visibility, 'No visible related-list field available');
     const lookupProjectionFields = await this.resolveLookupProjectionFields(
       relatedList.query.object,
-      this.extractColumnFieldPaths(relatedList.columns)
+      visibleColumnFields
     );
 
-    const soql = await this.buildSoqlFromQueryConfig(relatedList.query, {
+    const scopedQuery = await this.buildSoqlFromQueryConfig(relatedList.query, {
       context: { id: recordId, recordId },
       page,
       pageSize,
-      extraFields: lookupProjectionFields
+      extraFields: lookupProjectionFields,
+      visibility
     });
-    const rawQueryResult = await this.salesforceService.executeReadOnlyQuery(soql);
+    const rawQueryResult = await this.salesforceService.executeReadOnlyQuery(scopedQuery.soql);
     const { records, totalSize } = this.extractRecords(rawQueryResult);
+    await this.visibilityService.recordAudit({
+      evaluation: visibility,
+      queryKind: 'ENTITY_RELATED_LIST',
+      baseWhere: scopedQuery.baseWhere,
+      finalWhere: scopedQuery.finalWhere,
+      rowCount: records.length
+    });
 
     return {
       relatedList,
       title: relatedList.label,
-      columns: relatedList.columns,
+      columns: visibleColumns,
       actions: relatedList.actions,
       rowActions: relatedList.rowActions,
       emptyState: relatedList.emptyState,
@@ -365,7 +455,7 @@ export class EntitiesService {
     entityId: string,
     payload: unknown
   ): Promise<Record<string, unknown>> {
-    const { entityConfig } = await this.loadAuthorizedEntityConfig(user, entityId);
+    const entityConfig = await this.loadEntityConfig(entityId);
     const values = await this.normalizeWritePayload(entityConfig, payload, 'create');
     return this.salesforceService.createRecord(entityConfig.objectApiName, values);
   }
@@ -377,31 +467,20 @@ export class EntitiesService {
     payload: unknown
   ): Promise<Record<string, unknown>> {
     this.assertSalesforceRecordId(recordId);
-    const { entityConfig } = await this.loadAuthorizedEntityConfig(user, entityId);
+    const entityConfig = await this.loadEntityConfig(entityId);
     const values = await this.normalizeWritePayload(entityConfig, payload, 'update');
     return this.salesforceService.updateRecord(entityConfig.objectApiName, recordId, values);
   }
 
   async deleteEntityRecord(user: SessionUser, entityId: string, recordId: string): Promise<void> {
     this.assertSalesforceRecordId(recordId);
-    const { entityConfig } = await this.loadAuthorizedEntityConfig(user, entityId);
+    const entityConfig = await this.loadEntityConfig(entityId);
     await this.salesforceService.deleteRecord(entityConfig.objectApiName, recordId);
   }
 
-  private async loadAuthorizedEntityConfig(
-    user: SessionUser,
-    entityId: string
-  ): Promise<{ entityConfig: EntityConfig; visibility: VisibilityEvaluation }> {
+  private async loadEntityConfig(entityId: string): Promise<EntityConfig> {
     this.resourceAccessService.assertKebabCaseId(entityId, 'entityId');
-
-    const entityConfig = await this.entityConfigRepository.getEntityConfig(entityId);
-    const visibility = await this.resourceAccessService.authorizeObjectAccess(
-      user,
-      `entity:${entityId}`,
-      entityConfig.objectApiName
-    );
-
-    return { entityConfig, visibility };
+    return this.entityConfigRepository.getEntityConfig(entityId);
   }
 
   private selectListView(views: EntityListViewConfig[], requestedViewId?: string): EntityListViewConfig {
@@ -422,11 +501,23 @@ export class EntitiesService {
     return normalized && normalized.length > 0 ? normalized : undefined;
   }
 
-  private async buildSoqlFromQueryConfig(query: EntityQueryConfig, options: SoqlBuildOptions): Promise<string> {
+  private async buildSoqlFromQueryConfig(
+    query: EntityQueryConfig,
+    options: SoqlBuildOptions
+  ): Promise<{ soql: string; baseWhere?: string; finalWhere?: string; selectFields: string[] }> {
     const objectApiName = this.toSoqlIdentifier(query.object);
     const queryFields = Array.isArray(query.fields) && query.fields.length > 0 ? query.fields : ['Id'];
     const extraFields = Array.isArray(options.extraFields) ? options.extraFields : [];
-    const selectFields = this.uniqueValues(['Id', ...queryFields, ...extraFields]).map((field) => this.toSoqlIdentifier(field));
+    const requestedFields = this.uniqueValues(['Id', ...queryFields, ...extraFields]);
+    const visibleRequestedFields = options.visibility
+      ? this.visibilityService.applyFieldVisibility(requestedFields, options.visibility)
+      : requestedFields;
+
+    if (visibleRequestedFields.length === 0) {
+      throw new ForbiddenException('Visibility denied all requested fields');
+    }
+
+    const selectFields = visibleRequestedFields.map((field) => this.toSoqlIdentifier(field));
 
     const context = options.context ?? {};
     const whereConditions = this.compileWhereConditions(query.where ?? [], context);
@@ -435,7 +526,9 @@ export class EntitiesService {
       whereConditions.push(searchCondition);
     }
 
-    const whereClause = whereConditions.length > 0 ? ` WHERE ${whereConditions.join(' AND ')}` : '';
+    const baseWhere = whereConditions.length > 0 ? whereConditions.join(' AND ') : undefined;
+    const finalWhere = this.composeVisibilityWhere(baseWhere, options.visibility?.compiledPredicate);
+    const whereClause = finalWhere ? ` WHERE ${finalWhere}` : '';
     const orderByClause = this.compileOrderByClause(query);
 
     const limitFromConfig = Number.isInteger(query.limit) && Number(query.limit) > 0 ? Number(query.limit) : undefined;
@@ -448,7 +541,12 @@ export class EntitiesService {
         : undefined;
     const offsetClause = typeof offset === 'number' && offset > 0 ? ` OFFSET ${offset}` : '';
 
-    return `SELECT ${selectFields.join(', ')} FROM ${objectApiName}${whereClause}${orderByClause}${limitClause}${offsetClause}`;
+    return {
+      soql: `SELECT ${selectFields.join(', ')} FROM ${objectApiName}${whereClause}${orderByClause}${limitClause}${offsetClause}`,
+      baseWhere,
+      finalWhere,
+      selectFields
+    };
   }
 
   private compileWhereConditions(entries: EntityQueryWhere[], context: Record<string, unknown>): string[] {
@@ -650,6 +748,75 @@ export class EntitiesService {
       .filter((fieldPath) => fieldPath.length > 0);
 
     return this.uniqueValues(fieldPaths);
+  }
+
+  private filterVisibleColumns(
+    columns: Array<string | EntityColumnConfig>,
+    visibility: VisibilityEvaluation
+  ): Array<string | EntityColumnConfig> {
+    return columns.filter((column) => {
+      if (typeof column === 'string') {
+        return this.isFieldVisible(column, visibility);
+      }
+
+      if (typeof column.field !== 'string' || column.field.trim().length === 0) {
+        return true;
+      }
+
+      return this.isFieldVisible(column.field, visibility);
+    });
+  }
+
+  private filterVisibleDetailSections(
+    sections: NonNullable<NonNullable<EntityConfig['detail']>['sections']>,
+    visibility: VisibilityEvaluation
+  ): NonNullable<NonNullable<EntityConfig['detail']>['sections']> {
+    return sections
+      .map((section) => ({
+        ...section,
+        fields: (section.fields ?? []).filter((fieldConfig) =>
+          typeof fieldConfig.field === 'string'
+            ? this.isFieldVisible(fieldConfig.field, visibility)
+            : false
+        )
+      }))
+      .filter((section) => (section.fields ?? []).length > 0);
+  }
+
+  private isFieldVisible(fieldPath: string, visibility: VisibilityEvaluation): boolean {
+    return this.visibilityService.applyFieldVisibility([fieldPath], visibility).length > 0;
+  }
+
+  private ensureVisibleFields(
+    fields: string[],
+    visibility: VisibilityEvaluation,
+    message: string
+  ): void {
+    if (this.visibilityService.applyFieldVisibility(fields, visibility).length === 0) {
+      throw new ForbiddenException(message);
+    }
+  }
+
+  private composeVisibilityWhere(
+    baseWhere: string | undefined,
+    compiledPredicate: string | undefined
+  ): string | undefined {
+    const normalizedBase = baseWhere?.trim();
+    const normalizedPredicate = compiledPredicate?.trim();
+
+    if (!normalizedBase && !normalizedPredicate) {
+      return undefined;
+    }
+
+    if (!normalizedBase) {
+      return normalizedPredicate;
+    }
+
+    if (!normalizedPredicate) {
+      return normalizedBase;
+    }
+
+    return `(${normalizedBase}) AND (${normalizedPredicate})`;
   }
 
   private async resolveLookupProjectionFields(objectApiName: string, fieldPaths: string[]): Promise<string[]> {

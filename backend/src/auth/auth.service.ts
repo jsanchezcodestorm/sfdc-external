@@ -1,10 +1,11 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Inject, Injectable, UnauthorizedException, forwardRef } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { CookieOptions } from 'express';
 import { OAuth2Client, type TokenPayload } from 'google-auth-library';
 import { sign, verify, type JwtPayload } from 'jsonwebtoken';
 
 import { AclService } from '../acl/acl.service';
+import { SalesforceService } from '../salesforce/salesforce.service';
 
 import type { SessionUser } from './session-user.interface';
 
@@ -12,6 +13,7 @@ interface SessionTokenPayload extends JwtPayload {
   sub: string;
   email: string;
   permissions: string[];
+  contactRecordTypeDeveloperName?: string;
 }
 
 @Injectable()
@@ -23,7 +25,9 @@ export class AuthService {
 
   constructor(
     private readonly configService: ConfigService,
-    private readonly aclService: AclService
+    private readonly aclService: AclService,
+    @Inject(forwardRef(() => SalesforceService))
+    private readonly salesforceService: SalesforceService
   ) {
     const googleClientId = this.configService.get<string>('GOOGLE_CLIENT_ID', '');
     this.googleClient = new OAuth2Client(googleClientId || undefined);
@@ -35,11 +39,13 @@ export class AuthService {
 
   async loginWithGoogleIdToken(idToken: string): Promise<{ token: string; user: SessionUser }> {
     const payload = await this.verifyGoogleIdToken(idToken);
+    const contact = await this.resolveSalesforceContact(payload.email ?? '');
 
     const user: SessionUser = {
-      sub: payload.sub ?? '',
+      sub: contact.id,
       email: payload.email ?? '',
-      permissions: this.resolveInitialPermissions(payload)
+      permissions: this.resolveInitialPermissions(payload),
+      contactRecordTypeDeveloperName: contact.recordTypeDeveloperName
     };
 
     if (!user.sub || !user.email) {
@@ -61,7 +67,11 @@ export class AuthService {
       return {
         sub: decoded.sub,
         email: decoded.email,
-        permissions: decoded.permissions ?? []
+        permissions: decoded.permissions ?? [],
+        contactRecordTypeDeveloperName:
+          typeof decoded.contactRecordTypeDeveloperName === 'string'
+            ? decoded.contactRecordTypeDeveloperName
+            : undefined
       };
     } catch {
       throw new UnauthorizedException('Invalid or expired session');
@@ -118,7 +128,8 @@ export class AuthService {
       {
         sub: user.sub,
         email: user.email,
-        permissions: user.permissions
+        permissions: user.permissions,
+        contactRecordTypeDeveloperName: user.contactRecordTypeDeveloperName
       },
       this.jwtSecret,
       {
@@ -137,6 +148,25 @@ export class AuthService {
     }
 
     return [...permissions];
+  }
+
+  private async resolveSalesforceContact(
+    email: string,
+  ): Promise<{ id: string; recordTypeDeveloperName?: string }> {
+    const normalizedEmail = this.normalizeEmail(email);
+    if (!normalizedEmail) {
+      throw new UnauthorizedException('Google token missing verified email');
+    }
+
+    const contact = await this.salesforceService.findContactByEmail(normalizedEmail);
+    if (!contact) {
+      throw new UnauthorizedException('No Salesforce Contact mapped to this Google account');
+    }
+
+    return {
+      id: contact.id,
+      recordTypeDeveloperName: contact.recordTypeDeveloperName,
+    };
   }
 
   private readPositiveIntEnv(key: string, fallback: number): number {
