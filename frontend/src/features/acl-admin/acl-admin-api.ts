@@ -26,10 +26,11 @@ export async function fetchAclPermission(permissionCode: string): Promise<AclAdm
 export async function createAclPermission(
   permission: AclPermissionDefinition,
   appIds: string[],
+  resourceIds: string[],
 ): Promise<AclAdminPermissionResponse> {
   return apiFetch<AclAdminPermissionResponse>('/acl/admin/permissions', {
     method: 'POST',
-    body: { permission, appIds },
+    body: { permission, appIds, resourceIds },
   })
 }
 
@@ -37,12 +38,13 @@ export async function updateAclPermission(
   permissionCode: string,
   permission: AclPermissionDefinition,
   appIds: string[],
+  resourceIds: string[],
 ): Promise<AclAdminPermissionResponse> {
   return apiFetch<AclAdminPermissionResponse>(
     `/acl/admin/permissions/${encodeURIComponent(permissionCode)}`,
     {
       method: 'PUT',
-      body: { permission, appIds },
+      body: { permission, appIds, resourceIds },
     },
   )
 }

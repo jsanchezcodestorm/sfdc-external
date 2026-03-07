@@ -1,16 +1,26 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
 import {
   createAclPermission,
   fetchAclPermission,
   fetchAclPermissions,
+  fetchAclResources,
   updateAclPermission,
 } from '../acl-admin-api'
-import type { AclAdminPermissionSummary, AclPermissionDefinition } from '../acl-admin-types'
+import type {
+  AclAdminPermissionSummary,
+  AclAdminResourceSummary,
+  AclPermissionDefinition,
+  AclResourceType,
+} from '../acl-admin-types'
 import { fetchAppAdminList } from '../../apps-admin/apps-admin-api'
 import type { AppAdminSummary } from '../../apps-admin/apps-admin-types'
-import { createEmptyPermission, normalizePermission } from '../acl-admin-utils'
+import {
+  ACL_RESOURCE_TYPE_OPTIONS,
+  createEmptyPermission,
+  normalizePermission,
+} from '../acl-admin-utils'
 
 type AclPermissionEditorPageProps = {
   mode: 'create' | 'edit'
@@ -20,6 +30,8 @@ type RouteParams = {
   permissionCode?: string
 }
 
+type ResourceFilter = 'all' | AclResourceType
+
 export function AclPermissionEditorPage({ mode }: AclPermissionEditorPageProps) {
   const navigate = useNavigate()
   const params = useParams<RouteParams>()
@@ -27,7 +39,11 @@ export function AclPermissionEditorPage({ mode }: AclPermissionEditorPageProps) 
   const [draft, setDraft] = useState<AclPermissionDefinition>(createEmptyPermission())
   const [apps, setApps] = useState<AppAdminSummary[]>([])
   const [permissions, setPermissions] = useState<AclAdminPermissionSummary[]>([])
+  const [resources, setResources] = useState<AclAdminResourceSummary[]>([])
   const [selectedAppIds, setSelectedAppIds] = useState<string[]>([])
+  const [selectedResourceIds, setSelectedResourceIds] = useState<string[]>([])
+  const [resourceQuery, setResourceQuery] = useState('')
+  const [resourceTypeFilter, setResourceTypeFilter] = useState<ResourceFilter>('all')
   const [loading, setLoading] = useState(mode === 'edit')
   const [saving, setSaving] = useState(false)
   const [pageError, setPageError] = useState<string | null>(null)
@@ -36,6 +52,7 @@ export function AclPermissionEditorPage({ mode }: AclPermissionEditorPageProps) 
     if (mode !== 'edit' || !previousCode) {
       setDraft(createEmptyPermission())
       setSelectedAppIds([])
+      setSelectedResourceIds([])
     }
 
     let cancelled = false
@@ -43,19 +60,31 @@ export function AclPermissionEditorPage({ mode }: AclPermissionEditorPageProps) 
 
     const loadPromise =
       mode === 'edit' && previousCode
-        ? Promise.all([fetchAclPermissions(), fetchAppAdminList(), fetchAclPermission(previousCode)])
-        : Promise.all([fetchAclPermissions(), fetchAppAdminList(), Promise.resolve(null)])
+        ? Promise.all([
+            fetchAclPermissions(),
+            fetchAppAdminList(),
+            fetchAclResources(),
+            fetchAclPermission(previousCode),
+          ])
+        : Promise.all([
+            fetchAclPermissions(),
+            fetchAppAdminList(),
+            fetchAclResources(),
+            Promise.resolve(null),
+          ])
 
     void loadPromise
-      .then(([permissionsPayload, appsPayload, permissionPayload]) => {
+      .then(([permissionsPayload, appsPayload, resourcesPayload, permissionPayload]) => {
         if (cancelled) {
           return
         }
 
         setPermissions(permissionsPayload.items ?? [])
         setApps(appsPayload.items ?? [])
+        setResources(resourcesPayload.items ?? [])
         setDraft(permissionPayload?.permission ?? createEmptyPermission())
         setSelectedAppIds(permissionPayload?.appIds ?? [])
+        setSelectedResourceIds(permissionPayload?.resources.map((resource) => resource.id) ?? [])
         setPageError(null)
       })
       .catch((error) => {
@@ -67,6 +96,9 @@ export function AclPermissionEditorPage({ mode }: AclPermissionEditorPageProps) 
         setPageError(message)
         setApps([])
         setPermissions([])
+        setResources([])
+        setSelectedAppIds([])
+        setSelectedResourceIds([])
       })
       .finally(() => {
         if (!cancelled) {
@@ -84,6 +116,14 @@ export function AclPermissionEditorPage({ mode }: AclPermissionEditorPageProps) 
       current.includes(appId)
         ? current.filter((entry) => entry !== appId)
         : [...current, appId],
+    )
+  }
+
+  const toggleResource = (resourceId: string) => {
+    setSelectedResourceIds((current) =>
+      current.includes(resourceId)
+        ? current.filter((entry) => entry !== resourceId)
+        : [...current, resourceId],
     )
   }
 
@@ -106,8 +146,13 @@ export function AclPermissionEditorPage({ mode }: AclPermissionEditorPageProps) 
     try {
       const payload =
         mode === 'create'
-          ? await createAclPermission(normalized, selectedAppIds)
-          : await updateAclPermission(previousCode ?? normalized.code, normalized, selectedAppIds)
+          ? await createAclPermission(normalized, selectedAppIds, selectedResourceIds)
+          : await updateAclPermission(
+              previousCode ?? normalized.code,
+              normalized,
+              selectedAppIds,
+              selectedResourceIds,
+            )
 
       navigate(`/admin/acl/permissions/${encodeURIComponent(payload.permission.code)}`, {
         replace: true,
@@ -120,7 +165,8 @@ export function AclPermissionEditorPage({ mode }: AclPermissionEditorPageProps) 
     }
   }
 
-  const selectedAppSet = new Set(selectedAppIds)
+  const selectedAppSet = useMemo(() => new Set(selectedAppIds), [selectedAppIds])
+  const selectedResourceSet = useMemo(() => new Set(selectedResourceIds), [selectedResourceIds])
   const isDuplicateCode =
     draft.code.trim().length > 0 &&
     permissions.some(
@@ -128,6 +174,25 @@ export function AclPermissionEditorPage({ mode }: AclPermissionEditorPageProps) 
         permission.code.toLowerCase() === draft.code.trim().toLowerCase() &&
         permission.code !== previousCode,
     )
+  const filteredResources = useMemo(() => {
+    const normalizedQuery = resourceQuery.trim().toLowerCase()
+
+    return resources.filter((resource) => {
+      const matchesType = resourceTypeFilter === 'all' ? true : resource.type === resourceTypeFilter
+      if (!matchesType) {
+        return false
+      }
+
+      if (normalizedQuery.length === 0) {
+        return true
+      }
+
+      return [resource.id, resource.target ?? '', resource.description ?? '']
+        .join(' ')
+        .toLowerCase()
+        .includes(normalizedQuery)
+    })
+  }, [resourceQuery, resourceTypeFilter, resources])
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -273,6 +338,95 @@ export function AclPermissionEditorPage({ mode }: AclPermissionEditorPageProps) 
                 </button>
               </div>
             ))}
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-4">
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-medium text-slate-700">Associated resources</p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Seleziona le risorse ACL a cui questo permesso deve essere associato.
+                  </p>
+                </div>
+                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
+                  {selectedResourceIds.length} selezionate
+                </p>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_15rem]">
+                <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                  Filtro testo
+                  <input
+                    type="search"
+                    value={resourceQuery}
+                    onChange={(event) => setResourceQuery(event.target.value)}
+                    placeholder="Cerca per id, target o descrizione"
+                    className="mt-2 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+                  />
+                </label>
+
+                <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                  Type
+                  <select
+                    value={resourceTypeFilter}
+                    onChange={(event) => setResourceTypeFilter(event.target.value as ResourceFilter)}
+                    className="mt-2 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+                  >
+                    <option value="all">Tutti</option>
+                    {ACL_RESOURCE_TYPE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            </div>
+
+            {resources.length === 0 ? (
+              <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                Nessuna risorsa configurata. Crea prima almeno una ACL resource.
+              </p>
+            ) : filteredResources.length === 0 ? (
+              <p className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                Nessuna risorsa corrisponde ai filtri correnti.
+              </p>
+            ) : (
+              <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                {filteredResources.map((resource) => (
+                  <label
+                    key={resource.id}
+                    className={`flex items-start gap-3 rounded-2xl border px-4 py-3 text-sm transition ${
+                      selectedResourceSet.has(resource.id)
+                        ? 'border-slate-300 bg-slate-100'
+                        : 'border-slate-200 bg-slate-50'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedResourceSet.has(resource.id)}
+                      onChange={() => toggleResource(resource.id)}
+                      className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-sky-500"
+                    />
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="break-all font-semibold text-slate-950">{resource.id}</p>
+                        <span className="rounded-full bg-white px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+                          {resource.type}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-xs text-slate-600">
+                        {resource.target ? `Target: ${resource.target}` : 'Target non configurato'}
+                      </p>
+                      {resource.description ? (
+                        <p className="mt-1 text-xs text-slate-500">{resource.description}</p>
+                      ) : null}
+                    </div>
+                  </label>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="rounded-2xl border border-slate-200 bg-white p-4">

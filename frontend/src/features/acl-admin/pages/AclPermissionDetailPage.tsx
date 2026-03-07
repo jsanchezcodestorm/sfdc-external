@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
 import { deleteAclPermission, fetchAclPermission } from '../acl-admin-api'
-import type { AclAdminPermissionResponse } from '../acl-admin-types'
+import type { AclAdminPermissionResponse, AclAdminResourceSummary } from '../acl-admin-types'
 
 type RouteParams = {
   permissionCode?: string
@@ -142,12 +142,93 @@ export function AclPermissionDetailPage() {
           <DetailBlock label="App Ids">
             {payload.appIds.length > 0 ? payload.appIds.join(', ') : '-'}
           </DetailBlock>
-          <DetailBlock label="Resource Ids">
-            {payload.resourceIds.length > 0 ? payload.resourceIds.join(', ') : '-'}
-          </DetailBlock>
+
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                Associated resources
+              </p>
+              <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
+                {payload.resourceCount} associate
+              </p>
+            </div>
+
+            {payload.resources.length > 0 ? (
+              <div className="grid gap-3 lg:grid-cols-2">
+                {payload.resources.map((resource) => (
+                  <AssociatedResourceCard
+                    key={resource.id}
+                    resource={resource}
+                    onOpen={(resourceId) =>
+                      navigate(`/admin/acl/resources/${encodeURIComponent(resourceId)}`)
+                    }
+                    onEdit={(resourceId) =>
+                      navigate(`/admin/acl/resources/${encodeURIComponent(resourceId)}/edit`)
+                    }
+                  />
+                ))}
+              </div>
+            ) : (
+              <p className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">
+                Nessuna risorsa associata.
+              </p>
+            )}
+          </div>
         </div>
       ) : null}
     </section>
+  )
+}
+
+function AssociatedResourceCard({
+  resource,
+  onOpen,
+  onEdit,
+}: {
+  resource: AclAdminResourceSummary
+  onOpen: (resourceId: string) => void
+  onEdit: (resourceId: string) => void
+}) {
+  const openResource = () => onOpen(resource.id)
+
+  return (
+    <article
+      role="link"
+      tabIndex={0}
+      onClick={openResource}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          openResource()
+        }
+      }}
+      className="cursor-pointer rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 transition hover:border-slate-300 hover:bg-white"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="break-all font-semibold text-slate-950">{resource.id}</p>
+          <p className="mt-1 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
+            {resource.type}
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation()
+            onEdit(resource.id)
+          }}
+          className="rounded-md border border-slate-300 px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-slate-700 transition hover:border-slate-400 hover:bg-slate-100"
+        >
+          Modifica
+        </button>
+      </div>
+
+      <div className="mt-4 space-y-2 text-sm text-slate-700">
+        <p>{resource.target ? `Target: ${resource.target}` : 'Target non configurato'}</p>
+        {resource.description ? <p>{resource.description}</p> : null}
+      </div>
+    </article>
   )
 }
 
