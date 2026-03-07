@@ -1,6 +1,7 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 
 import { AclService } from '../../acl/acl.service';
+import { AuditWriteService } from '../../audit/audit-write.service';
 import { ResourceAccessService } from '../../common/services/resource-access.service';
 import type { QueryTemplate } from '../query.types';
 
@@ -31,7 +32,8 @@ export class QueryAdminTemplateService {
     private readonly queryAdminTemplateRepository: QueryAdminTemplateRepository,
     private readonly queryTemplateRepository: QueryTemplateRepository,
     private readonly aclService: AclService,
-    private readonly queryTemplateCompiler: QueryTemplateCompiler
+    private readonly queryTemplateCompiler: QueryTemplateCompiler,
+    private readonly auditWriteService: AuditWriteService
   ) {}
 
   async listTemplates(): Promise<QueryTemplateAdminListResponse> {
@@ -58,6 +60,7 @@ export class QueryAdminTemplateService {
   async upsertTemplate(templateId: string, payload: unknown): Promise<QueryTemplateAdminResponse> {
     this.resourceAccessService.assertKebabCaseId(templateId, 'templateId');
     const template = this.normalizeTemplate(payload);
+    const existedBefore = await this.templateExists(templateId);
 
     if (template.id !== templateId) {
       throw new BadRequestException('template.id must match route templateId');
@@ -65,6 +68,17 @@ export class QueryAdminTemplateService {
 
     await this.queryAdminTemplateRepository.upsertTemplate(template);
     this.queryTemplateRepository.evictTemplate(templateId);
+    await this.auditWriteService.recordApplicationSuccessOrThrow({
+      action: existedBefore ? 'QUERY_TEMPLATE_UPDATE' : 'QUERY_TEMPLATE_CREATE',
+      targetType: 'query-template',
+      targetId: templateId,
+      objectApiName: template.objectApiName,
+      payload: template,
+      metadata: {
+        hasDefaultParams: Boolean(template.defaultParams),
+        maxLimit: template.maxLimit ?? null
+      }
+    });
 
     return this.getTemplate(templateId);
   }
@@ -73,6 +87,14 @@ export class QueryAdminTemplateService {
     this.resourceAccessService.assertKebabCaseId(templateId, 'templateId');
     await this.queryAdminTemplateRepository.deleteTemplate(templateId);
     this.queryTemplateRepository.evictTemplate(templateId);
+    await this.auditWriteService.recordApplicationSuccessOrThrow({
+      action: 'QUERY_TEMPLATE_DELETE',
+      targetType: 'query-template',
+      targetId: templateId,
+      metadata: {
+        templateId
+      }
+    });
   }
 
   private normalizeTemplate(value: unknown): QueryTemplate {
@@ -94,6 +116,19 @@ export class QueryAdminTemplateService {
 
     this.queryTemplateCompiler.validateVisibilityCompatibleTemplate(template);
     return template;
+  }
+
+  private async templateExists(templateId: string): Promise<boolean> {
+    try {
+      await this.queryAdminTemplateRepository.getTemplate(templateId);
+      return true;
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        return false;
+      }
+
+      throw error;
+    }
   }
 
   private normalizeDefaultParams(value: unknown): QueryTemplate['defaultParams'] | undefined {

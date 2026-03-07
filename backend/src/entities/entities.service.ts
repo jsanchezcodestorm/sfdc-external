@@ -1,5 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 
+import { AuditWriteService } from '../audit/audit-write.service';
 import type { SessionUser } from '../auth/session-user.interface';
 import { ResourceAccessService } from '../common/services/resource-access.service';
 import { SalesforceService } from '../salesforce/salesforce.service';
@@ -147,6 +148,7 @@ interface EntityRelatedListResponse {
 @Injectable()
 export class EntitiesService {
   constructor(
+    private readonly auditWriteService: AuditWriteService,
     private readonly resourceAccessService: ResourceAccessService,
     private readonly entityConfigRepository: EntityConfigRepository,
     private readonly salesforceService: SalesforceService,
@@ -161,8 +163,17 @@ export class EntitiesService {
     const visibility = await this.resourceAccessService.authorizeObjectAccess(
       user,
       `entity:${entityId}`,
-      entityConfig.objectApiName
+      entityConfig.objectApiName,
+      {
+        queryKind: 'ENTITY_CONFIG'
+      }
     );
+    await this.visibilityService.recordAudit({
+      evaluation: visibility,
+      queryKind: 'ENTITY_CONFIG',
+      rowCount: 0,
+      durationMs: 0
+    });
 
     return {
       entity: entityConfig,
@@ -182,7 +193,10 @@ export class EntitiesService {
     const visibility = await this.resourceAccessService.authorizeObjectAccess(
       user,
       `entity:${entityId}`,
-      selectedView.query.object
+      selectedView.query.object,
+      {
+        queryKind: 'ENTITY_LIST'
+      }
     );
     const page = this.clamp(query.page ?? 1, 1, Number.MAX_SAFE_INTEGER);
     const configuredPageSize = this.clamp(selectedView.pageSize ?? DEFAULT_PAGE_SIZE, 1, MAX_PAGE_SIZE);
@@ -205,6 +219,7 @@ export class EntitiesService {
       visibility
     });
 
+    const startedAt = Date.now();
     const rawQueryResult = await this.salesforceService.executeReadOnlyQuery(scopedQuery.soql);
     const { records, totalSize } = this.extractRecords(rawQueryResult);
     await this.visibilityService.recordAudit({
@@ -212,7 +227,8 @@ export class EntitiesService {
       queryKind: 'ENTITY_LIST',
       baseWhere: scopedQuery.baseWhere,
       finalWhere: scopedQuery.finalWhere,
-      rowCount: records.length
+      rowCount: records.length,
+      durationMs: Date.now() - startedAt
     });
 
     return {
@@ -242,7 +258,10 @@ export class EntitiesService {
     const visibility = await this.resourceAccessService.authorizeObjectAccess(
       user,
       `entity:${entityId}`,
-      detailConfig.query.object
+      detailConfig.query.object,
+      {
+        queryKind: 'ENTITY_DETAIL'
+      }
     );
     const visibleSections = this.filterVisibleDetailSections(detailConfig.sections, visibility);
     const visibleRelatedLists = (detailConfig.relatedLists ?? []).map((relatedList) => ({
@@ -268,6 +287,7 @@ export class EntitiesService {
       extraFields: lookupProjectionFields,
       visibility
     });
+    const startedAt = Date.now();
     const rawQueryResult = await this.salesforceService.executeReadOnlyQuery(scopedQuery.soql);
     const { records } = this.extractRecords(rawQueryResult);
     await this.visibilityService.recordAudit({
@@ -275,7 +295,8 @@ export class EntitiesService {
       queryKind: 'ENTITY_DETAIL',
       baseWhere: scopedQuery.baseWhere,
       finalWhere: scopedQuery.finalWhere,
-      rowCount: records.length
+      rowCount: records.length,
+      durationMs: Date.now() - startedAt
     });
 
     if (records.length === 0) {
@@ -321,7 +342,10 @@ export class EntitiesService {
     const visibility = await this.resourceAccessService.authorizeObjectAccess(
       user,
       `entity:${entityId}`,
-      formConfig.query.object
+      formConfig.query.object,
+      {
+        queryKind: 'ENTITY_FORM'
+      }
     );
     const visibleSections = sections
       .map((section) => ({
@@ -336,6 +360,12 @@ export class EntitiesService {
     const title = formTitle && formTitle.trim().length > 0 ? formTitle : `${recordId ? 'Edit' : 'New'} ${entityConfig.label ?? entityConfig.id}`;
 
     if (!recordId) {
+      await this.visibilityService.recordAudit({
+        evaluation: visibility,
+        queryKind: 'ENTITY_FORM',
+        rowCount: 0,
+        durationMs: 0
+      });
       return {
         title,
         subtitle: formConfig.subtitle,
@@ -355,6 +385,7 @@ export class EntitiesService {
       visibility
     });
 
+    const startedAt = Date.now();
     const rawQueryResult = await this.salesforceService.executeReadOnlyQuery(scopedQuery.soql);
     const { records } = this.extractRecords(rawQueryResult);
     await this.visibilityService.recordAudit({
@@ -362,7 +393,8 @@ export class EntitiesService {
       queryKind: 'ENTITY_FORM',
       baseWhere: scopedQuery.baseWhere,
       finalWhere: scopedQuery.finalWhere,
-      rowCount: records.length
+      rowCount: records.length,
+      durationMs: Date.now() - startedAt
     });
 
     if (records.length === 0) {
@@ -405,7 +437,10 @@ export class EntitiesService {
     const visibility = await this.resourceAccessService.authorizeObjectAccess(
       user,
       `entity:${entityId}`,
-      relatedList.query.object
+      relatedList.query.object,
+      {
+        queryKind: 'ENTITY_RELATED_LIST'
+      }
     );
     const page = this.clamp(params.page ?? 1, 1, Number.MAX_SAFE_INTEGER);
     const configuredPageSize = this.clamp(relatedList.pageSize ?? DEFAULT_PAGE_SIZE, 1, MAX_PAGE_SIZE);
@@ -425,6 +460,7 @@ export class EntitiesService {
       extraFields: lookupProjectionFields,
       visibility
     });
+    const startedAt = Date.now();
     const rawQueryResult = await this.salesforceService.executeReadOnlyQuery(scopedQuery.soql);
     const { records, totalSize } = this.extractRecords(rawQueryResult);
     await this.visibilityService.recordAudit({
@@ -432,7 +468,8 @@ export class EntitiesService {
       queryKind: 'ENTITY_RELATED_LIST',
       baseWhere: scopedQuery.baseWhere,
       finalWhere: scopedQuery.finalWhere,
-      rowCount: records.length
+      rowCount: records.length,
+      durationMs: Date.now() - startedAt
     });
 
     return {
@@ -457,7 +494,40 @@ export class EntitiesService {
   ): Promise<Record<string, unknown>> {
     const entityConfig = await this.loadEntityConfig(entityId);
     const values = await this.normalizeWritePayload(entityConfig, payload, 'create');
-    return this.salesforceService.createRecord(entityConfig.objectApiName, values);
+    const auditId = await this.auditWriteService.createApplicationIntentOrThrow({
+      contactId: user.sub,
+      action: 'ENTITY_CREATE',
+      targetType: 'entity-record',
+      targetId: entityId,
+      objectApiName: entityConfig.objectApiName,
+      payload: values,
+      metadata: {
+        entityId
+      }
+    });
+
+    try {
+      const result = await this.salesforceService.createRecord(entityConfig.objectApiName, values);
+      await this.auditWriteService.completeApplicationAuditOrThrow({
+        auditId,
+        status: 'SUCCESS',
+        result: {
+          id: typeof result.id === 'string' ? result.id : undefined,
+          success: result.success === true
+        }
+      });
+      return result;
+    } catch (error) {
+      await this.auditWriteService.completeApplicationAuditOrThrow({
+        auditId,
+        status: 'FAILURE',
+        errorCode: this.auditWriteService.normalizeErrorCode(error),
+        result: {
+          message: error instanceof Error ? error.message : 'unknown error'
+        }
+      });
+      throw error;
+    }
   }
 
   async updateEntityRecord(
@@ -469,13 +539,79 @@ export class EntitiesService {
     this.assertSalesforceRecordId(recordId);
     const entityConfig = await this.loadEntityConfig(entityId);
     const values = await this.normalizeWritePayload(entityConfig, payload, 'update');
-    return this.salesforceService.updateRecord(entityConfig.objectApiName, recordId, values);
+    const auditId = await this.auditWriteService.createApplicationIntentOrThrow({
+      contactId: user.sub,
+      action: 'ENTITY_UPDATE',
+      targetType: 'entity-record',
+      targetId: recordId,
+      objectApiName: entityConfig.objectApiName,
+      recordId,
+      payload: values,
+      metadata: {
+        entityId
+      }
+    });
+
+    try {
+      const result = await this.salesforceService.updateRecord(entityConfig.objectApiName, recordId, values);
+      await this.auditWriteService.completeApplicationAuditOrThrow({
+        auditId,
+        status: 'SUCCESS',
+        result: {
+          id: typeof result.id === 'string' ? result.id : recordId,
+          success: result.success === true
+        }
+      });
+      return result;
+    } catch (error) {
+      await this.auditWriteService.completeApplicationAuditOrThrow({
+        auditId,
+        status: 'FAILURE',
+        errorCode: this.auditWriteService.normalizeErrorCode(error),
+        result: {
+          message: error instanceof Error ? error.message : 'unknown error'
+        }
+      });
+      throw error;
+    }
   }
 
   async deleteEntityRecord(user: SessionUser, entityId: string, recordId: string): Promise<void> {
     this.assertSalesforceRecordId(recordId);
     const entityConfig = await this.loadEntityConfig(entityId);
-    await this.salesforceService.deleteRecord(entityConfig.objectApiName, recordId);
+    const auditId = await this.auditWriteService.createApplicationIntentOrThrow({
+      contactId: user.sub,
+      action: 'ENTITY_DELETE',
+      targetType: 'entity-record',
+      targetId: recordId,
+      objectApiName: entityConfig.objectApiName,
+      recordId,
+      metadata: {
+        entityId
+      }
+    });
+
+    try {
+      await this.salesforceService.deleteRecord(entityConfig.objectApiName, recordId);
+      await this.auditWriteService.completeApplicationAuditOrThrow({
+        auditId,
+        status: 'SUCCESS',
+        result: {
+          id: recordId,
+          success: true
+        }
+      });
+    } catch (error) {
+      await this.auditWriteService.completeApplicationAuditOrThrow({
+        auditId,
+        status: 'FAILURE',
+        errorCode: this.auditWriteService.normalizeErrorCode(error),
+        result: {
+          message: error instanceof Error ? error.message : 'unknown error'
+        }
+      });
+      throw error;
+    }
   }
 
   private async loadEntityConfig(entityId: string): Promise<EntityConfig> {

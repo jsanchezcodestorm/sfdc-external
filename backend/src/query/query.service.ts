@@ -26,11 +26,15 @@ export class QueryService {
     const visibility = await this.resourceAccessService.authorizeObjectAccess(
       user,
       `query:${templateId}`,
-      template.objectApiName
+      template.objectApiName,
+      {
+        queryKind: 'QUERY_TEMPLATE'
+      }
     );
 
     const compiledSoql = this.queryTemplateCompiler.compile(template, params);
     const scopedSoql = this.queryTemplateCompiler.scopeCompiledSoql(compiledSoql, visibility);
+    const startedAt = Date.now();
     const result = await this.salesforceService.executeReadOnlyQuery(scopedSoql.soql);
     const records =
       typeof result === 'object' &&
@@ -43,7 +47,8 @@ export class QueryService {
       queryKind: 'QUERY_TEMPLATE',
       baseWhere: scopedSoql.baseWhere,
       finalWhere: scopedSoql.finalWhere,
-      rowCount: records.length
+      rowCount: records.length,
+      durationMs: Date.now() - startedAt
     });
 
     return {

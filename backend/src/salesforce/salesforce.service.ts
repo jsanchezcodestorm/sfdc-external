@@ -6,6 +6,7 @@ import { Prisma } from '@prisma/client';
 import jsforce from 'jsforce';
 import type { Connection } from 'jsforce';
 
+import { AuditWriteService } from '../audit/audit-write.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 interface SalesforceObjectSummary {
@@ -60,7 +61,8 @@ export class SalesforceService {
 
   constructor(
     private readonly configService: ConfigService,
-    private readonly prismaService: PrismaService
+    private readonly prismaService: PrismaService,
+    private readonly auditWriteService: AuditWriteService
   ) {
     this.describeCacheTtlMs = this.readPositiveIntConfig('SALESFORCE_DESCRIBE_CACHE_TTL_MS', DEFAULT_DESCRIBE_CACHE_TTL_MS);
     this.describeCacheStaleWhileRevalidateMs = this.readPositiveIntConfig(
@@ -165,9 +167,22 @@ export class SalesforceService {
     const rawQueryEnabled = this.configService.get<string>('ENABLE_RAW_SALESFORCE_QUERY', 'false') === 'true';
 
     if (!rawQueryEnabled) {
+      await this.auditWriteService.recordSecurityEventOrThrow({
+        eventType: 'RAW_QUERY',
+        decision: 'DENY',
+        reasonCode: 'RAW_QUERY_DISABLED'
+      });
       throw new ForbiddenException('Raw Salesforce query endpoint is disabled');
     }
 
+    await this.auditWriteService.recordSecurityEventOrThrow({
+      eventType: 'RAW_QUERY',
+      decision: 'ALLOW',
+      reasonCode: 'RAW_QUERY_EXECUTED',
+      metadata: {
+        queryHash: createHash('sha256').update(soql).digest('hex')
+      }
+    });
     return this.executeReadOnlyQuery(soql);
   }
 

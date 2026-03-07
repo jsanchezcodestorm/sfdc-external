@@ -69,9 +69,10 @@ REST:
 - `rest:query-execute`
 - `rest:query-template-admin`
 - `rest:acl-config-admin`
+- `rest:audit-read`
 - `rest:salesforce-objects`
 - `rest:salesforce-raw-query`
-- `rest:visibility-debug`
+- `rest:visibility-admin`
 
 ENTITY:
 - `entity:account`
@@ -87,6 +88,7 @@ ROUTE:
 - `route:admin-entity-config`
 - `route:admin-acl`
 - `route:admin-query-templates`
+- `route:admin-audit`
 
 ## 6) Flusso autorizzativo
 Ordine obbligatorio:

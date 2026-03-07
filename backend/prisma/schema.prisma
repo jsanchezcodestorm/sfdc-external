@@ -17,6 +17,12 @@ enum VisibilityDecision {
   DENY
 }
 
+enum ApplicationAuditStatus {
+  PENDING
+  SUCCESS
+  FAILURE
+}
+
 enum AclResourceKind {
   REST
   ENTITY
@@ -114,6 +120,55 @@ model VisibilityAuditLog {
   @@index([objectApiName, createdAt])
   @@index([decisionReasonCode, createdAt])
   @@map("audit_log")
+}
+
+model SecurityAuditLog {
+  id           BigInt             @id @default(autoincrement())
+  requestId    String             @db.VarChar(64)
+  createdAt    DateTime           @default(now())
+  contactId    String?            @db.VarChar(18)
+  endpoint     String             @db.VarChar(512)
+  httpMethod   String             @db.VarChar(16)
+  eventType    String             @db.VarChar(64)
+  decision     VisibilityDecision
+  reasonCode   String             @db.VarChar(64)
+  ipHash       String             @db.VarChar(128)
+  userAgentHash String            @db.VarChar(128)
+  metadataJson Json?
+
+  @@index([createdAt])
+  @@index([requestId])
+  @@index([contactId, createdAt])
+  @@index([eventType, createdAt])
+  @@index([reasonCode, createdAt])
+  @@map("security_audit_log")
+}
+
+model ApplicationAuditLog {
+  id            BigInt                 @id @default(autoincrement())
+  requestId     String                 @db.VarChar(64)
+  createdAt     DateTime               @default(now())
+  completedAt   DateTime?
+  contactId     String                 @db.VarChar(18)
+  action        String                 @db.VarChar(64)
+  targetType    String                 @db.VarChar(64)
+  targetId      String                 @db.VarChar(128)
+  objectApiName String?                @db.VarChar(128)
+  recordId      String?                @db.VarChar(18)
+  status        ApplicationAuditStatus
+  payloadHash   String                 @db.VarChar(128)
+  metadataJson  Json?
+  resultJson    Json?
+  errorCode     String?                @db.VarChar(128)
+
+  @@index([createdAt])
+  @@index([requestId])
+  @@index([contactId, createdAt])
+  @@index([action, createdAt])
+  @@index([status, createdAt])
+  @@index([targetType, createdAt])
+  @@index([objectApiName, createdAt])
+  @@map("application_audit_log")
 }
 
 model SalesforceSObjectDescribeCache {

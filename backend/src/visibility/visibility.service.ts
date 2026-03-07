@@ -1,9 +1,10 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
 
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma, VisibilityRuleEffect } from '@prisma/client';
 
+import { AuditWriteService } from '../audit/audit-write.service';
 import type { SessionUser } from '../auth/session-user.interface';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -56,7 +57,8 @@ export class VisibilityService {
 
   constructor(
     private readonly configService: ConfigService,
-    private readonly prismaService: PrismaService
+    private readonly prismaService: PrismaService,
+    private readonly auditWriteService: AuditWriteService
   ) {
     this.cacheTtlSeconds = this.readPositiveIntConfig('VISIBILITY_CACHE_TTL_SECONDS', 300);
     this.auditEnabled = this.configService.get<string>('VISIBILITY_AUDIT_ENABLED', 'true') !== 'false';
@@ -295,32 +297,21 @@ export class VisibilityService {
     baseWhere?: string;
     finalWhere?: string;
     rowCount: number;
+    durationMs?: number;
   }): Promise<void> {
     if (!this.auditEnabled) {
       return;
     }
 
-    const { evaluation, queryKind, baseWhere, finalWhere, rowCount } = params;
-    const requestId = randomUUID();
+    const { evaluation, queryKind, baseWhere, finalWhere, rowCount, durationMs } = params;
 
-    await this.prismaService.visibilityAuditLog.create({
-      data: {
-        requestId,
-        contactId: evaluation.contactId,
-        permissionsHash: evaluation.permissionsHash ?? this.hashPermissions([]),
-        recordType: evaluation.recordType ?? null,
-        objectApiName: evaluation.objectApiName,
-        queryKind,
-        baseWhereHash: this.hashText(baseWhere ?? ''),
-        finalWhereHash: this.hashText(finalWhere ?? ''),
-        appliedCones: evaluation.appliedCones as unknown as Prisma.InputJsonValue,
-        appliedRules: evaluation.appliedRules as unknown as Prisma.InputJsonValue,
-        decision: evaluation.decision,
-        decisionReasonCode: evaluation.reasonCode,
-        rowCount,
-        durationMs: 0,
-        policyVersion: BigInt(evaluation.policyVersion),
-      },
+    await this.auditWriteService.recordVisibilityEventOrThrow({
+      evaluation,
+      queryKind,
+      baseWhere,
+      finalWhere,
+      rowCount,
+      durationMs
     });
   }
 

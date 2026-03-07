@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 
 import { AclModule } from './acl/acl.module';
+import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
 import { EntitiesModule } from './entities/entities.module';
 import { GlobalSearchModule } from './global-search/global-search.module';
@@ -18,6 +19,7 @@ import { VisibilityModule } from './visibility/visibility.module';
       isGlobal: true,
       expandVariables: true
     }),
+    AuditModule,
     PrismaModule,
     AclModule,
     AuthModule,

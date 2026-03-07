@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 
 import { AclService } from '../../acl/acl.service';
+import { AuditWriteService } from '../../audit/audit-write.service';
 import { ResourceAccessService } from '../../common/services/resource-access.service';
 import { SalesforceService } from '../../salesforce/salesforce.service';
 import {
@@ -64,6 +65,7 @@ export class EntityAdminConfigService {
 
   constructor(
     private readonly aclService: AclService,
+    private readonly auditWriteService: AuditWriteService,
     private readonly resourceAccessService: ResourceAccessService,
     private readonly repository: EntityAdminConfigRepository,
     private readonly salesforceService: SalesforceService
@@ -97,6 +99,14 @@ export class EntityAdminConfigService {
     }
 
     await this.repository.upsertEntityConfig(entity);
+    await this.auditWriteService.recordApplicationSuccessOrThrow({
+      action: 'ENTITY_CONFIG_CREATE',
+      targetType: 'entity-config',
+      targetId: entity.id,
+      objectApiName: entity.objectApiName,
+      payload: entity,
+      metadata: this.buildEntityAuditMetadata(entity)
+    });
 
     return {
       entity: await this.repository.getEntityConfig(entity.id),
@@ -114,6 +124,14 @@ export class EntityAdminConfigService {
     const normalizedEntityConfig = this.normalizeEntityConfig(entityId, payload.entity);
 
     await this.repository.upsertEntityConfig(normalizedEntityConfig);
+    await this.auditWriteService.recordApplicationSuccessOrThrow({
+      action: 'ENTITY_CONFIG_UPDATE',
+      targetType: 'entity-config',
+      targetId: entityId,
+      objectApiName: normalizedEntityConfig.objectApiName,
+      payload: normalizedEntityConfig,
+      metadata: this.buildEntityAuditMetadata(normalizedEntityConfig)
+    });
     const entity = await this.repository.getEntityConfig(entityId);
 
     return {
@@ -130,6 +148,14 @@ export class EntityAdminConfigService {
     }
 
     await this.repository.deleteEntityConfig(entityId);
+    await this.auditWriteService.recordApplicationSuccessOrThrow({
+      action: 'ENTITY_CONFIG_DELETE',
+      targetType: 'entity-config',
+      targetId: entityId,
+      metadata: {
+        entityId
+      }
+    });
   }
 
   async searchSalesforceObjectApiNames(
@@ -186,6 +212,19 @@ export class EntityAdminConfigService {
       list: this.normalizeListConfig(entity.list),
       detail: this.normalizeDetailConfig(entity.detail),
       form: this.normalizeFormConfig(entity.form)
+    };
+  }
+
+  private buildEntityAuditMetadata(entity: EntityConfig): Record<string, unknown> {
+    return {
+      objectApiName: entity.objectApiName,
+      hasList: Boolean(entity.list),
+      hasDetail: Boolean(entity.detail),
+      hasForm: Boolean(entity.form),
+      listViews: entity.list?.views.length ?? 0,
+      detailSections: entity.detail?.sections.length ?? 0,
+      relatedLists: entity.detail?.relatedLists?.length ?? 0,
+      formSections: entity.form?.sections.length ?? 0
     };
   }
 
