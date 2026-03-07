@@ -7,6 +7,7 @@ import type {
   AclAdminDefaultPermissionsResponse,
   AclAdminPermissionListResponse,
   AclAdminPermissionResponse,
+  AclAdminResourceSummary,
   AclAdminResourceListResponse,
   AclAdminResourceResponse
 } from './acl-admin.types';
@@ -56,27 +57,40 @@ export class AclAdminConfigService {
     return this.mapPermissionDetail(snapshot, permission, permissionAppIds);
   }
 
-  async createPermission(payload: unknown, appIdsPayload: unknown): Promise<AclAdminPermissionResponse> {
+  async createPermission(
+    payload: unknown,
+    appIdsPayload: unknown,
+    resourceIdsPayload: unknown
+  ): Promise<AclAdminPermissionResponse> {
     const snapshot = await this.loadSnapshot();
     const permission = normalizeAclPermissionDefinitionInput(payload, 'permission');
     const appIds = await this.normalizeAppIds(appIdsPayload);
-    const persisted = await this.persistSnapshot(upsertPermissionInSnapshot(snapshot, permission), {
-      replacedPermissionAppAssignments: [
-        {
-          permissionCode: permission.code,
-          appIds
-        }
-      ]
-    });
+    const resourceIds = this.normalizeResourceIds(snapshot, resourceIdsPayload);
+    const persisted = await this.persistSnapshot(
+      upsertPermissionInSnapshot(snapshot, permission, resourceIds),
+      {
+        replacedPermissionAppAssignments: [
+          {
+            permissionCode: permission.code,
+            appIds
+          }
+        ]
+      }
+    );
     const nextPermission = this.requirePermission(persisted, permission.code);
     await this.auditWriteService.recordApplicationSuccessOrThrow({
       action: 'ACL_PERMISSION_CREATE',
       targetType: 'acl-permission',
       targetId: permission.code,
-      payload: permission,
+      payload: {
+        permission,
+        appIds,
+        resourceIds
+      },
       metadata: {
         aliasesCount: nextPermission.aliases?.length ?? 0,
-        appCount: appIds.length
+        appCount: appIds.length,
+        resourceCount: resourceIds.length
       }
     });
     return this.mapPermissionDetail(persisted, nextPermission, new Map([[permission.code, appIds]]));
@@ -85,7 +99,8 @@ export class AclAdminConfigService {
   async updatePermission(
     permissionCode: string,
     payload: unknown,
-    appIdsPayload: unknown
+    appIdsPayload: unknown,
+    resourceIdsPayload: unknown
   ): Promise<AclAdminPermissionResponse> {
     const previousCode = normalizeCanonicalPermissionCode(permissionCode, 'permissionCode');
     const snapshot = await this.loadSnapshot();
@@ -93,8 +108,9 @@ export class AclAdminConfigService {
 
     const permission = normalizeAclPermissionDefinitionInput(payload, 'permission');
     const appIds = await this.normalizeAppIds(appIdsPayload);
+    const resourceIds = this.normalizeResourceIds(snapshot, resourceIdsPayload);
     const persisted = await this.persistSnapshot(
-      upsertPermissionInSnapshot(snapshot, permission, previousCode),
+      upsertPermissionInSnapshot(snapshot, permission, resourceIds, previousCode),
       {
         renamedPermissionCodes: previousCode !== permission.code
           ? [
@@ -117,11 +133,16 @@ export class AclAdminConfigService {
       action: 'ACL_PERMISSION_UPDATE',
       targetType: 'acl-permission',
       targetId: permission.code,
-      payload: permission,
+      payload: {
+        permission,
+        appIds,
+        resourceIds
+      },
       metadata: {
         previousCode,
         aliasesCount: nextPermission.aliases?.length ?? 0,
-        appCount: appIds.length
+        appCount: appIds.length,
+        resourceCount: resourceIds.length
       }
     });
     return this.mapPermissionDetail(persisted, nextPermission, new Map([[permission.code, appIds]]));
@@ -147,13 +168,7 @@ export class AclAdminConfigService {
   async listResources(): Promise<AclAdminResourceListResponse> {
     const snapshot = await this.loadSnapshot();
     return {
-      items: snapshot.resources.map((resource) => ({
-        id: resource.id,
-        type: resource.type,
-        target: resource.target,
-        description: resource.description,
-        permissionCount: resource.permissions.length
-      }))
+      items: snapshot.resources.map((resource) => this.mapResourceSummary(resource))
     };
   }
 
@@ -294,9 +309,9 @@ export class AclAdminConfigService {
     permission: AclPermissionDefinition,
     permissionAppIds: Map<string, string[]>
   ): AclAdminPermissionResponse {
-    const resourceIds = snapshot.resources
+    const resources = snapshot.resources
       .filter((resource) => resource.permissions.includes(permission.code))
-      .map((resource) => resource.id);
+      .map((resource) => this.mapResourceSummary(resource));
     const appIds = [...(permissionAppIds.get(permission.code) ?? [])];
 
     return {
@@ -305,10 +320,20 @@ export class AclAdminConfigService {
         aliases: [...(permission.aliases ?? [])]
       },
       isDefault: snapshot.defaultPermissions.includes(permission.code),
-      resourceIds,
-      resourceCount: resourceIds.length,
+      resources,
+      resourceCount: resources.length,
       appIds,
       appCount: appIds.length
+    };
+  }
+
+  private mapResourceSummary(resource: AclResourceConfig): AclAdminResourceSummary {
+    return {
+      id: resource.id,
+      type: resource.type,
+      target: resource.target,
+      description: resource.description,
+      permissionCount: resource.permissions.length
     };
   }
 
@@ -389,11 +414,43 @@ export class AclAdminConfigService {
     await this.aclAdminConfigRepository.assertAppIdsExist(uniqueAppIds);
     return uniqueAppIds;
   }
+
+  private normalizeResourceIds(snapshot: AclConfigSnapshot, value: unknown): string[] {
+    if (!Array.isArray(value)) {
+      throw new BadRequestException('resourceIds must be an array');
+    }
+
+    const knownResourceIds = new Set(snapshot.resources.map((resource) => resource.id));
+    const resourceIds = value.map((entry, index) => {
+      if (typeof entry !== 'string') {
+        throw new BadRequestException(`resourceIds[${index}] must be a non-empty string`);
+      }
+
+      const normalized = entry.trim();
+      if (normalized.length === 0) {
+        throw new BadRequestException(`resourceIds[${index}] must be a non-empty string`);
+      }
+
+      if (!knownResourceIds.has(normalized)) {
+        throw new BadRequestException(`Unknown resource ids: ${normalized}`);
+      }
+
+      return normalized;
+    });
+    const uniqueResourceIds = [...new Set(resourceIds)];
+
+    if (uniqueResourceIds.length !== resourceIds.length) {
+      throw new BadRequestException('resourceIds must not contain duplicates');
+    }
+
+    return uniqueResourceIds;
+  }
 }
 
 function upsertPermissionInSnapshot(
   snapshot: AclConfigSnapshot,
   nextPermission: AclPermissionDefinition,
+  resourceIds: string[],
   previousCode?: string
 ): AclConfigSnapshot {
   const permissions = previousCode
@@ -409,11 +466,19 @@ function upsertPermissionInSnapshot(
       previousCode && code === previousCode ? nextCode : code
     )
   );
+  const selectedResourceIds = new Set(resourceIds);
   const resources = snapshot.resources.map((resource) => ({
     ...resource,
-    permissions: resource.permissions.map((code) =>
-      previousCode && code === previousCode ? nextCode : code
-    )
+    permissions: selectedResourceIds.has(resource.id)
+      ? [
+          ...resource.permissions
+            .map((code) => (previousCode && code === previousCode ? nextCode : code))
+            .filter((code) => code !== nextCode),
+          nextCode
+        ]
+      : resource.permissions
+          .map((code) => (previousCode && code === previousCode ? nextCode : code))
+          .filter((code) => code !== nextCode)
   }));
 
   return {

@@ -17,7 +17,7 @@ export interface AclAdminPermissionListResponse {
 export interface AclAdminPermissionResponse {
   permission: AclPermissionDefinition & { aliases: string[] };
   isDefault: boolean;
-  resourceIds: string[];
+  resources: AclAdminResourceSummary[];
   resourceCount: number;
   appIds: string[];
   appCount: number;

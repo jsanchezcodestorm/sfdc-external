@@ -6,4 +6,7 @@ export class UpsertAclPermissionDto {
 
   @IsArray()
   appIds!: unknown[];
+
+  @IsArray()
+  resourceIds!: unknown[];
 }
