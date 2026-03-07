@@ -17,13 +17,15 @@ export function ObjectApiNameQuickFind({
   const [suggestions, setSuggestions] = useState<SalesforceObjectApiNameSuggestion[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [isOpen, setIsOpen] = useState(false)
 
   const searchValue = value.trim()
+  const shouldLoadSuggestions = isOpen && searchValue.length >= 2
   const showSuggestions =
-    searchValue.length >= 2 && (loading || suggestions.length > 0 || error !== null)
+    shouldLoadSuggestions && (loading || suggestions.length > 0 || error !== null)
 
   useEffect(() => {
-    if (searchValue.length < 2) {
+    if (!shouldLoadSuggestions) {
       return
     }
 
@@ -63,13 +65,17 @@ export function ObjectApiNameQuickFind({
       cancelled = true
       window.clearTimeout(timeoutId)
     }
-  }, [searchValue])
+  }, [searchValue, shouldLoadSuggestions])
 
   return (
     <div className="relative mt-2">
       <input
         type="text"
         value={value}
+        onFocus={() => setIsOpen(true)}
+        onBlur={() => {
+          window.setTimeout(() => setIsOpen(false), 120)
+        }}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
         className="block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
@@ -95,7 +101,10 @@ export function ObjectApiNameQuickFind({
                   key={suggestion.name}
                   type="button"
                   onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => onChange(suggestion.name)}
+                  onClick={() => {
+                    onChange(suggestion.name)
+                    setIsOpen(false)
+                  }}
                   className="flex w-full items-center justify-between rounded-md px-3 py-2 text-left transition hover:bg-slate-100"
                 >
                   <span className="text-sm text-slate-800">{suggestion.name}</span>

@@ -15,7 +15,7 @@ export function AdminShell() {
       eyebrow: 'Amministrazione',
       title: 'Moduli admin',
       description: "La navigazione della colonna sinistra copre l'intero dominio /admin.",
-      itemCountLabel: '3 moduli',
+      itemCountLabel: '4 moduli',
       items: [
         {
           id: 'entity-config',
@@ -42,6 +42,15 @@ export function AdminShell() {
           isActive: location.pathname.startsWith('/admin/query-templates'),
           onSelect: () => {
             navigate('/admin/query-templates')
+          },
+        },
+        {
+          id: 'visibility',
+          label: 'Visibility',
+          description: 'Cones, rules, assignments e debug del motore visibility.',
+          isActive: location.pathname.startsWith('/admin/visibility'),
+          onSelect: () => {
+            navigate('/admin/visibility')
           },
         },
       ],

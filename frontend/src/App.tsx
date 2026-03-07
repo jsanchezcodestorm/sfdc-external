@@ -22,6 +22,17 @@ import { QueryTemplateAdminLayout } from './features/query-template-admin/pages/
 import { QueryTemplateDetailPage } from './features/query-template-admin/pages/QueryTemplateDetailPage'
 import { QueryTemplateEditorPage } from './features/query-template-admin/pages/QueryTemplateEditorPage'
 import { QueryTemplateListPage } from './features/query-template-admin/pages/QueryTemplateListPage'
+import { VisibilityAdminLayout } from './features/visibility-admin/pages/VisibilityAdminLayout'
+import { VisibilityAssignmentDetailPage } from './features/visibility-admin/pages/VisibilityAssignmentDetailPage'
+import { VisibilityAssignmentEditorPage } from './features/visibility-admin/pages/VisibilityAssignmentEditorPage'
+import { VisibilityAssignmentsPage } from './features/visibility-admin/pages/VisibilityAssignmentsPage'
+import { VisibilityConeDetailPage } from './features/visibility-admin/pages/VisibilityConeDetailPage'
+import { VisibilityConeEditorPage } from './features/visibility-admin/pages/VisibilityConeEditorPage'
+import { VisibilityConesPage } from './features/visibility-admin/pages/VisibilityConesPage'
+import { VisibilityDebugPage } from './features/visibility-admin/pages/VisibilityDebugPage'
+import { VisibilityRuleDetailPage } from './features/visibility-admin/pages/VisibilityRuleDetailPage'
+import { VisibilityRuleEditorPage } from './features/visibility-admin/pages/VisibilityRuleEditorPage'
+import { VisibilityRulesPage } from './features/visibility-admin/pages/VisibilityRulesPage'
 import { HomePage } from './pages/HomePage'
 import { LoginPage } from './pages/LoginPage'
 
@@ -71,6 +82,37 @@ function App() {
                 path=":templateId/edit"
                 element={<QueryTemplateEditorPage mode="edit" />}
               />
+            </Route>
+            <Route path="visibility" element={<VisibilityAdminLayout />}>
+              <Route index element={<Navigate replace to="cones" />} />
+              <Route path="cones" element={<VisibilityConesPage />} />
+              <Route path="cones/__new__" element={<VisibilityConeEditorPage mode="create" />} />
+              <Route path="cones/:coneId" element={<VisibilityConeDetailPage />} />
+              <Route
+                path="cones/:coneId/edit"
+                element={<VisibilityConeEditorPage mode="edit" />}
+              />
+              <Route path="rules" element={<VisibilityRulesPage />} />
+              <Route path="rules/__new__" element={<VisibilityRuleEditorPage mode="create" />} />
+              <Route path="rules/:ruleId" element={<VisibilityRuleDetailPage />} />
+              <Route
+                path="rules/:ruleId/edit"
+                element={<VisibilityRuleEditorPage mode="edit" />}
+              />
+              <Route path="assignments" element={<VisibilityAssignmentsPage />} />
+              <Route
+                path="assignments/__new__"
+                element={<VisibilityAssignmentEditorPage mode="create" />}
+              />
+              <Route
+                path="assignments/:assignmentId"
+                element={<VisibilityAssignmentDetailPage />}
+              />
+              <Route
+                path="assignments/:assignmentId/edit"
+                element={<VisibilityAssignmentEditorPage mode="edit" />}
+              />
+              <Route path="debug" element={<VisibilityDebugPage />} />
             </Route>
           </Route>
         </Route>
