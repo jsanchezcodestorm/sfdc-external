@@ -7,10 +7,9 @@ export function QueryTemplateAdminLayout() {
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">
           Admin
         </p>
-        <h1 className="mt-2 text-2xl font-bold tracking-tight">Query Templates PostgreSQL</h1>
+        <h1 className="mt-2 text-2xl font-bold tracking-tight">Query Templates</h1>
         <p className="mt-2 text-sm text-slate-600">
-          Catalogo tabellare e pagine dedicate di view/edit per i template usati dal runtime
-          `/query/template/:templateId`.
+          Catalogo e pagine dedicate per visualizzare e modificare i template di query.
         </p>
       </header>
 

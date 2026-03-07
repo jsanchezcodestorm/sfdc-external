@@ -7,9 +7,9 @@ export function VisibilityAdminLayout() {
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">
           Admin
         </p>
-        <h1 className="mt-2 text-2xl font-bold tracking-tight">Visibility Cones PostgreSQL</h1>
+        <h1 className="mt-2 text-2xl font-bold tracking-tight">Visibility Cones</h1>
         <p className="mt-2 text-sm text-slate-600">
-          Backoffice tabellare per cones, rules, assignments e debug del motore visibility runtime.
+          Backoffice per cones, rules, assignments e strumenti di verifica.
         </p>
       </header>
       <Outlet />

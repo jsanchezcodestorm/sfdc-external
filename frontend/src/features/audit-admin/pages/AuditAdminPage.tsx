@@ -233,7 +233,7 @@ export function AuditAdminPage() {
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-700">
           Admin
         </p>
-        <h1 className="mt-2 text-2xl font-bold tracking-tight">Audit PostgreSQL</h1>
+        <h1 className="mt-2 text-2xl font-bold tracking-tight">Audit</h1>
         <p className="mt-2 max-w-3xl text-sm text-slate-600">
           Lista read-only con tab separate per Security, Visibility e Application e pagina view
           dedicata per ogni evento.

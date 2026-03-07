@@ -194,7 +194,7 @@ export function VisibilityDebugPage() {
           </p>
           <h2 className="mt-1 text-xl font-semibold text-slate-900">Visibility Evaluation</h2>
           <p className="mt-1 text-sm text-slate-600">
-            Simula il contesto utente e verifica il predicate finale compilato dal motore runtime.
+            Simula il contesto utente e verifica il filtro finale applicato.
           </p>
         </div>
 

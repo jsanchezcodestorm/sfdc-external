@@ -81,7 +81,7 @@ test('loginWithGoogleIdToken merges default, explicit, and admin fallback permis
   assert.equal(response.user.contactRecordTypeDeveloperName, 'Customer');
 });
 
-test('contact permission changes apply only on the next login', async () => {
+test('contact permission changes apply on the next authenticated request', async () => {
   const { service, state } = createAuthService({
     defaultPermissions: ['PORTAL_USER'],
     explicitPermissions: ['ACCOUNT_READ'],
@@ -91,9 +91,8 @@ test('contact permission changes apply only on the next login', async () => {
   const firstLogin = await service.loginWithGoogleIdToken('first-token');
   state.explicitPermissions = ['ACCOUNT_WRITE'];
 
-  const firstSession = service.verifySessionToken(firstLogin.token);
-  const secondLogin = await service.loginWithGoogleIdToken('second-token');
+  const firstSession = await service.verifySessionToken(firstLogin.token);
 
-  assert.deepEqual(firstSession.permissions, ['PORTAL_USER', 'ACCOUNT_READ']);
-  assert.deepEqual(secondLogin.user.permissions, ['PORTAL_USER', 'ACCOUNT_WRITE']);
+  assert.deepEqual(firstLogin.user.permissions, ['PORTAL_USER', 'ACCOUNT_READ']);
+  assert.deepEqual(firstSession.permissions, ['PORTAL_USER', 'ACCOUNT_WRITE']);
 });

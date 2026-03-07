@@ -602,7 +602,7 @@ export function EntityAdminConfigPage() {
       )
       setSelectedEntityConfig(payload.entity)
       setAclResourceConfigured(payload.aclResourceConfigured)
-      setSaveInfo('Configurazione salvata su PostgreSQL')
+      setSaveInfo('Configurazione salvata')
       navigate(buildEntityEditPath(payload.entity.id, activeSection ?? 'base'), { replace: true })
       await refreshEntityList()
     } catch (error) {
@@ -635,7 +635,7 @@ export function EntityAdminConfigPage() {
       const payload = await createEntityAdminConfig(nextConfig)
       setSelectedEntityConfig(payload.entity)
       setAclResourceConfigured(payload.aclResourceConfigured)
-      setSaveInfo('Entity creata su PostgreSQL')
+      setSaveInfo('Entity creata')
       await refreshEntityList()
       navigate(buildEntityEditPath(payload.entity.id, 'base'), { replace: true })
     } catch (error) {
@@ -676,7 +676,7 @@ export function EntityAdminConfigPage() {
               Admin
             </p>
             <h1 className="mt-2 text-2xl font-bold tracking-tight">
-              Entity Config PostgreSQL
+              Entity Config
             </h1>
             <p className="mt-2 text-sm text-slate-600">
               {isCreateRoute

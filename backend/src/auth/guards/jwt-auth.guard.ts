@@ -32,7 +32,7 @@ export class JwtAuthGuard implements CanActivate {
     }
 
     try {
-      request.user = this.authService.verifySessionToken(token);
+      request.user = await this.authService.verifySessionToken(token);
       this.requestContextService.setUser(request.user);
     } catch (error) {
       await this.auditWriteService.recordSecurityEventOrThrow({

@@ -41,7 +41,7 @@ export function QueryTemplateEditorForm({
       {showAclWarning ? (
         <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
           Risorsa ACL mancante: <code className="font-mono">query:{aclResourceId}</code>.
-          Configurala nel modulo ACL Admin per autorizzare il runtime template.
+          Configurala nel modulo ACL Admin per autorizzare l'uso del template.
         </p>
       ) : null}
 

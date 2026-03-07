@@ -46,7 +46,7 @@ export class AuthService {
     const user: SessionUser = {
       sub: contact.id,
       email: payload.email ?? '',
-      permissions: await this.resolveInitialPermissions(contact.id, payload),
+      permissions: await this.resolveEffectivePermissions(contact.id, payload.email ?? ''),
       contactRecordTypeDeveloperName: contact.recordTypeDeveloperName
     };
 
@@ -58,7 +58,7 @@ export class AuthService {
     return { token, user };
   }
 
-  verifySessionToken(token: string): SessionUser {
+  async verifySessionToken(token: string): Promise<SessionUser> {
     try {
       const decoded = verify(token, this.jwtSecret, { algorithms: ['HS256'] }) as SessionTokenPayload | string;
 
@@ -69,7 +69,7 @@ export class AuthService {
       return {
         sub: decoded.sub,
         email: decoded.email,
-        permissions: decoded.permissions ?? [],
+        permissions: await this.resolveEffectivePermissions(decoded.sub, decoded.email),
         contactRecordTypeDeveloperName:
           typeof decoded.contactRecordTypeDeveloperName === 'string'
             ? decoded.contactRecordTypeDeveloperName
@@ -141,12 +141,12 @@ export class AuthService {
     );
   }
 
-  private async resolveInitialPermissions(contactId: string, payload: TokenPayload): Promise<string[]> {
+  private async resolveEffectivePermissions(contactId: string, email: string): Promise<string[]> {
     const permissions = [
       ...this.aclService.getDefaultPermissions(),
       ...(await this.aclContactPermissionsRepository.listPermissionCodesByContactId(contactId))
     ];
-    const userEmail = this.normalizeEmail(payload.email);
+    const userEmail = this.normalizeEmail(email);
 
     if (this.adminFallbackEmail && userEmail === this.adminFallbackEmail) {
       permissions.push('PORTAL_ADMIN');
