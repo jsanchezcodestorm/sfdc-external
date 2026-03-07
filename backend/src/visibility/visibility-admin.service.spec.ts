@@ -1,0 +1,214 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+
+import { BadRequestException } from '@nestjs/common';
+
+import { VisibilityAdminService } from './visibility-admin.service';
+import type { VisibilityEvaluation } from './visibility.types';
+
+const CONTACT_ID = '003000000000001AAA';
+
+function createEvaluation(
+  overrides: Partial<VisibilityEvaluation> = {},
+): VisibilityEvaluation {
+  return {
+    decision: 'ALLOW',
+    reasonCode: 'ALLOW_MATCH',
+    policyVersion: 9,
+    objectApiName: 'Account',
+    contactId: CONTACT_ID,
+    recordType: 'administration',
+    appliedCones: ['TEST'],
+    appliedRules: ['rule-1'],
+    matchedAssignments: ['assignment-1'],
+    permissionsHash: 'permissions-hash',
+    compiledPredicate: "Type = 'Customer'",
+    compiledAllowPredicate: "Type = 'Customer'",
+    baseWhere: "Status__c = 'Active'",
+    finalWhere: "(Status__c = 'Active') AND (Type = 'Customer')",
+    ...overrides,
+  };
+}
+
+function createVisibilityAdminService(options?: {
+  evaluation?: VisibilityEvaluation;
+  applyFieldVisibility?: (fields: string[], evaluation: VisibilityEvaluation) => string[];
+  queryResult?: unknown;
+}) {
+  const evaluateCalls: Array<Record<string, unknown>> = [];
+  const applyFieldVisibilityCalls: Array<Record<string, unknown>> = [];
+  const recordAuditCalls: Array<Record<string, unknown>> = [];
+  const queryCalls: string[] = [];
+
+  const visibilityService = {
+    async evaluate(input: Record<string, unknown>) {
+      evaluateCalls.push(input);
+      return options?.evaluation ?? createEvaluation();
+    },
+    applyFieldVisibility(fields: string[], evaluation: VisibilityEvaluation) {
+      applyFieldVisibilityCalls.push({ fields, evaluation });
+      return options?.applyFieldVisibility
+        ? options.applyFieldVisibility(fields, evaluation)
+        : fields;
+    },
+    async recordAudit(input: Record<string, unknown>) {
+      recordAuditCalls.push(input);
+    },
+  };
+
+  const salesforceService = {
+    async executeReadOnlyQuery(soql: string) {
+      queryCalls.push(soql);
+      return options?.queryResult ?? { records: [] };
+    },
+  };
+
+  const service = new VisibilityAdminService(
+    {} as never,
+    visibilityService as never,
+    salesforceService as never,
+  );
+
+  return {
+    service,
+    calls: {
+      evaluateCalls,
+      applyFieldVisibilityCalls,
+      recordAuditCalls,
+      queryCalls,
+    },
+  };
+}
+
+test('previewDebug executes a scoped query and flattens preview records', async () => {
+  const { service, calls } = createVisibilityAdminService({
+    applyFieldVisibility: (fields) => fields.filter((field) => field !== 'Secret__c'),
+    queryResult: {
+      records: [
+        {
+          Name: 'Acme',
+          Owner: { Name: 'Jane Doe' },
+          attributes: { type: 'Account' },
+        },
+        {
+          Name: 'Globex',
+          Owner: null,
+        },
+      ],
+    },
+  });
+
+  const response = await service.previewDebug({
+    objectApiName: 'Account',
+    contactId: CONTACT_ID,
+    permissions: ['portal_admin', 'PORTAL_ADMIN'],
+    recordType: 'administration',
+    baseWhere: "Status__c = 'Active'",
+    requestedFields: ['Name', 'Owner.Name', 'Secret__c'],
+    limit: 5,
+  });
+
+  assert.equal(calls.evaluateCalls.length, 1);
+  assert.equal(calls.applyFieldVisibilityCalls.length, 1);
+  assert.deepEqual(calls.evaluateCalls[0].permissions, ['PORTAL_ADMIN']);
+  assert.equal(calls.queryCalls.length, 1);
+  assert.equal(
+    calls.queryCalls[0],
+    "SELECT Name, Owner.Name FROM Account WHERE (Status__c = 'Active') AND (Type = 'Customer') ORDER BY Id ASC LIMIT 5",
+  );
+  assert.equal(response.executed, true);
+  assert.equal(response.rowCount, 2);
+  assert.equal(response.visibility.rowCount, 2);
+  assert.deepEqual(response.selectedFields, ['Name', 'Owner.Name']);
+  assert.deepEqual(response.records, [
+    {
+      Name: 'Acme',
+      'Owner.Name': 'Jane Doe',
+    },
+    {
+      Name: 'Globex',
+      'Owner.Name': null,
+    },
+  ]);
+  assert.equal(calls.recordAuditCalls.length, 1);
+  assert.equal(calls.recordAuditCalls[0].queryKind, 'VISIBILITY_DEBUG_PREVIEW');
+  assert.equal(calls.recordAuditCalls[0].rowCount, 2);
+});
+
+test('previewDebug skips execution and audits when visibility denies access', async () => {
+  const { service, calls } = createVisibilityAdminService({
+    evaluation: createEvaluation({
+      decision: 'DENY',
+      reasonCode: 'NO_ALLOW_RULE',
+      compiledPredicate: undefined,
+      compiledAllowPredicate: undefined,
+      finalWhere: "Status__c = 'Active'",
+    }),
+  });
+
+  const response = await service.previewDebug({
+    objectApiName: 'Account',
+    contactId: CONTACT_ID,
+    permissions: ['PORTAL_ADMIN'],
+    requestedFields: ['Name'],
+  });
+
+  assert.equal(response.executed, false);
+  assert.equal(response.executionSkippedReason, 'VISIBILITY_DENY');
+  assert.equal(response.rowCount, 0);
+  assert.equal(response.visibility.rowCount, 0);
+  assert.equal(calls.queryCalls.length, 0);
+  assert.equal(calls.recordAuditCalls.length, 1);
+  assert.equal(calls.recordAuditCalls[0].rowCount, 0);
+});
+
+test('previewDebug skips execution when no requested fields remain visible', async () => {
+  const { service, calls } = createVisibilityAdminService({
+    applyFieldVisibility: () => [],
+  });
+
+  const response = await service.previewDebug({
+    objectApiName: 'Account',
+    contactId: CONTACT_ID,
+    permissions: ['PORTAL_ADMIN'],
+    requestedFields: ['Secret__c'],
+  });
+
+  assert.equal(response.executed, false);
+  assert.equal(response.executionSkippedReason, 'NO_VISIBLE_FIELDS');
+  assert.equal(response.rowCount, 0);
+  assert.deepEqual(response.selectedFields, []);
+  assert.equal(calls.queryCalls.length, 0);
+  assert.equal(calls.recordAuditCalls.length, 1);
+});
+
+test('previewDebug validates requestedFields and limit', async () => {
+  const { service } = createVisibilityAdminService();
+
+  await assert.rejects(
+    () =>
+      service.previewDebug({
+        objectApiName: 'Account',
+        contactId: CONTACT_ID,
+        permissions: ['PORTAL_ADMIN'],
+        requestedFields: [],
+      }),
+    (error: unknown) =>
+      error instanceof BadRequestException &&
+      error.message === 'requestedFields must be a non-empty array',
+  );
+
+  await assert.rejects(
+    () =>
+      service.previewDebug({
+        objectApiName: 'Account',
+        contactId: CONTACT_ID,
+        permissions: ['PORTAL_ADMIN'],
+        requestedFields: ['Name'],
+        limit: 26,
+      }),
+    (error: unknown) =>
+      error instanceof BadRequestException &&
+      error.message === 'limit must be an integer between 1 and 25',
+  );
+});

@@ -17,6 +17,7 @@ import { AclResource } from '../common/decorators/acl-resource.decorator';
 import { AclGuard } from '../common/guards/acl.guard';
 
 import { EvaluateVisibilityDebugDto } from './dto/evaluate-visibility-debug.dto';
+import { PreviewVisibilityDebugDto } from './dto/preview-visibility-debug.dto';
 import { SearchVisibilityDebugContactsDto } from './dto/search-visibility-debug-contacts.dto';
 import { UpsertVisibilityAssignmentDto } from './dto/upsert-visibility-assignment.dto';
 import { UpsertVisibilityConeDto } from './dto/upsert-visibility-cone.dto';
@@ -140,5 +141,11 @@ export class VisibilityController {
   @AclResource('rest:visibility-admin')
   evaluateVisibility(@Body() dto: EvaluateVisibilityDebugDto): Promise<unknown> {
     return this.visibilityAdminService.evaluateDebug(dto);
+  }
+
+  @Post('admin/debug/preview')
+  @AclResource('rest:visibility-admin')
+  previewVisibility(@Body() dto: PreviewVisibilityDebugDto): Promise<unknown> {
+    return this.visibilityAdminService.previewDebug(dto);
   }
 }

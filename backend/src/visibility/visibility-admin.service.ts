@@ -31,6 +31,21 @@ const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const CONE_CODE_PATTERN = /^[a-z0-9-]+$/;
 const SALESFORCE_ID_PATTERN = /^[A-Za-z0-9]{15,18}$/;
+const SALESFORCE_OBJECT_API_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const SALESFORCE_FIELD_PATH_PATTERN = /^[A-Za-z_][A-Za-z0-9_.]*$/;
+
+export type VisibilityDebugPreviewScalar = string | number | boolean | null;
+export type VisibilityDebugPreviewSkipReason = 'VISIBILITY_DENY' | 'NO_VISIBLE_FIELDS';
+
+export interface VisibilityDebugPreviewResponse {
+  visibility: VisibilityEvaluation;
+  selectedFields: string[];
+  soql?: string;
+  records: Array<Record<string, VisibilityDebugPreviewScalar>>;
+  rowCount: number;
+  executed: boolean;
+  executionSkippedReason?: VisibilityDebugPreviewSkipReason;
+}
 
 export interface VisibilityConeSummaryResponse extends VisibilityConeDefinition {
   ruleCount: number;
@@ -484,6 +499,74 @@ export class VisibilityAdminService {
     });
   }
 
+  async previewDebug(payload: {
+    objectApiName: string;
+    contactId: string;
+    permissions: string[];
+    recordType?: string;
+    baseWhere?: string;
+    requestedFields: string[];
+    limit?: number;
+  }): Promise<VisibilityDebugPreviewResponse> {
+    const objectApiName = this.normalizePreviewObjectApiName(
+      this.requireString(payload.objectApiName, 'objectApiName is required'),
+      'objectApiName',
+    );
+    const contactId = this.normalizeOptionalContactId(payload.contactId, 'contactId');
+    if (!contactId) {
+      throw new BadRequestException('contactId is required');
+    }
+
+    const requestedFields = this.normalizeRequiredRequestedFields(payload.requestedFields);
+    const evaluation = await this.visibilityService.evaluate({
+      objectApiName,
+      contactId,
+      permissions: this.normalizePermissionsArray(payload.permissions),
+      contactRecordTypeDeveloperName: this.asOptionalString(payload.recordType),
+      baseWhere: this.asOptionalString(payload.baseWhere),
+      requestedFields,
+      skipCache: true,
+    });
+    const selectedFields = this.visibilityService.applyFieldVisibility(requestedFields, evaluation);
+
+    if (evaluation.decision === 'DENY') {
+      return this.buildPreviewSkippedResponse(evaluation, selectedFields, 'VISIBILITY_DENY');
+    }
+
+    if (selectedFields.length === 0) {
+      return this.buildPreviewSkippedResponse(evaluation, selectedFields, 'NO_VISIBLE_FIELDS');
+    }
+
+    const limit = this.normalizePreviewLimit(payload.limit);
+    const soql = this.buildPreviewSoql(objectApiName, selectedFields, evaluation.finalWhere, limit);
+    const startedAt = Date.now();
+    const rawResult = await this.salesforceService.executeReadOnlyQuery(soql);
+    const records = this.extractPreviewRecords(rawResult, selectedFields);
+    const rowCount = records.length;
+    const visibility = {
+      ...evaluation,
+      rowCount,
+    };
+
+    await this.visibilityService.recordAudit({
+      evaluation: visibility,
+      queryKind: 'VISIBILITY_DEBUG_PREVIEW',
+      baseWhere: evaluation.baseWhere,
+      finalWhere: evaluation.finalWhere,
+      rowCount,
+      durationMs: Date.now() - startedAt,
+    });
+
+    return {
+      visibility,
+      selectedFields,
+      soql,
+      records,
+      rowCount,
+      executed: true,
+    };
+  }
+
   private normalizeCone(
     coneId: string | undefined,
     value: unknown,
@@ -764,6 +847,25 @@ export class VisibilityAdminService {
     });
   }
 
+  private normalizeRequiredRequestedFields(value: unknown): string[] {
+    const requestedFields = this.normalizeRequestedFields(value);
+    if (!requestedFields || requestedFields.length === 0) {
+      throw new BadRequestException('requestedFields must be a non-empty array');
+    }
+
+    return requestedFields
+      .map((fieldName, index) => {
+        if (!SALESFORCE_FIELD_PATH_PATTERN.test(fieldName)) {
+          throw new BadRequestException(
+            `requestedFields[${index}] must be a valid Salesforce field path`,
+          );
+        }
+
+        return fieldName;
+      })
+      .filter((fieldName, index, source) => source.indexOf(fieldName) === index);
+  }
+
   private normalizeDebugContactSuggestionLimit(value: unknown): number {
     if (value === undefined || value === null) {
       return 8;
@@ -771,6 +873,26 @@ export class VisibilityAdminService {
 
     if (typeof value !== 'number' || !Number.isInteger(value) || value < 1 || value > 8) {
       throw new BadRequestException('limit must be an integer between 1 and 8');
+    }
+
+    return value;
+  }
+
+  private normalizePreviewLimit(value: unknown): number {
+    if (value === undefined || value === null) {
+      return 10;
+    }
+
+    if (typeof value !== 'number' || !Number.isInteger(value) || value < 1 || value > 25) {
+      throw new BadRequestException('limit must be an integer between 1 and 25');
+    }
+
+    return value;
+  }
+
+  private normalizePreviewObjectApiName(value: string, fieldName: string): string {
+    if (!SALESFORCE_OBJECT_API_NAME_PATTERN.test(value)) {
+      throw new BadRequestException(`${fieldName} must be a valid Salesforce object API name`);
     }
 
     return value;
@@ -820,6 +942,110 @@ export class VisibilityAdminService {
     }
 
     return value;
+  }
+
+  private async buildPreviewSkippedResponse(
+    evaluation: VisibilityEvaluation,
+    selectedFields: string[],
+    reason: VisibilityDebugPreviewSkipReason,
+  ): Promise<VisibilityDebugPreviewResponse> {
+    const visibility = {
+      ...evaluation,
+      rowCount: 0,
+    };
+
+    await this.visibilityService.recordAudit({
+      evaluation: visibility,
+      queryKind: 'VISIBILITY_DEBUG_PREVIEW',
+      baseWhere: evaluation.baseWhere,
+      finalWhere: evaluation.finalWhere,
+      rowCount: 0,
+      durationMs: 0,
+    });
+
+    return {
+      visibility,
+      selectedFields,
+      records: [],
+      rowCount: 0,
+      executed: false,
+      executionSkippedReason: reason,
+    };
+  }
+
+  private buildPreviewSoql(
+    objectApiName: string,
+    selectedFields: string[],
+    finalWhere: string | undefined,
+    limit: number,
+  ): string {
+    const whereClause = finalWhere?.trim() ? ` WHERE ${finalWhere.trim()}` : '';
+    return `SELECT ${selectedFields.join(', ')} FROM ${objectApiName}${whereClause} ORDER BY Id ASC LIMIT ${limit}`;
+  }
+
+  private extractPreviewRecords(
+    result: unknown,
+    selectedFields: string[],
+  ): Array<Record<string, VisibilityDebugPreviewScalar>> {
+    if (!this.isObjectRecord(result) || !Array.isArray(result.records)) {
+      return [];
+    }
+
+    return result.records
+      .filter((record): record is Record<string, unknown> => this.isObjectRecord(record))
+      .map((record) => {
+        const flattened: Record<string, VisibilityDebugPreviewScalar> = {};
+
+        for (const fieldName of selectedFields) {
+          flattened[fieldName] = this.normalizePreviewScalar(
+            this.resolvePreviewRecordValue(record, fieldName),
+          );
+        }
+
+        return flattened;
+      });
+  }
+
+  private resolvePreviewRecordValue(record: Record<string, unknown>, fieldPath: string): unknown {
+    const segments = fieldPath
+      .split('.')
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
+    let current: unknown = record;
+
+    for (const segment of segments) {
+      if (!this.isObjectRecord(current)) {
+        return undefined;
+      }
+
+      current = current[segment];
+    }
+
+    return current;
+  }
+
+  private normalizePreviewScalar(value: unknown): VisibilityDebugPreviewScalar {
+    if (value === undefined || value === null) {
+      return null;
+    }
+
+    if (
+      typeof value === 'string' ||
+      typeof value === 'number' ||
+      typeof value === 'boolean'
+    ) {
+      return value;
+    }
+
+    if (typeof value === 'bigint') {
+      return String(value);
+    }
+
+    return null;
+  }
+
+  private isObjectRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
   }
 
   private assertUuid(value: string, fieldName: string): void {
