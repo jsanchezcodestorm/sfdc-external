@@ -7,6 +7,7 @@ import type {
   VisibilityCone,
   VisibilityConeDetailResponse,
   VisibilityConeListResponse,
+  VisibilityDebugContactSuggestionResponse,
   VisibilityDebugEvaluation,
   VisibilityDebugRequest,
   VisibilityRule,
@@ -126,6 +127,20 @@ export async function deleteVisibilityAssignment(assignmentId: string): Promise<
   })
 }
 
+export async function fetchVisibilityDebugContactSuggestions(
+  query: string,
+  limit = 8,
+): Promise<VisibilityDebugContactSuggestionResponse> {
+  const params = new URLSearchParams({
+    q: query,
+    limit: String(limit),
+  })
+
+  return apiFetch<VisibilityDebugContactSuggestionResponse>(
+    `/visibility/admin/debug/contact-suggestions?${params.toString()}`,
+  )
+}
+
 export async function evaluateVisibilityDebug(
   payload: VisibilityDebugRequest,
 ): Promise<VisibilityDebugEvaluation> {
@@ -134,4 +149,3 @@ export async function evaluateVisibilityDebug(
     body: payload,
   })
 }
-

@@ -4,8 +4,12 @@ import { fetchAclPermissions } from '../../acl-admin/acl-admin-api'
 import { SalesforceFieldMultiSelect } from '../../entities-admin/components/SalesforceFieldMultiSelect'
 import { ObjectApiNameQuickFind } from '../../entities-admin/components/detail-form/ObjectApiNameQuickFind'
 import { evaluateVisibilityDebug } from '../visibility-admin-api'
-import { DetailBlock, DetailMetric, ToneBadge } from '../components/VisibilityAdminPrimitives'
-import type { VisibilityDebugEvaluation } from '../visibility-admin-types'
+import { ContactQuickFind } from '../components/ContactQuickFind'
+import { VisibilityDebugResultModal } from '../components/VisibilityDebugResultModal'
+import type {
+  VisibilityDebugContactSuggestion,
+  VisibilityDebugEvaluation,
+} from '../visibility-admin-types'
 
 type DebugDraft = {
   objectApiName: string
@@ -32,6 +36,9 @@ export function VisibilityDebugPage() {
   const [running, setRunning] = useState(false)
   const [pageError, setPageError] = useState<string | null>(null)
   const [result, setResult] = useState<VisibilityDebugEvaluation | null>(null)
+  const [isResultModalOpen, setIsResultModalOpen] = useState(false)
+  const [selectedContactId, setSelectedContactId] = useState<string | null>(null)
+  const [isRecordTypeAutoFilled, setIsRecordTypeAutoFilled] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -75,6 +82,43 @@ export function VisibilityDebugPage() {
     }))
   }
 
+  const handleContactChange = (value: string) => {
+    const trimmedValue = value.trim()
+    const shouldClearRecordType =
+      selectedContactId !== null &&
+      trimmedValue !== selectedContactId &&
+      isRecordTypeAutoFilled
+
+    setDraft((current) => ({
+      ...current,
+      contactId: value,
+      recordType: shouldClearRecordType ? '' : current.recordType,
+    }))
+
+    if (selectedContactId !== null && trimmedValue !== selectedContactId) {
+      setSelectedContactId(null)
+      setIsRecordTypeAutoFilled(false)
+    }
+  }
+
+  const handleContactSelect = (suggestion: VisibilityDebugContactSuggestion) => {
+    setDraft((current) => ({
+      ...current,
+      contactId: suggestion.id,
+      recordType: suggestion.recordTypeDeveloperName ?? '',
+    }))
+    setSelectedContactId(suggestion.id)
+    setIsRecordTypeAutoFilled(true)
+  }
+
+  const handleRecordTypeChange = (value: string) => {
+    setDraft((current) => ({
+      ...current,
+      recordType: value,
+    }))
+    setIsRecordTypeAutoFilled(false)
+  }
+
   const runEvaluation = async () => {
     setRunning(true)
     setPageError(null)
@@ -91,18 +135,20 @@ export function VisibilityDebugPage() {
       })
 
       setResult(payload)
+      setIsResultModalOpen(true)
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Errore esecuzione debug visibility'
       setPageError(message)
       setResult(null)
+      setIsResultModalOpen(false)
     } finally {
       setRunning(false)
     }
   }
 
   return (
-    <div className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+    <div className="w-full">
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="border-b border-slate-200 pb-4">
           <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
@@ -138,17 +184,11 @@ export function VisibilityDebugPage() {
           <div className="grid gap-4 lg:grid-cols-2">
             <label className="text-sm font-medium text-slate-700">
               Contact ID
-              <input
-                type="text"
+              <ContactQuickFind
                 value={draft.contactId}
-                onChange={(event) =>
-                  setDraft((current) => ({
-                    ...current,
-                    contactId: event.target.value,
-                  }))
-                }
-                placeholder="003..."
-                className="mt-2 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 font-mono text-sm text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+                onChange={handleContactChange}
+                onSelect={handleContactSelect}
+                placeholder="003... o Contact Name"
               />
             </label>
 
@@ -157,12 +197,7 @@ export function VisibilityDebugPage() {
               <input
                 type="text"
                 value={draft.recordType}
-                onChange={(event) =>
-                  setDraft((current) => ({
-                    ...current,
-                    recordType: event.target.value,
-                  }))
-                }
+                onChange={(event) => handleRecordTypeChange(event.target.value)}
                 placeholder="Partner"
                 className="mt-2 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
               />
@@ -239,122 +274,11 @@ export function VisibilityDebugPage() {
         </div>
       </section>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="border-b border-slate-200 pb-4">
-          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
-            Result
-          </p>
-          <h2 className="mt-1 text-xl font-semibold text-slate-900">Compiled Decision</h2>
-        </div>
-
-        {result ? (
-          <div className="mt-5 space-y-5">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <DetailMetric label="Decision" value={result.decision} />
-              <DetailMetric label="Reason Code" value={result.reasonCode} />
-              <DetailMetric label="Policy Version" value={String(result.policyVersion)} />
-              <DetailMetric
-                label="Assignments"
-                value={String(result.matchedAssignments?.length ?? 0)}
-              />
-            </div>
-
-            <DetailBlock label="Decision Summary">
-              <div className="flex flex-wrap gap-2">
-                <ToneBadge tone={result.decision === 'ALLOW' ? 'green' : 'rose'}>
-                  {result.decision}
-                </ToneBadge>
-                {result.recordType ? <ToneBadge tone="amber">{result.recordType}</ToneBadge> : null}
-              </div>
-            </DetailBlock>
-            <DetailBlock label="Applied Cones">
-              {result.appliedCones.length > 0 ? (
-                <div className="flex flex-wrap gap-2">
-                  {result.appliedCones.map((coneCode) => (
-                    <ToneBadge key={coneCode} tone="sky">
-                      {coneCode}
-                    </ToneBadge>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-slate-700">Nessun cone applicato.</p>
-              )}
-            </DetailBlock>
-            <DetailBlock label="Applied Rules">
-              {result.appliedRules.length > 0 ? (
-                <div className="flex flex-wrap gap-2">
-                  {result.appliedRules.map((ruleId) => (
-                    <ToneBadge key={ruleId} tone="slate">
-                      {ruleId}
-                    </ToneBadge>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-slate-700">Nessuna rule applicata.</p>
-              )}
-            </DetailBlock>
-            <DetailBlock label="Matched Assignments">
-              {result.matchedAssignments && result.matchedAssignments.length > 0 ? (
-                <div className="flex flex-wrap gap-2">
-                  {result.matchedAssignments.map((assignmentId) => (
-                    <ToneBadge key={assignmentId} tone="amber">
-                      {assignmentId}
-                    </ToneBadge>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-slate-700">Nessun assignment matchato.</p>
-              )}
-            </DetailBlock>
-            <DetailBlock label="Compiled Fields">
-              {result.compiledFields && result.compiledFields.length > 0 ? (
-                <div className="flex flex-wrap gap-2">
-                  {result.compiledFields.map((field) => (
-                    <ToneBadge key={field} tone="green">
-                      {field}
-                    </ToneBadge>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-slate-700">Nessun field set whitelist compilato.</p>
-              )}
-            </DetailBlock>
-            <DetailBlock label="Denied Fields">
-              {result.deniedFields && result.deniedFields.length > 0 ? (
-                <div className="flex flex-wrap gap-2">
-                  {result.deniedFields.map((field) => (
-                    <ToneBadge key={field} tone="rose">
-                      {field}
-                    </ToneBadge>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-slate-700">Nessun field deny compilato.</p>
-              )}
-            </DetailBlock>
-            <DetailBlock label="Compiled Allow Predicate" preformatted>
-              {result.compiledAllowPredicate || '-'}
-            </DetailBlock>
-            <DetailBlock label="Compiled Deny Predicate" preformatted>
-              {result.compiledDenyPredicate || '-'}
-            </DetailBlock>
-            <DetailBlock label="Compiled Predicate" preformatted>
-              {result.compiledPredicate || '-'}
-            </DetailBlock>
-            <DetailBlock label="Base WHERE" preformatted>
-              {result.baseWhere || '-'}
-            </DetailBlock>
-            <DetailBlock label="Final WHERE" preformatted>
-              {result.finalWhere || '-'}
-            </DetailBlock>
-          </div>
-        ) : (
-          <p className="mt-5 text-sm text-slate-600">
-            Esegui una valutazione dal pannello di sinistra per vedere predicate, field set e
-            decisione finale del motore visibility.
-          </p>
-        )}
-      </section>
+      <VisibilityDebugResultModal
+        open={isResultModalOpen}
+        result={result}
+        onClose={() => setIsResultModalOpen(false)}
+      />
     </div>
   )
 }

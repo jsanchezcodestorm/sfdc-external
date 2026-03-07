@@ -136,6 +136,16 @@ export type VisibilityDebugRequest = {
   requestedFields?: string[]
 }
 
+export type VisibilityDebugContactSuggestion = {
+  id: string
+  name?: string
+  recordTypeDeveloperName?: string
+}
+
+export type VisibilityDebugContactSuggestionResponse = {
+  items: VisibilityDebugContactSuggestion[]
+}
+
 export type VisibilityDebugEvaluation = {
   decision: VisibilityDecision
   reasonCode: string
@@ -157,4 +167,3 @@ export type VisibilityDebugEvaluation = {
   finalWhere?: string
   rowCount?: number
 }
-
