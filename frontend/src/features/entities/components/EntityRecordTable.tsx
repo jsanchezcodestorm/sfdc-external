@@ -61,11 +61,34 @@ export function EntityRecordTable({
 
               return (
                 <tr key={rowId || JSON.stringify(record)} className="transition hover:bg-sky-50/50">
-                  {normalizedColumns.map((column) => (
-                    <td key={`${rowId}-${column.field}`} className="border-b border-slate-100 px-4 py-3 text-slate-700">
-                      {formatFieldValue(resolveDisplayFieldValue(record, column.field))}
-                    </td>
-                  ))}
+                  {normalizedColumns.map((column) => {
+                    const displayValue = resolveDisplayFieldValue(record, column.field)
+                    const formattedValue = formatFieldValue(displayValue)
+                    const canLinkToDetail =
+                      column.field === 'Name' &&
+                      rowId.length > 0 &&
+                      displayValue !== null &&
+                      displayValue !== undefined &&
+                      String(displayValue).trim().length > 0
+
+                    return (
+                      <td
+                        key={`${rowId}-${column.field}`}
+                        className="border-b border-slate-100 px-4 py-3 text-slate-700"
+                      >
+                        {canLinkToDetail ? (
+                          <Link
+                            to={`${baseEntityPath}/${rowId}`}
+                            className="font-medium text-sky-700 transition hover:text-sky-900 hover:underline"
+                          >
+                            {formattedValue}
+                          </Link>
+                        ) : (
+                          formattedValue
+                        )}
+                      </td>
+                    )
+                  })}
                   {hasActions && (
                     <td className="border-b border-slate-100 px-4 py-3">
                       <div className="flex items-center justify-end gap-2">

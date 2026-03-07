@@ -10,7 +10,22 @@ const ACTION_TYPES = new Set(['edit', 'delete', 'link'])
 
 export function getRecordId(record: EntityRecord): string {
   const raw = record.Id ?? record.id ?? record.recordId
-  return typeof raw === 'string' ? raw : ''
+  if (typeof raw === 'string' && raw.trim().length > 0) {
+    return raw
+  }
+
+  const attributes = record.attributes
+  if (!attributes || typeof attributes !== 'object') {
+    return ''
+  }
+
+  const rawUrl = (attributes as Record<string, unknown>).url
+  if (typeof rawUrl !== 'string' || rawUrl.trim().length === 0) {
+    return ''
+  }
+
+  const candidate = rawUrl.split('/').filter(Boolean).at(-1) ?? ''
+  return /^[a-zA-Z0-9]{15,18}$/.test(candidate) ? candidate : ''
 }
 
 export function toColumns(columns: Array<EntityColumn | string>): EntityColumn[] {
