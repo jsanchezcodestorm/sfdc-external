@@ -14,9 +14,13 @@ import type {
   VisibilityRuleSummary,
 } from '../visibility-admin-types'
 import {
+  buildVisibilityAssignmentCreatePath,
+  buildVisibilityAssignmentsListPath,
   buildVisibilityAssignmentViewPath,
   buildVisibilityConeEditPath,
   buildVisibilityConesListPath,
+  buildVisibilityRuleCreatePath,
+  buildVisibilityRulesListPath,
   buildVisibilityRuleViewPath,
 } from '../visibility-admin-utils'
 
@@ -139,6 +143,24 @@ export function VisibilityConeDetailPage() {
               Modifica
             </button>
           ) : null}
+          {coneId ? (
+            <button
+              type="button"
+              onClick={() => navigate(buildVisibilityRuleCreatePath(coneId))}
+              className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700"
+            >
+              Nuova rule
+            </button>
+          ) : null}
+          {coneId ? (
+            <button
+              type="button"
+              onClick={() => navigate(buildVisibilityAssignmentCreatePath(coneId))}
+              className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700"
+            >
+              Nuovo assignment
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={() => {
@@ -179,8 +201,29 @@ export function VisibilityConeDetailPage() {
             </ToneBadge>
           </DetailBlock>
           <DetailBlock label="Related Rules">
+            <div className="flex flex-wrap gap-2">
+              {coneId ? (
+                <button
+                  type="button"
+                  onClick={() => navigate(buildVisibilityRuleCreatePath(coneId))}
+                  className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white transition hover:bg-slate-700"
+                >
+                  Nuova rule
+                </button>
+              ) : null}
+              {coneId ? (
+                <button
+                  type="button"
+                  onClick={() => navigate(buildVisibilityRulesListPath(coneId))}
+                  className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
+                >
+                  Catalogo filtrato
+                </button>
+              ) : null}
+            </div>
+
             {relatedRules.length > 0 ? (
-              <div className="space-y-2">
+              <div className="mt-3 space-y-2">
                 {relatedRules.map((rule) => (
                   <div
                     key={rule.id}
@@ -202,12 +245,44 @@ export function VisibilityConeDetailPage() {
                 ))}
               </div>
             ) : (
-              <p className="text-sm text-slate-700">Nessuna rule collegata.</p>
+              <div className="mt-3 rounded-lg border border-slate-200 bg-white px-3 py-3">
+                <p className="text-sm text-slate-700">Nessuna rule collegata.</p>
+                {coneId ? (
+                  <button
+                    type="button"
+                    onClick={() => navigate(buildVisibilityRuleCreatePath(coneId))}
+                    className="mt-3 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
+                  >
+                    Crea la prima rule per questo cone
+                  </button>
+                ) : null}
+              </div>
             )}
           </DetailBlock>
           <DetailBlock label="Related Assignments">
+            <div className="flex flex-wrap gap-2">
+              {coneId ? (
+                <button
+                  type="button"
+                  onClick={() => navigate(buildVisibilityAssignmentCreatePath(coneId))}
+                  className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white transition hover:bg-slate-700"
+                >
+                  Nuovo assignment
+                </button>
+              ) : null}
+              {coneId ? (
+                <button
+                  type="button"
+                  onClick={() => navigate(buildVisibilityAssignmentsListPath(coneId))}
+                  className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
+                >
+                  Catalogo filtrato
+                </button>
+              ) : null}
+            </div>
+
             {relatedAssignments.length > 0 ? (
-              <div className="space-y-2">
+              <div className="mt-3 space-y-2">
                 {relatedAssignments.map((assignment) => (
                   <div
                     key={assignment.id}
@@ -231,7 +306,18 @@ export function VisibilityConeDetailPage() {
                 ))}
               </div>
             ) : (
-              <p className="text-sm text-slate-700">Nessun assignment collegato.</p>
+              <div className="mt-3 rounded-lg border border-slate-200 bg-white px-3 py-3">
+                <p className="text-sm text-slate-700">Nessun assignment collegato.</p>
+                {coneId ? (
+                  <button
+                    type="button"
+                    onClick={() => navigate(buildVisibilityAssignmentCreatePath(coneId))}
+                    className="mt-3 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
+                  >
+                    Crea il primo assignment per questo cone
+                  </button>
+                ) : null}
+              </div>
             )}
           </DetailBlock>
         </div>
@@ -239,4 +325,3 @@ export function VisibilityConeDetailPage() {
     </section>
   )
 }
-

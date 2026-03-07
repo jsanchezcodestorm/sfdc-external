@@ -15,6 +15,14 @@ import type {
   EntityConfigSectionKey,
   SalesforceObjectApiNameSuggestion,
 } from '../entity-admin-types'
+import {
+  buildEntityCatalogPath,
+  buildEntityCreatePath,
+  buildEntityEditPath,
+  buildEntityViewPath,
+  isEntityConfigSection,
+  NEW_ENTITY_SENTINEL,
+} from '../entity-admin-routing'
 import { EntityConfigBaseForm } from '../components/EntityConfigBaseForm'
 import { EntityConfigDetailForm } from '../components/EntityConfigDetailForm'
 import { EntityConfigFormForm } from '../components/EntityConfigFormForm'
@@ -43,17 +51,9 @@ import type {
   ListViewDraft,
 } from '../list-form/list-form.types'
 
-const NEW_ENTITY_SENTINEL = '__new__'
-const sectionLabels: Record<EntityConfigSectionKey, string> = {
-  base: 'Base',
-  list: 'List',
-  detail: 'Detail',
-  form: 'Form',
-}
-const sectionOrder: EntityConfigSectionKey[] = ['base', 'list', 'detail', 'form']
-
 type RouteParams = {
   entityId?: string
+  section?: string
 }
 
 export function EntityAdminConfigPage() {
@@ -61,18 +61,22 @@ export function EntityAdminConfigPage() {
   const navigate = useNavigate()
   const params = useParams<RouteParams>()
 
-  const isCreateRoute = params.entityId === NEW_ENTITY_SENTINEL
+  const isCreateRoute = location.pathname === buildEntityCreatePath()
   const selectedEntityId =
     params.entityId && params.entityId !== NEW_ENTITY_SENTINEL
       ? decodeURIComponent(params.entityId)
       : null
-  const isEditRoute = Boolean(selectedEntityId) && location.pathname.endsWith('/edit')
+  const activeSection = isCreateRoute
+    ? 'base'
+    : isEntityConfigSection(params.section)
+    ? params.section
+    : null
+  const isEditRoute = Boolean(selectedEntityId) && activeSection !== null
   const isEntityListRoute = selectedEntityId === null && !isCreateRoute
   const isViewRoute = Boolean(selectedEntityId) && !isEditRoute
 
   const [entities, setEntities] = useState<EntityAdminConfigSummary[]>([])
   const [selectedEntityConfig, setSelectedEntityConfig] = useState<EntityConfig | null>(null)
-  const [selectedSection, setSelectedSection] = useState<EntityConfigSectionKey>('base')
   const [baseFormDraft, setBaseFormDraft] = useState<BaseFormDraft>(createEmptyBaseFormDraft())
   const [listFormDraft, setListFormDraft] = useState<ListFormDraft>(createEmptyListFormDraft())
   const [detailFormDraft, setDetailFormDraft] = useState<DetailFormDraft>(
@@ -128,7 +132,7 @@ export function EntityAdminConfigPage() {
       setPageError(null)
 
       if (!isCreateRoute && selectedEntityId && !nextItems.some((item) => item.id === selectedEntityId)) {
-        navigate('/admin/entity-config', { replace: true })
+        navigate(buildEntityCatalogPath(), { replace: true })
       }
     } catch (error) {
       const message =
@@ -181,8 +185,20 @@ export function EntityAdminConfigPage() {
   }, [loadSelectedEntityConfig])
 
   useEffect(() => {
-    setSelectedSection('base')
-  }, [isCreateRoute, selectedEntityId])
+    if (params.entityId !== NEW_ENTITY_SENTINEL || isCreateRoute) {
+      return
+    }
+
+    navigate(buildEntityCreatePath(), { replace: true })
+  }, [isCreateRoute, navigate, params.entityId])
+
+  useEffect(() => {
+    if (!selectedEntityId || !params.section || activeSection !== null) {
+      return
+    }
+
+    navigate(buildEntityEditPath(selectedEntityId, 'base'), { replace: true })
+  }, [activeSection, navigate, params.section, selectedEntityId])
 
   useEffect(() => {
     if (!selectedEntityConfig) {
@@ -220,10 +236,10 @@ export function EntityAdminConfigPage() {
 
   useEffect(() => {
     setSaveInfo(null)
-  }, [isCreateRoute, isEditRoute, selectedEntityId, selectedSection])
+  }, [activeSection, isCreateRoute, isEditRoute, selectedEntityId])
 
   const canSearchObjectApiNameSuggestions =
-    (isCreateRoute || isEditRoute) && selectedSection === 'base' && selectedEntityConfig !== null
+    (isCreateRoute || isEditRoute) && activeSection === 'base' && selectedEntityConfig !== null
   const objectApiNameSearchValue = objectApiNameSearchInput.trim()
   const shouldShowObjectApiNameSuggestions =
     canSearchObjectApiNameSuggestions &&
@@ -296,7 +312,7 @@ export function EntityAdminConfigPage() {
   }, [navigate])
 
   const handleBackToEntityList = useCallback(() => {
-    navigate('/admin/entity-config')
+    navigate(buildEntityCatalogPath())
   }, [navigate])
 
   const updateBaseDraftField = (field: BaseFormDraftKey, value: string) => {
@@ -587,7 +603,7 @@ export function EntityAdminConfigPage() {
       setSelectedEntityConfig(payload.entity)
       setAclResourceConfigured(payload.aclResourceConfigured)
       setSaveInfo('Configurazione salvata su PostgreSQL')
-      navigate(buildEntityEditPath(payload.entity.id), { replace: true })
+      navigate(buildEntityEditPath(payload.entity.id, activeSection ?? 'base'), { replace: true })
       await refreshEntityList()
     } catch (error) {
       const message =
@@ -621,7 +637,7 @@ export function EntityAdminConfigPage() {
       setAclResourceConfigured(payload.aclResourceConfigured)
       setSaveInfo('Entity creata su PostgreSQL')
       await refreshEntityList()
-      navigate(buildEntityEditPath(payload.entity.id), { replace: true })
+      navigate(buildEntityEditPath(payload.entity.id, 'base'), { replace: true })
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Errore creazione entity config'
       setPageError(message)
@@ -642,7 +658,7 @@ export function EntityAdminConfigPage() {
     try {
       await deleteEntityAdminConfig(selectedEntityId)
       await refreshEntityList()
-      navigate('/admin/entity-config', { replace: true })
+      navigate(buildEntityCatalogPath(), { replace: true })
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Errore eliminazione entity config'
       setPageError(message)
@@ -704,7 +720,7 @@ export function EntityAdminConfigPage() {
               </button>
               <button
                 type="button"
-                onClick={() => navigate(buildEntityEditPath(selectedEntityId))}
+                onClick={() => navigate(buildEntityEditPath(selectedEntityId, 'base'))}
                 className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
               >
                 Modifica
@@ -774,15 +790,10 @@ export function EntityAdminConfigPage() {
 
       {isCreateRoute ? (
         <>
-          <EntityEditTabs
-            activeSection="base"
-            disabledSections={new Set(['list', 'detail', 'form'])}
-            onSelectSection={setSelectedSection}
-          />
-
           <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <p className="text-sm text-slate-600">
-              In creazione iniziale è disponibile solo la sezione Base. Dopo il primo save, la pagina reindirizza all’edit completo della nuova entity.
+              In creazione iniziale e disponibile solo la sezione Base. Dopo il primo save, la
+              navigazione passa all&apos;editor completo della nuova entity.
             </p>
           </section>
 
@@ -830,13 +841,7 @@ export function EntityAdminConfigPage() {
             </section>
           ) : null}
 
-          <EntityEditTabs
-            activeSection={selectedSection}
-            disabledSections={new Set()}
-            onSelectSection={setSelectedSection}
-          />
-
-          {selectedSection === 'base' ? (
+          {activeSection === 'base' ? (
             <EntityConfigBaseForm
               value={baseFormDraft}
               error={editorError}
@@ -850,7 +855,7 @@ export function EntityAdminConfigPage() {
               disableIdField
               idHelperText="L'entity id è immutabile dopo la creazione."
             />
-          ) : selectedSection === 'list' ? (
+          ) : activeSection === 'list' ? (
             <EntityConfigListForm
               value={listFormDraft}
               error={editorError}
@@ -867,7 +872,7 @@ export function EntityAdminConfigPage() {
               onToggleViewDefault={toggleListViewDefault}
               onApply={applyListDraft}
             />
-          ) : selectedSection === 'detail' ? (
+          ) : activeSection === 'detail' ? (
             <EntityConfigDetailForm
               value={detailFormDraft}
               error={editorError}
@@ -901,12 +906,6 @@ type EntityAdminCatalogProps = {
   onQueryChange: (value: string) => void
   onSelectEntity: (entityId: string) => void
   onCreateEntity: () => void
-}
-
-type EntityEditTabsProps = {
-  activeSection: EntityConfigSectionKey
-  disabledSections: Set<EntityConfigSectionKey>
-  onSelectSection: (section: EntityConfigSectionKey) => void
 }
 
 function EntityAdminCatalog({
@@ -1074,38 +1073,6 @@ function EntitySummaryCard({
   )
 }
 
-function EntityEditTabs({
-  activeSection,
-  disabledSections,
-  onSelectSection,
-}: EntityEditTabsProps) {
-  return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="flex flex-wrap gap-2">
-        {sectionOrder.map((section) => {
-          const isDisabled = disabledSections.has(section)
-
-          return (
-            <button
-              key={section}
-              type="button"
-              disabled={isDisabled}
-              onClick={() => onSelectSection(section)}
-              className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${
-                activeSection === section
-                  ? 'border-slate-900 bg-slate-900 text-white'
-                  : 'border-slate-300 bg-white text-slate-700 hover:border-slate-400 hover:bg-slate-50'
-              } disabled:cursor-not-allowed disabled:opacity-45`}
-            >
-              {sectionLabels[section]}
-            </button>
-          )
-        })}
-      </div>
-    </section>
-  )
-}
-
 function SummaryChip({ label, value }: SummaryChipProps) {
   return (
     <article className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
@@ -1124,18 +1091,6 @@ function ReadonlyBlock({ label, children }: { label: string; children: string })
       <p className="mt-3 text-sm text-slate-700">{children}</p>
     </article>
   )
-}
-
-function buildEntityViewPath(entityId: string): string {
-  return `/admin/entity-config/${encodeURIComponent(entityId)}`
-}
-
-function buildEntityEditPath(entityId: string): string {
-  return `/admin/entity-config/${encodeURIComponent(entityId)}/edit`
-}
-
-function buildEntityCreatePath(): string {
-  return `/admin/entity-config/${NEW_ENTITY_SENTINEL}`
 }
 
 function formatTimestamp(value: string): string {

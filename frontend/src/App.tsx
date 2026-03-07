@@ -62,8 +62,9 @@ function App() {
           <Route path="/admin" element={<AdminShell />}>
             <Route index element={<Navigate replace to="entity-config" />} />
             <Route path="entity-config" element={<EntityAdminConfigPage />} />
+            <Route path="entity-config/__new__/base" element={<EntityAdminConfigPage />} />
             <Route path="entity-config/:entityId" element={<EntityAdminConfigPage />} />
-            <Route path="entity-config/:entityId/edit" element={<EntityAdminConfigPage />} />
+            <Route path="entity-config/:entityId/edit/:section" element={<EntityAdminConfigPage />} />
             <Route path="acl" element={<AclAdminLayout />}>
               <Route index element={<Navigate replace to="permissions" />} />
               <Route path="permissions" element={<AclPermissionsPage />} />

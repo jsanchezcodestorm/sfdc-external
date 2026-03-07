@@ -51,12 +51,15 @@ export function buildVisibilityConeEditPath(coneId: string): string {
   return `/admin/visibility/cones/${encodeURIComponent(coneId)}/edit`
 }
 
-export function buildVisibilityRulesListPath(): string {
-  return '/admin/visibility/rules'
+export function buildVisibilityRulesListPath(coneId?: string): string {
+  return appendVisibilityConeFilter('/admin/visibility/rules', coneId)
 }
 
-export function buildVisibilityRuleCreatePath(): string {
-  return `/admin/visibility/rules/${NEW_VISIBILITY_RECORD_SENTINEL}`
+export function buildVisibilityRuleCreatePath(coneId?: string): string {
+  return appendVisibilityConeFilter(
+    `/admin/visibility/rules/${NEW_VISIBILITY_RECORD_SENTINEL}`,
+    coneId,
+  )
 }
 
 export function buildVisibilityRuleViewPath(ruleId: string): string {
@@ -67,12 +70,15 @@ export function buildVisibilityRuleEditPath(ruleId: string): string {
   return `/admin/visibility/rules/${encodeURIComponent(ruleId)}/edit`
 }
 
-export function buildVisibilityAssignmentsListPath(): string {
-  return '/admin/visibility/assignments'
+export function buildVisibilityAssignmentsListPath(coneId?: string): string {
+  return appendVisibilityConeFilter('/admin/visibility/assignments', coneId)
 }
 
-export function buildVisibilityAssignmentCreatePath(): string {
-  return `/admin/visibility/assignments/${NEW_VISIBILITY_RECORD_SENTINEL}`
+export function buildVisibilityAssignmentCreatePath(coneId?: string): string {
+  return appendVisibilityConeFilter(
+    `/admin/visibility/assignments/${NEW_VISIBILITY_RECORD_SENTINEL}`,
+    coneId,
+  )
 }
 
 export function buildVisibilityAssignmentViewPath(assignmentId: string): string {
@@ -259,6 +265,19 @@ export function describeVisibilityScalar(value: VisibilityScalar): string {
   return String(value)
 }
 
+function appendVisibilityConeFilter(path: string, coneId?: string): string {
+  const normalizedConeId = coneId?.trim()
+  if (!normalizedConeId) {
+    return path
+  }
+
+  const searchParams = new URLSearchParams({
+    coneId: normalizedConeId,
+  })
+
+  return `${path}?${searchParams.toString()}`
+}
+
 function normalizeFieldList(value: string[]): string[] | undefined {
   const items = [...new Set(value.map((entry) => entry.trim()).filter(Boolean))]
   return items.length > 0 ? items : undefined
@@ -291,4 +310,3 @@ function fromDateTimeLocalValue(value: string): string | undefined {
 
   return new Date(normalized).toISOString()
 }
-

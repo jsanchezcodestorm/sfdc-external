@@ -16,7 +16,6 @@ import type {
   VisibilityAuditSummary,
 } from '../audit-admin-types'
 import {
-  AUDIT_STREAMS,
   AUDIT_TAB_COPY,
   DEFAULT_AUDIT_LIMIT,
   buildAuditSearch,
@@ -149,24 +148,6 @@ export function AuditAdminPage() {
     setSearchParams(new URLSearchParams(query.slice(1)))
   }
 
-  function handleTabChange(tab: AuditStream) {
-    if (tab === activeTab) {
-      return
-    }
-
-    if (tab === 'security') {
-      syncSearchParams(tab, securityFilters)
-      return
-    }
-
-    if (tab === 'visibility') {
-      syncSearchParams(tab, visibilityFilters)
-      return
-    }
-
-    syncSearchParams(tab, applicationFilters)
-  }
-
   async function loadMore() {
     if (!nextCursor || loadingMore) {
       return
@@ -260,24 +241,7 @@ export function AuditAdminPage() {
       </header>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="flex flex-wrap gap-2">
-          {AUDIT_STREAMS.map((tab) => (
-            <button
-              key={tab}
-              type="button"
-              onClick={() => handleTabChange(tab)}
-              className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
-                activeTab === tab
-                  ? 'bg-slate-900 text-white'
-                  : 'border border-slate-300 text-slate-700 hover:bg-slate-50'
-              }`}
-            >
-              {AUDIT_TAB_COPY[tab].title}
-            </button>
-          ))}
-        </div>
-
-        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/70 p-4">
+        <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4">
           <p className="text-sm font-semibold text-slate-900">{AUDIT_TAB_COPY[activeTab].title}</p>
           <p className="mt-1 text-sm text-slate-600">{AUDIT_TAB_COPY[activeTab].description}</p>
         </div>

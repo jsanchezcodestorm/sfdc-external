@@ -132,6 +132,15 @@ export function VisibilityAssignmentDetailPage() {
           >
             Lista assignments
           </button>
+          {selectedCone ? (
+            <button
+              type="button"
+              onClick={() => navigate(buildVisibilityConeViewPath(selectedCone.id))}
+              className="rounded-lg border border-sky-300 px-4 py-2 text-sm font-medium text-sky-800 transition hover:border-sky-400 hover:bg-sky-50"
+            >
+              Apri cone
+            </button>
+          ) : null}
           {assignmentId ? (
             <button
               type="button"
@@ -187,14 +196,17 @@ export function VisibilityAssignmentDetailPage() {
 
           <DetailBlock label="Cone">
             {selectedCone ? (
-              <Link
-                to={buildVisibilityConeViewPath(selectedCone.id)}
-                className="font-medium text-sky-700 underline-offset-2 hover:underline"
-              >
-                {selectedCone.code}
-              </Link>
+              <div className="space-y-1">
+                <Link
+                  to={buildVisibilityConeViewPath(selectedCone.id)}
+                  className="font-semibold text-sky-700 underline-offset-2 hover:underline"
+                >
+                  {selectedCone.code}
+                </Link>
+                <p className="text-sm text-slate-500">{selectedCone.name}</p>
+              </div>
             ) : (
-              <span className="text-slate-700">{payload.assignment.coneId}</span>
+              <code className="font-mono text-xs text-slate-800">{payload.assignment.coneId}</code>
             )}
           </DetailBlock>
           <DetailBlock label="Selectors">
@@ -231,4 +243,3 @@ export function VisibilityAssignmentDetailPage() {
     </section>
   )
 }
-

@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 
+import { useAdminNavigation } from './useAdminNavigation'
 import { useAuth } from '../features/auth/useAuth'
 
 export function AppTopBar() {
   const { user, isBootstrapping, logout } = useAuth()
+  const { isAdminRoute, toggleSidebar } = useAdminNavigation()
   const [isLoggingOut, setIsLoggingOut] = useState(false)
   const [logoutError, setLogoutError] = useState<string | null>(null)
   const canAccessAdmin = Boolean(
@@ -30,12 +32,24 @@ export function AppTopBar() {
   return (
     <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/85 backdrop-blur-sm">
       <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
-        <Link
-          to="/"
-          className="text-sm font-semibold uppercase tracking-[0.18em] text-sky-700 transition hover:text-sky-800"
-        >
-          SFDC External
-        </Link>
+        <div className="flex items-center gap-3">
+          {isAdminRoute ? (
+            <button
+              type="button"
+              onClick={toggleSidebar}
+              className="inline-flex items-center rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-50 lg:hidden"
+            >
+              Menu
+            </button>
+          ) : null}
+
+          <Link
+            to="/"
+            className="text-sm font-semibold uppercase tracking-[0.18em] text-sky-700 transition hover:text-sky-800"
+          >
+            SFDC External
+          </Link>
+        </div>
 
         <div className="flex items-center gap-3">
           {isBootstrapping ? (

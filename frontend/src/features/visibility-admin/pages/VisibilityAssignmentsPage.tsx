@@ -1,33 +1,45 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 
-import { fetchVisibilityAssignments } from '../visibility-admin-api'
+import {
+  fetchVisibilityAssignments,
+  fetchVisibilityCones,
+} from '../visibility-admin-api'
 import { ToneBadge } from '../components/VisibilityAdminPrimitives'
-import type { VisibilityAssignmentSummary } from '../visibility-admin-types'
+import type {
+  VisibilityAssignmentSummary,
+  VisibilityConeSummary,
+} from '../visibility-admin-types'
 import {
   buildVisibilityAssignmentCreatePath,
   buildVisibilityAssignmentEditPath,
   buildVisibilityAssignmentViewPath,
+  buildVisibilityConeViewPath,
+  buildVisibilityConesListPath,
   formatVisibilityDateTime,
 } from '../visibility-admin-utils'
 
 export function VisibilityAssignmentsPage() {
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [items, setItems] = useState<VisibilityAssignmentSummary[]>([])
+  const [cones, setCones] = useState<VisibilityConeSummary[]>([])
   const [query, setQuery] = useState('')
   const [loading, setLoading] = useState(true)
   const [pageError, setPageError] = useState<string | null>(null)
+  const selectedConeId = searchParams.get('coneId')?.trim() ?? ''
 
   useEffect(() => {
     let cancelled = false
 
-    void fetchVisibilityAssignments()
-      .then((payload) => {
+    void Promise.all([fetchVisibilityAssignments(), fetchVisibilityCones()])
+      .then(([assignmentsPayload, conesPayload]) => {
         if (cancelled) {
           return
         }
 
-        setItems(payload.items ?? [])
+        setItems(assignmentsPayload.items ?? [])
+        setCones(conesPayload.items ?? [])
         setPageError(null)
       })
       .catch((error) => {
@@ -39,6 +51,7 @@ export function VisibilityAssignmentsPage() {
           error instanceof Error ? error.message : 'Errore caricamento visibility assignments'
         setPageError(message)
         setItems([])
+        setCones([])
       })
       .finally(() => {
         if (!cancelled) {
@@ -51,14 +64,24 @@ export function VisibilityAssignmentsPage() {
     }
   }, [])
 
+  const selectedCone = useMemo(
+    () => cones.find((cone) => cone.id === selectedConeId) ?? null,
+    [cones, selectedConeId],
+  )
+
   const filteredItems = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase()
-    if (normalizedQuery.length === 0) {
-      return items
-    }
 
-    return items.filter((item) =>
-      [
+    return items.filter((item) => {
+      if (selectedConeId && item.coneId !== selectedConeId) {
+        return false
+      }
+
+      if (normalizedQuery.length === 0) {
+        return true
+      }
+
+      return [
         item.coneCode,
         item.contactId ?? '',
         item.permissionCode ?? '',
@@ -66,26 +89,58 @@ export function VisibilityAssignmentsPage() {
       ]
         .join(' ')
         .toLowerCase()
-        .includes(normalizedQuery),
-    )
-  }, [items, query])
+        .includes(normalizedQuery)
+    })
+  }, [items, query, selectedConeId])
+
+  const updateConeFilter = (coneId: string) => {
+    const nextSearchParams = new URLSearchParams(searchParams)
+    if (coneId) {
+      nextSearchParams.set('coneId', coneId)
+    } else {
+      nextSearchParams.delete('coneId')
+    }
+
+    setSearchParams(nextSearchParams)
+  }
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="flex flex-col gap-4 border-b border-slate-200 pb-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
-            Catalogo
-          </p>
-          <h2 className="mt-1 text-xl font-semibold text-slate-900">Visibility Assignments</h2>
-          <p className="mt-1 text-sm text-slate-600">
-            Tabella dei legami cone-target con pagine dedicate di view ed edit.
-          </p>
+      <div className="flex flex-col gap-4 border-b border-slate-200 pb-4">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+              Catalogo
+            </p>
+            <h2 className="mt-1 text-xl font-semibold text-slate-900">Visibility Assignments</h2>
+            <p className="mt-1 text-sm text-slate-600">
+              CRUD globale delle relazioni cone-target con filtro opzionale per cone.
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <button
+              type="button"
+              onClick={() => navigate(buildVisibilityConesListPath())}
+              className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
+            >
+              Vai ai cones
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                navigate(buildVisibilityAssignmentCreatePath(selectedConeId || undefined))
+              }
+              className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700"
+            >
+              Nuovo assignment
+            </button>
+          </div>
         </div>
 
-        <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-end">
-          <label className="w-full text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 sm:min-w-80">
-            Filtro
+        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_16rem_auto]">
+          <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+            Filtro testuale
             <input
               type="search"
               value={query}
@@ -95,14 +150,41 @@ export function VisibilityAssignmentsPage() {
             />
           </label>
 
-          <button
-            type="button"
-            onClick={() => navigate(buildVisibilityAssignmentCreatePath())}
-            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700"
-          >
-            Nuovo assignment
-          </button>
+          <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+            Cone
+            <select
+              value={selectedConeId}
+              onChange={(event) => updateConeFilter(event.target.value)}
+              className="mt-2 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+            >
+              <option value="">Tutti i cones</option>
+              {cones.map((cone) => (
+                <option key={cone.id} value={cone.id}>
+                  {cone.code}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <div className="flex items-end">
+            {selectedConeId ? (
+              <button
+                type="button"
+                onClick={() => updateConeFilter('')}
+                className="w-full rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
+              >
+                Reset filtro
+              </button>
+            ) : null}
+          </div>
         </div>
+
+        {selectedCone ? (
+          <p className="text-sm text-slate-600">
+            Filtro attivo su <span className="font-semibold text-slate-950">{selectedCone.code}</span>.
+            Il nuovo assignment usara questo cone come prefill ma il campo restera modificabile.
+          </p>
+        ) : null}
       </div>
 
       {pageError ? (
@@ -133,7 +215,14 @@ export function VisibilityAssignmentsPage() {
                 {filteredItems.length > 0 ? (
                   filteredItems.map((item) => (
                     <tr key={item.id} className="bg-white">
-                      <td className="px-4 py-3 font-semibold text-slate-900">{item.coneCode}</td>
+                      <td className="px-4 py-3 font-semibold text-slate-900">
+                        <Link
+                          to={buildVisibilityConeViewPath(item.coneId)}
+                          className="text-sky-700 underline-offset-2 hover:underline"
+                        >
+                          {item.coneCode}
+                        </Link>
+                      </td>
                       <td className="px-4 py-3 font-mono text-xs text-slate-700">
                         {item.contactId || '-'}
                       </td>
@@ -175,8 +264,8 @@ export function VisibilityAssignmentsPage() {
                 ) : (
                   <tr>
                     <td colSpan={8} className="px-4 py-10 text-sm text-slate-500">
-                      {query.trim().length > 0
-                        ? 'Nessun assignment corrisponde al filtro.'
+                      {query.trim().length > 0 || selectedConeId
+                        ? 'Nessun assignment corrisponde ai filtri attivi.'
                         : 'Nessun visibility assignment configurato.'}
                     </td>
                   </tr>
@@ -189,4 +278,3 @@ export function VisibilityAssignmentsPage() {
     </section>
   )
 }
-

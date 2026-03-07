@@ -1,10 +1,4 @@
-import { NavLink, Outlet } from 'react-router-dom'
-
-const ACL_TABS = [
-  { id: 'permissions', label: 'Permissions', target: '/admin/acl/permissions' },
-  { id: 'defaults', label: 'Defaults', target: '/admin/acl/defaults' },
-  { id: 'resources', label: 'Resources', target: '/admin/acl/resources' },
-]
+import { Outlet } from 'react-router-dom'
 
 export function AclAdminLayout() {
   return (
@@ -18,27 +12,6 @@ export function AclAdminLayout() {
           Catalogo permessi, default permissions e risorse ACL con flusso list, view ed edit dedicato.
         </p>
       </header>
-
-      <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-        <div className="flex flex-wrap gap-2">
-          {ACL_TABS.map((tab) => (
-            <NavLink
-              key={tab.id}
-              to={tab.target}
-              className={({ isActive }) =>
-                `rounded-lg border px-3 py-2 text-sm font-medium transition ${
-                  isActive
-                    ? 'border-slate-900 bg-slate-900 text-white'
-                    : 'border-slate-300 bg-white text-slate-700 hover:border-slate-400 hover:bg-slate-50'
-                }`
-              }
-            >
-              {tab.label}
-            </NavLink>
-          ))}
-        </div>
-      </section>
-
       <Outlet />
     </div>
   )

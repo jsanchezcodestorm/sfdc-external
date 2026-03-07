@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 
 import { fetchAclPermissions } from '../../acl-admin/acl-admin-api'
 import { SalesforceFieldMultiSelect } from '../../entities-admin/components/SalesforceFieldMultiSelect'
@@ -12,8 +12,12 @@ import {
 } from '../visibility-admin-api'
 import { DetailBlock } from '../components/VisibilityAdminPrimitives'
 import { VisibilityRuleBuilder } from '../components/VisibilityRuleBuilder'
-import type { VisibilityConeSummary, VisibilityRule } from '../visibility-admin-types'
+import type {
+  VisibilityConeSummary,
+  VisibilityRule,
+} from '../visibility-admin-types'
 import {
+  buildVisibilityConeViewPath,
   buildVisibilityRuleViewPath,
   buildVisibilityRulesListPath,
   createEmptyVisibilityRuleDraft,
@@ -33,7 +37,9 @@ type RouteParams = {
 export function VisibilityRuleEditorPage({ mode }: VisibilityRuleEditorPageProps) {
   const navigate = useNavigate()
   const params = useParams<RouteParams>()
+  const [searchParams] = useSearchParams()
   const previousRuleId = params.ruleId ? decodeURIComponent(params.ruleId) : null
+  const prefilledConeId = searchParams.get('coneId')?.trim() ?? ''
   const [draft, setDraft] = useState<VisibilityRuleDraft>(createEmptyVisibilityRuleDraft())
   const [cones, setCones] = useState<VisibilityConeSummary[]>([])
   const [loading, setLoading] = useState(true)
@@ -47,7 +53,11 @@ export function VisibilityRuleEditorPage({ mode }: VisibilityRuleEditorPageProps
 
     const loadPromise =
       mode === 'edit' && previousRuleId
-        ? Promise.all([fetchVisibilityCones(), fetchVisibilityRule(previousRuleId), fetchAclPermissions()])
+        ? Promise.all([
+            fetchVisibilityCones(),
+            fetchVisibilityRule(previousRuleId),
+            fetchAclPermissions(),
+          ])
         : Promise.all([fetchVisibilityCones(), Promise.resolve(null), fetchAclPermissions()])
 
     void loadPromise
@@ -57,13 +67,17 @@ export function VisibilityRuleEditorPage({ mode }: VisibilityRuleEditorPageProps
         }
 
         const coneItems = conesPayload.items ?? []
+        const nextPrefilledConeId = coneItems.some((cone) => cone.id === prefilledConeId)
+          ? prefilledConeId
+          : ''
+
         setCones(coneItems)
         setPermissionCodes((permissionsPayload.items ?? []).map((entry) => entry.code))
 
-        if (rulePayload) {
+        if (mode === 'edit' && rulePayload) {
           setDraft(createVisibilityRuleDraft(rulePayload.rule))
         } else {
-          setDraft(createEmptyVisibilityRuleDraft(coneItems[0]?.id ?? ''))
+          setDraft(createEmptyVisibilityRuleDraft(nextPrefilledConeId))
         }
 
         setPageError(null)
@@ -75,6 +89,8 @@ export function VisibilityRuleEditorPage({ mode }: VisibilityRuleEditorPageProps
 
         const message = error instanceof Error ? error.message : 'Errore caricamento visibility rule'
         setPageError(message)
+        setCones([])
+        setPermissionCodes([])
       })
       .finally(() => {
         if (!cancelled) {
@@ -85,7 +101,12 @@ export function VisibilityRuleEditorPage({ mode }: VisibilityRuleEditorPageProps
     return () => {
       cancelled = true
     }
-  }, [mode, previousRuleId])
+  }, [mode, prefilledConeId, previousRuleId])
+
+  const selectedCone = useMemo(
+    () => cones.find((cone) => cone.id === draft.coneId) ?? null,
+    [cones, draft.coneId],
+  )
 
   const saveRule = async () => {
     let parsedRule: Omit<VisibilityRule, 'id'>
@@ -136,6 +157,22 @@ export function VisibilityRuleEditorPage({ mode }: VisibilityRuleEditorPageProps
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
+            onClick={() => navigate(buildVisibilityRulesListPath())}
+            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
+          >
+            Lista rules
+          </button>
+          {selectedCone ? (
+            <button
+              type="button"
+              onClick={() => navigate(buildVisibilityConeViewPath(selectedCone.id))}
+              className="rounded-lg border border-sky-300 px-4 py-2 text-sm font-medium text-sky-800 transition hover:border-sky-400 hover:bg-sky-50"
+            >
+              Apri cone
+            </button>
+          ) : null}
+          <button
+            type="button"
             onClick={() => navigate(cancelTarget)}
             className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
           >
@@ -146,7 +183,7 @@ export function VisibilityRuleEditorPage({ mode }: VisibilityRuleEditorPageProps
             onClick={() => {
               void saveRule()
             }}
-            disabled={loading || saving || cones.length === 0}
+            disabled={loading || saving || cones.length === 0 || !draft.coneId.trim()}
             className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-65"
           >
             {saving ? 'Salvataggio...' : 'Salva rule'}
@@ -166,13 +203,24 @@ export function VisibilityRuleEditorPage({ mode }: VisibilityRuleEditorPageProps
         <div className="mt-5 space-y-5">
           {cones.length === 0 ? (
             <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-              Serve almeno un cone prima di creare una rule.
+              Serve almeno un cone prima di creare o modificare una rule.
             </p>
           ) : null}
 
           <div className="grid gap-4 lg:grid-cols-2">
             <label className="text-sm font-medium text-slate-700">
-              Cone
+              <span className="flex items-center justify-between gap-3">
+                <span>Cone</span>
+                {selectedCone ? (
+                  <button
+                    type="button"
+                    onClick={() => navigate(buildVisibilityConeViewPath(selectedCone.id))}
+                    className="text-xs font-semibold uppercase tracking-[0.08em] text-sky-700 transition hover:text-sky-900"
+                  >
+                    Apri cone
+                  </button>
+                ) : null}
+              </span>
               <select
                 value={draft.coneId}
                 onChange={(event) =>
@@ -181,14 +229,21 @@ export function VisibilityRuleEditorPage({ mode }: VisibilityRuleEditorPageProps
                     coneId: event.target.value,
                   }))
                 }
-                className="mt-2 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+                disabled={cones.length === 0}
+                className="mt-2 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100 disabled:cursor-not-allowed disabled:bg-slate-100"
               >
+                <option value="">
+                  {cones.length === 0 ? 'Nessun cone disponibile' : 'Seleziona un cone'}
+                </option>
                 {cones.map((cone) => (
                   <option key={cone.id} value={cone.id}>
                     {cone.code}
                   </option>
                 ))}
               </select>
+              {selectedCone?.name ? (
+                <p className="mt-2 text-xs font-normal text-slate-500">{selectedCone.name}</p>
+              ) : null}
             </label>
 
             <label className="text-sm font-medium text-slate-700">
@@ -282,7 +337,7 @@ export function VisibilityRuleEditorPage({ mode }: VisibilityRuleEditorPageProps
           {permissionCodes.length > 0 ? (
             <p className="text-xs text-slate-500">
               Catalogo ACL disponibile: {permissionCodes.length} permission code. Gli assignment
-              li useranno come selettori indipendenti dal cone.
+              usano i permission code come selettori indipendenti dal cone.
             </p>
           ) : null}
         </div>
