@@ -3,6 +3,14 @@ import { AdminShell } from './components/AdminShell'
 import { AppShell } from './components/AppShell'
 import { RequireAuth } from './features/auth/components/RequireAuth'
 import { RequireAdmin } from './features/auth/components/RequireAdmin'
+import { AclAdminLayout } from './features/acl-admin/pages/AclAdminLayout'
+import { AclDefaultsPage } from './features/acl-admin/pages/AclDefaultsPage'
+import { AclPermissionDetailPage } from './features/acl-admin/pages/AclPermissionDetailPage'
+import { AclPermissionEditorPage } from './features/acl-admin/pages/AclPermissionEditorPage'
+import { AclPermissionsPage } from './features/acl-admin/pages/AclPermissionsPage'
+import { AclResourceDetailPage } from './features/acl-admin/pages/AclResourceDetailPage'
+import { AclResourceEditorPage } from './features/acl-admin/pages/AclResourceEditorPage'
+import { AclResourcesPage } from './features/acl-admin/pages/AclResourcesPage'
 
 import { EntityDetailPage } from './features/entities/pages/EntityDetailPage'
 import { EntityFormPage } from './features/entities/pages/EntityFormPage'
@@ -10,6 +18,7 @@ import { EntityListPage } from './features/entities/pages/EntityListPage'
 import { EntityRelatedListPage } from './features/entities/pages/EntityRelatedListPage'
 import { EntityRouteFallbackPage } from './features/entities/pages/EntityRouteFallbackPage'
 import { EntityAdminConfigPage } from './features/entities-admin/pages/EntityAdminConfigPage'
+import { QueryTemplateAdminPage } from './features/query-template-admin/pages/QueryTemplateAdminPage'
 import { HomePage } from './pages/HomePage'
 import { LoginPage } from './pages/LoginPage'
 
@@ -38,7 +47,21 @@ function App() {
             <Route index element={<Navigate replace to="entity-config" />} />
             <Route path="entity-config" element={<EntityAdminConfigPage />} />
             <Route path="entity-config/:entityId" element={<EntityAdminConfigPage />} />
-            <Route path="entity-config/:entityId/:section" element={<EntityAdminConfigPage />} />
+            <Route path="entity-config/:entityId/edit" element={<EntityAdminConfigPage />} />
+            <Route path="acl" element={<AclAdminLayout />}>
+              <Route index element={<Navigate replace to="permissions" />} />
+              <Route path="permissions" element={<AclPermissionsPage />} />
+              <Route path="permissions/__new__" element={<AclPermissionEditorPage mode="create" />} />
+              <Route path="permissions/:permissionCode" element={<AclPermissionDetailPage />} />
+              <Route path="permissions/:permissionCode/edit" element={<AclPermissionEditorPage mode="edit" />} />
+              <Route path="defaults" element={<AclDefaultsPage />} />
+              <Route path="resources" element={<AclResourcesPage />} />
+              <Route path="resources/__new__" element={<AclResourceEditorPage mode="create" />} />
+              <Route path="resources/:resourceId" element={<AclResourceDetailPage />} />
+              <Route path="resources/:resourceId/edit" element={<AclResourceEditorPage mode="edit" />} />
+            </Route>
+            <Route path="query-templates" element={<QueryTemplateAdminPage />} />
+            <Route path="query-templates/:templateId" element={<QueryTemplateAdminPage />} />
           </Route>
         </Route>
 

@@ -15,7 +15,7 @@ export function AdminShell() {
       eyebrow: 'Amministrazione',
       title: 'Moduli admin',
       description: "La navigazione della colonna sinistra copre l'intero dominio /admin.",
-      itemCountLabel: '1 modulo',
+      itemCountLabel: '3 moduli',
       items: [
         {
           id: 'entity-config',
@@ -24,6 +24,24 @@ export function AdminShell() {
           isActive: location.pathname.startsWith('/admin/entity-config'),
           onSelect: () => {
             navigate('/admin/entity-config')
+          },
+        },
+        {
+          id: 'acl',
+          label: 'ACL',
+          description: 'Catalogo permessi, default permissions e risorse ACL.',
+          isActive: location.pathname.startsWith('/admin/acl'),
+          onSelect: () => {
+            navigate('/admin/acl')
+          },
+        },
+        {
+          id: 'query-templates',
+          label: 'Query Templates',
+          description: 'CRUD dei template query usati dal runtime backend.',
+          isActive: location.pathname.startsWith('/admin/query-templates'),
+          onSelect: () => {
+            navigate('/admin/query-templates')
           },
         },
       ],
@@ -37,7 +55,7 @@ export function AdminShell() {
           <WorkspaceSidebar
             eyebrow="Admin"
             title="Backoffice"
-            description="Navigazione globale dei moduli amministrativi. Qui si aggiungeranno le altre sezioni future."
+            description="Navigazione globale dei moduli amministrativi PostgreSQL-backed."
             sections={adminSections}
           />
         </div>
