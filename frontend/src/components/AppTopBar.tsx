@@ -1,12 +1,29 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 
+import type { AvailableApp, AvailableAppEntity } from '../features/apps/app-types'
 import { useAdminNavigation } from './useAdminNavigation'
+import { useRuntimeNavigation } from './useRuntimeNavigation'
 import { useAuth } from '../features/auth/useAuth'
 
-export function AppTopBar() {
+type RuntimeWorkspaceTopBarProps = {
+  apps: AvailableApp[]
+  selectedApp: AvailableApp | null
+  selectedAppId: string | null
+  selectedEntities: AvailableAppEntity[]
+  loading: boolean
+  error: string | null
+  onSelectApp: (appId: string) => void
+}
+
+type AppTopBarProps = {
+  runtimeWorkspace?: RuntimeWorkspaceTopBarProps
+}
+
+export function AppTopBar({ runtimeWorkspace }: AppTopBarProps) {
   const { user, isBootstrapping, logout } = useAuth()
   const { isAdminRoute, toggleSidebar } = useAdminNavigation()
+  const { isRuntimeRoute, toggleDrawer } = useRuntimeNavigation()
   const [isLoggingOut, setIsLoggingOut] = useState(false)
   const [logoutError, setLogoutError] = useState<string | null>(null)
   const canAccessAdmin = Boolean(
@@ -14,6 +31,8 @@ export function AppTopBar() {
       ['PORTAL_ADMIN', 'ADMIN', 'SUPERUSER'].includes(permission.trim().toUpperCase()),
     ),
   )
+  const runtimeContext =
+    Boolean(user) && isRuntimeRoute && !isAdminRoute ? runtimeWorkspace : undefined
 
   const handleLogout = async () => {
     setIsLoggingOut(true)
@@ -31,7 +50,7 @@ export function AppTopBar() {
 
   return (
     <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/85 backdrop-blur-sm">
-      <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
+      <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
         <div className="flex items-center gap-3">
           {isAdminRoute ? (
             <button
@@ -43,12 +62,39 @@ export function AppTopBar() {
             </button>
           ) : null}
 
+          {runtimeContext ? (
+            <>
+              <button
+                type="button"
+                onClick={toggleDrawer}
+                className="inline-flex items-center rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-50 md:hidden"
+              >
+                Menu
+              </button>
+            </>
+          ) : null}
+
           <Link
             to="/"
             className="text-sm font-semibold uppercase tracking-[0.18em] text-sky-700 transition hover:text-sky-800"
           >
             SFDC External
           </Link>
+
+          {runtimeContext ? (
+            <div className="hidden min-w-0 md:block">
+              <p className="truncate text-sm font-semibold text-slate-900">
+                {runtimeContext.selectedApp?.label ??
+                  (runtimeContext.loading ? 'Caricamento workspace...' : 'Workspace')}
+              </p>
+              <p className="truncate text-xs text-slate-500">
+                {runtimeContext.error
+                  ? 'Launcher non disponibile'
+                  : runtimeContext.selectedApp?.description?.trim() ||
+                    `${runtimeContext.selectedEntities.length} entity attive`}
+              </p>
+            </div>
+          ) : null}
         </div>
 
         <div className="flex items-center gap-3">
