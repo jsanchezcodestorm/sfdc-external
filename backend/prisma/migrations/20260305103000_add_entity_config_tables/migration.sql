@@ -158,7 +158,7 @@ ALTER TABLE "entity_form_configs" ADD CONSTRAINT "entity_form_configs_entityId_f
 -- AddForeignKey
 ALTER TABLE "entity_form_section_configs" ADD CONSTRAINT "entity_form_section_configs_entityId_fkey" FOREIGN KEY ("entityId") REFERENCES "entity_form_configs"("entityId") ON DELETE CASCADE ON UPDATE CASCADE;
 
--- Seed existing account entity configuration (migrated from backend/config/entities/account)
+-- Seed existing account entity configuration migrated from the legacy file-based store
 INSERT INTO "entity_configs" ("id", "objectApiName", "label", "description", "navigationJson", "updatedAt")
 VALUES (
     'account',

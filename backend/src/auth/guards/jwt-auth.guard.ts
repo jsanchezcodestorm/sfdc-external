@@ -1,7 +1,6 @@
 import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
 
 import { SESSION_COOKIE_NAME } from '../../app.constants';
-
 import { AuthService } from '../auth.service';
 import type { SessionUser } from '../session-user.interface';
 

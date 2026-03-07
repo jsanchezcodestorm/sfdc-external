@@ -17,6 +17,13 @@ enum VisibilityDecision {
   DENY
 }
 
+enum AclResourceKind {
+  REST
+  ENTITY
+  QUERY
+  ROUTE
+}
+
 model VisibilityPolicyMeta {
   id            Int      @id @default(1)
   policyVersion BigInt   @default(1)
@@ -256,4 +263,82 @@ model EntityFormSectionConfigRecord {
 
   @@index([entityId, sortOrder])
   @@map("entity_form_section_configs")
+}
+
+model AclPermissionRecord {
+  code        String                    @id @db.VarChar(80)
+  label       String?                   @db.VarChar(128)
+  description String?                   @db.VarChar(512)
+  createdAt   DateTime                  @default(now())
+  updatedAt   DateTime                  @updatedAt
+  aliases     AclPermissionAliasRecord[]
+  defaults    AclDefaultPermissionRecord[]
+  resources   AclResourcePermissionRecord[]
+
+  @@map("acl_permissions")
+}
+
+model AclPermissionAliasRecord {
+  id             String              @id @default(uuid()) @db.Uuid
+  permissionCode String              @db.VarChar(80)
+  alias          String              @unique @db.VarChar(80)
+  sortOrder      Int
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  permission     AclPermissionRecord @relation(fields: [permissionCode], references: [code], onDelete: Cascade)
+
+  @@index([permissionCode, sortOrder])
+  @@map("acl_permission_aliases")
+}
+
+model AclDefaultPermissionRecord {
+  permissionCode String              @id @db.VarChar(80)
+  sortOrder      Int
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  permission     AclPermissionRecord @relation(fields: [permissionCode], references: [code], onDelete: Restrict)
+
+  @@index([sortOrder])
+  @@map("acl_default_permissions")
+}
+
+model AclResourceRecord {
+  id          String                      @id @db.VarChar(128)
+  type        AclResourceKind
+  target      String?                     @db.VarChar(512)
+  description String?                     @db.VarChar(512)
+  createdAt   DateTime                    @default(now())
+  updatedAt   DateTime                    @updatedAt
+  permissions AclResourcePermissionRecord[]
+
+  @@map("acl_resources")
+}
+
+model AclResourcePermissionRecord {
+  id             String              @id @default(uuid()) @db.Uuid
+  resourceId      String              @db.VarChar(128)
+  permissionCode  String              @db.VarChar(80)
+  sortOrder       Int
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  resource        AclResourceRecord   @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  permission      AclPermissionRecord @relation(fields: [permissionCode], references: [code], onDelete: Restrict)
+
+  @@unique([resourceId, permissionCode])
+  @@index([resourceId, sortOrder])
+  @@index([permissionCode])
+  @@map("acl_resource_permissions")
+}
+
+model QueryTemplateRecord {
+  id                String   @id @db.VarChar(64)
+  objectApiName     String   @db.VarChar(128)
+  description       String?  @db.VarChar(512)
+  soql              String   @db.Text
+  defaultParamsJson Json?
+  maxLimit          Int?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("query_templates")
 }

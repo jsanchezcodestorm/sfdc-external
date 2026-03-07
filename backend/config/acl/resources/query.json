@@ -1,9 +1,0 @@
-[
-  {
-    "id": "query:account-pipeline",
-    "type": "query",
-    "target": "/query/template/account-pipeline",
-    "description": "Pipeline account",
-    "permissions": ["PORTAL_OPERATIONS", "PORTAL_ADMIN"]
-  }
-]

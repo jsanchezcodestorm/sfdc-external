@@ -1,59 +1,43 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { existsSync, readFileSync } from 'node:fs';
-import path from 'node:path';
 
-import type {
-  AclResourceDefinition,
-  AclResourceType,
-  DefaultPermissionsFile,
-  PermissionCatalogFile,
-  PermissionDefinition
-} from './acl.types';
+import { AclConfigRepository } from './acl-config.repository';
+import { normalizeAclConfigSnapshot } from './acl-config.validation';
+import type { AclPermissionDefinition, AclResourceDefinition, AclResourceType } from './acl.types';
 
 @Injectable()
 export class AclService implements OnModuleInit {
   private readonly logger = new Logger(AclService.name);
 
-  private permissionsCatalog: PermissionDefinition[] = [];
+  private permissionsCatalog: AclPermissionDefinition[] = [];
   private defaultPermissions: string[] = [];
   private resources = new Map<string, AclResourceDefinition>();
   private aliasToCanonical = new Map<string, string>();
 
-  constructor(private readonly configService: ConfigService) {}
+  constructor(private readonly aclConfigRepository: AclConfigRepository) {}
 
-  onModuleInit(): void {
-    this.reload();
+  async onModuleInit(): Promise<void> {
+    await this.reload();
   }
 
-  reload(): void {
-    this.permissionsCatalog = this.loadJson<PermissionCatalogFile>('permissions.json', { permissions: [] }).permissions;
-    this.defaultPermissions = this.loadJson<DefaultPermissionsFile>('defaults.json', { permissions: ['PORTAL_USER'] }).permissions;
+  async reload(): Promise<void> {
+    const snapshot = normalizeAclConfigSnapshot(await this.aclConfigRepository.loadSnapshot());
 
-    this.aliasToCanonical = this.buildAliasMap(this.permissionsCatalog);
+    this.permissionsCatalog = snapshot.permissions;
+    this.defaultPermissions = snapshot.defaultPermissions;
+    this.aliasToCanonical = this.buildAliasMap(snapshot.permissions);
     this.resources.clear();
 
-    const resourceFiles: Array<{ fileName: string; type: AclResourceType }> = [
-      { fileName: 'resources/rest.json', type: 'rest' },
-      { fileName: 'resources/entity.json', type: 'entity' },
-      { fileName: 'resources/query.json', type: 'query' },
-      { fileName: 'resources/route.json', type: 'route' }
-    ];
-
-    for (const resourceFile of resourceFiles) {
-      const entries = this.loadJson<AclResourceDefinition[]>(resourceFile.fileName, []);
-
-      for (const entry of entries) {
-        const normalizedPermissions = entry.permissions.map((permission) => this.toCanonicalPermission(permission));
-        this.resources.set(entry.id, {
-          ...entry,
-          type: resourceFile.type,
-          permissions: normalizedPermissions
-        });
-      }
+    for (const resource of snapshot.resources) {
+      const normalizedPermissions = resource.permissions.map((permission) => this.toCanonicalPermission(permission));
+      this.resources.set(resource.id, {
+        ...resource,
+        permissions: normalizedPermissions
+      });
     }
 
-    this.logger.log(`ACL loaded: ${this.resources.size} resources, ${this.permissionsCatalog.length} permission definitions.`);
+    this.logger.log(
+      `ACL loaded from PostgreSQL: ${this.resources.size} resources, ${this.permissionsCatalog.length} permission definitions.`
+    );
   }
 
   getDefaultPermissions(): string[] {
@@ -80,6 +64,10 @@ export class AclService implements OnModuleInit {
     return resource.permissions.some((permission) => effectivePermissions.has(permission));
   }
 
+  hasResource(resourceId: string): boolean {
+    return this.resources.has(resourceId);
+  }
+
   listResourcesByType(type: AclResourceType): AclResourceDefinition[] {
     return [...this.resources.values()].filter((resource) => resource.type === type);
   }
@@ -89,7 +77,7 @@ export class AclService implements OnModuleInit {
     return this.aliasToCanonical.get(normalized) ?? normalized;
   }
 
-  private buildAliasMap(catalog: PermissionDefinition[]): Map<string, string> {
+  private buildAliasMap(catalog: AclPermissionDefinition[]): Map<string, string> {
     const map = new Map<string, string>();
 
     for (const permission of catalog) {
@@ -106,32 +94,5 @@ export class AclService implements OnModuleInit {
 
   private normalizePermission(permission: string): string {
     return permission.trim().toUpperCase().replace(/[\s-]+/g, '_');
-  }
-
-  private loadJson<T>(relativePath: string, fallback: T): T {
-    const candidatePaths = this.resolveAclConfigCandidates(relativePath);
-
-    for (const candidatePath of candidatePaths) {
-      if (!existsSync(candidatePath)) {
-        continue;
-      }
-
-      const raw = readFileSync(candidatePath, 'utf8');
-      return JSON.parse(raw) as T;
-    }
-
-    this.logger.warn(`ACL config missing for ${relativePath}, using fallback.`);
-    return fallback;
-  }
-
-  private resolveAclConfigCandidates(relativePath: string): string[] {
-    const configuredPath = this.configService.get<string>('ACL_CONFIG_PATH');
-    const candidates = [
-      configuredPath ? path.resolve(configuredPath, relativePath) : '',
-      path.resolve(process.cwd(), 'config/acl', relativePath),
-      path.resolve(process.cwd(), 'backend/config/acl', relativePath)
-    ];
-
-    return candidates.filter((candidate) => candidate.length > 0);
   }
 }
