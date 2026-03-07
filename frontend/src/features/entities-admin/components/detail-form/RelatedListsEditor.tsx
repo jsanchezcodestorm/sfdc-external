@@ -181,6 +181,7 @@ export function RelatedListsEditor({ value, onChange }: RelatedListsEditorProps)
             <div className="mt-4 grid gap-4 xl:grid-cols-2">
               <QueryWhereJsonArrayEditor
                 value={relatedList.queryWhereJson}
+                objectApiName={relatedList.objectApiName}
                 availableFields={relatedList.queryFields}
                 onChange={(nextValue) => updateRelatedList(index, { queryWhereJson: nextValue })}
               />

@@ -425,6 +425,7 @@ export function EntityConfigListForm({
 
                 <QueryWhereJsonArrayEditor
                   value={editingView.queryWhereJson}
+                  objectApiName={baseObjectApiName}
                   availableFields={editingView.queryFields}
                   onChange={(nextValue) =>
                     onChangeViewField(

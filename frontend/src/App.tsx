@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
+import { AdminShell } from './components/AdminShell'
 import { AppShell } from './components/AppShell'
 import { RequireAuth } from './features/auth/components/RequireAuth'
 import { RequireAdmin } from './features/auth/components/RequireAdmin'
@@ -33,9 +34,12 @@ function App() {
         </Route>
 
         <Route element={<RequireAdmin />}>
-          <Route path="/admin/entity-config" element={<EntityAdminConfigPage />} />
-          <Route path="/admin/entity-config/:entityId" element={<EntityAdminConfigPage />} />
-          <Route path="/admin/entity-config/:entityId/:section" element={<EntityAdminConfigPage />} />
+          <Route path="/admin" element={<AdminShell />}>
+            <Route index element={<Navigate replace to="entity-config" />} />
+            <Route path="entity-config" element={<EntityAdminConfigPage />} />
+            <Route path="entity-config/:entityId" element={<EntityAdminConfigPage />} />
+            <Route path="entity-config/:entityId/:section" element={<EntityAdminConfigPage />} />
+          </Route>
         </Route>
 
         <Route

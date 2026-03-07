@@ -1,3 +1,5 @@
+import { useId } from 'react'
+
 type QueryOrderByJsonArrayEditorProps = {
   value: string
   onChange: (value: string) => void
@@ -19,10 +21,10 @@ export function QueryOrderByJsonArrayEditor({
   onChange,
   availableFields,
 }: QueryOrderByJsonArrayEditorProps) {
+  const fieldListId = useId()
   const fieldOptions = availableFields
     .map((field) => field.trim())
     .filter((field) => field.length > 0)
-  const fieldListId = 'query-orderby-field-options'
   const { rows, error } = parseOrderByRows(value)
 
   const emitRows = (nextRows: OrderByRow[]) => {

@@ -15,15 +15,21 @@ import type {
   EntityConfigSectionKey,
   SalesforceObjectApiNameSuggestion,
 } from '../entity-admin-types'
-import { EntityAdminSidebar } from '../components/EntityAdminSidebar'
 import { EntityConfigBaseForm } from '../components/EntityConfigBaseForm'
 import { EntityConfigDetailForm } from '../components/EntityConfigDetailForm'
+import { EntityConfigFormForm } from '../components/EntityConfigFormForm'
 import {
   createDetailFormDraft,
   createEmptyDetailFormDraft,
   parseDetailFormDraft,
 } from '../components/detail-form/detail-form.mapper'
 import type { DetailFormDraft } from '../components/detail-form/detail-form.types'
+import {
+  createEmptyFormDraft,
+  createFormDraft,
+  parseFormDraft,
+} from '../components/form-form/form-form.mapper'
+import type { FormFormDraft } from '../components/form-form/form-form.types'
 import { EntityConfigListForm } from '../components/EntityConfigListForm'
 import {
   createEmptyListFormDraft,
@@ -45,6 +51,9 @@ const sectionLabels: Record<EntityConfigSectionKey, string> = {
   form: 'Form',
 }
 
+const sectionOrder: EntityConfigSectionKey[] = ['base', 'list', 'detail', 'form']
+const NEW_ENTITY_SENTINEL = '__new__'
+
 type AdminRouteParams = {
   entityId?: string
   section?: string
@@ -54,6 +63,7 @@ export function EntityAdminConfigPage() {
   const navigate = useNavigate()
   const params = useParams<AdminRouteParams>()
 
+  const isCreateRoute = isNewEntityParam(params.entityId)
   const selectedEntityId = normalizeEntityIdParam(params.entityId)
   const selectedSection = normalizeSectionParam(params.section)
 
@@ -64,8 +74,10 @@ export function EntityAdminConfigPage() {
   const [detailFormDraft, setDetailFormDraft] = useState<DetailFormDraft>(
     createEmptyDetailFormDraft(),
   )
+  const [formFormDraft, setFormFormDraft] = useState<FormFormDraft>(createEmptyFormDraft())
   const [selectedListViewIndex, setSelectedListViewIndex] = useState(0)
   const [sectionDraft, setSectionDraft] = useState('')
+  const [resourceQuery, setResourceQuery] = useState('')
   const [objectApiNameSearchInput, setObjectApiNameSearchInput] = useState('')
   const [objectApiNameSuggestions, setObjectApiNameSuggestions] = useState<
     SalesforceObjectApiNameSuggestion[]
@@ -85,9 +97,27 @@ export function EntityAdminConfigPage() {
     () => entities.find((entity) => entity.id === selectedEntityId) ?? null,
     [entities, selectedEntityId],
   )
+  const isEntityListRoute = selectedEntityId === null && !isCreateRoute
+
+  const filteredEntities = useMemo(() => {
+    const normalizedQuery = resourceQuery.trim().toLowerCase()
+
+    if (normalizedQuery.length === 0) {
+      return entities
+    }
+
+    return entities.filter((entity) =>
+      [entity.label, entity.id, entity.objectApiName]
+        .join(' ')
+        .toLowerCase()
+        .includes(normalizedQuery),
+    )
+  }, [entities, resourceQuery])
 
   const hashPath = selectedEntityId
     ? buildAdminPath(selectedEntityId, selectedSection)
+    : isCreateRoute
+      ? buildCreateAdminPath()
     : '/admin/entity-config'
 
   const navigateToEntitySection = useCallback(
@@ -96,6 +126,10 @@ export function EntityAdminConfigPage() {
     },
     [navigate],
   )
+
+  const navigateToCreateEntity = useCallback((replace = false) => {
+    navigate(buildCreateAdminPath(), { replace })
+  }, [navigate])
 
   const refreshEntityList = useCallback(async () => {
     setLoadingList(true)
@@ -106,10 +140,16 @@ export function EntityAdminConfigPage() {
       setEntities(nextItems)
       setPageError(null)
 
-      if (nextItems.length === 0) {
-        setSelectedEntityConfig(null)
+      if (isCreateRoute && params.section !== 'base') {
+        navigateToCreateEntity(true)
+      }
 
-        if (selectedEntityId || params.section) {
+      if (nextItems.length === 0) {
+        if (!isCreateRoute) {
+          setSelectedEntityConfig(null)
+        }
+
+        if (!isCreateRoute && (selectedEntityId || params.section)) {
           navigate('/admin/entity-config', { replace: true })
         }
 
@@ -119,12 +159,18 @@ export function EntityAdminConfigPage() {
       const hasSelectedEntity =
         selectedEntityId !== null &&
         nextItems.some((item) => item.id === selectedEntityId)
-      const targetEntityId = hasSelectedEntity
-        ? selectedEntityId
-        : nextItems[0].id
 
-      if (!selectedEntityId || !hasSelectedEntity || params.section !== selectedSection) {
-        navigateToEntitySection(targetEntityId, selectedSection, true)
+      if (!isCreateRoute && selectedEntityId && !hasSelectedEntity) {
+        navigate('/admin/entity-config', { replace: true })
+        return
+      }
+
+      if (isCreateRoute && params.section !== 'base') {
+        navigateToCreateEntity(true)
+      }
+
+      if (!isCreateRoute && selectedEntityId && params.section !== selectedSection) {
+        navigateToEntitySection(selectedEntityId, selectedSection, true)
       }
     } catch (error) {
       const message =
@@ -137,6 +183,8 @@ export function EntityAdminConfigPage() {
     }
   }, [
     navigate,
+    isCreateRoute,
+    navigateToCreateEntity,
     navigateToEntitySection,
     params.section,
     selectedEntityId,
@@ -144,6 +192,13 @@ export function EntityAdminConfigPage() {
   ])
 
   const loadSelectedEntityConfig = useCallback(async () => {
+    if (isCreateRoute) {
+      setSelectedEntityConfig(createEmptyEntityConfig())
+      setLoadingConfig(false)
+      setPageError(null)
+      return
+    }
+
     if (!selectedEntityId) {
       setSelectedEntityConfig(null)
       return
@@ -162,7 +217,7 @@ export function EntityAdminConfigPage() {
     } finally {
       setLoadingConfig(false)
     }
-  }, [selectedEntityId])
+  }, [isCreateRoute, selectedEntityId])
 
   useEffect(() => {
     void refreshEntityList()
@@ -177,6 +232,7 @@ export function EntityAdminConfigPage() {
       setBaseFormDraft(createEmptyBaseFormDraft())
       setListFormDraft(createEmptyListFormDraft())
       setDetailFormDraft(createEmptyDetailFormDraft())
+      setFormFormDraft(createEmptyFormDraft())
       setSelectedListViewIndex(0)
       setSectionDraft('')
       setObjectApiNameSearchInput('')
@@ -188,12 +244,14 @@ export function EntityAdminConfigPage() {
     setBaseFormDraft(createBaseFormDraft(selectedEntityConfig))
     setListFormDraft(createListFormDraft(selectedEntityConfig.list))
     setDetailFormDraft(createDetailFormDraft(selectedEntityConfig.detail))
+    setFormFormDraft(createFormDraft(selectedEntityConfig.form))
     setSelectedListViewIndex(0)
 
     if (
       selectedSection === 'base' ||
       selectedSection === 'list' ||
-      selectedSection === 'detail'
+      selectedSection === 'detail' ||
+      selectedSection === 'form'
     ) {
       setSectionDraft('')
       setEditorError(null)
@@ -209,20 +267,25 @@ export function EntityAdminConfigPage() {
     setEditorError(null)
   }, [selectedEntityConfig, selectedSection])
 
-  const handleSelectEntity = (entityId: string) => {
+  const handleSelectEntity = useCallback((entityId: string) => {
     navigateToEntitySection(entityId, selectedSection)
-  }
+  }, [navigateToEntitySection, selectedSection])
 
-  const handleSelectSection = (section: EntityConfigSectionKey) => {
-    if (selectedEntityId) {
-      navigateToEntitySection(selectedEntityId, section)
+  const handleSelectSection = useCallback((section: EntityConfigSectionKey) => {
+    if (!selectedEntityId) {
       return
     }
 
-    if (entities.length > 0) {
-      navigateToEntitySection(entities[0].id, section)
-    }
-  }
+    navigateToEntitySection(selectedEntityId, section)
+  }, [navigateToEntitySection, selectedEntityId])
+
+  const handleBackToEntityList = useCallback(() => {
+    navigate('/admin/entity-config')
+  }, [navigate])
+
+  const handleCreateEntity = useCallback(() => {
+    navigateToCreateEntity()
+  }, [navigateToCreateEntity])
 
   const applySectionDraft = () => {
     if (!selectedEntityConfig) {
@@ -503,6 +566,27 @@ export function EntityAdminConfigPage() {
     }
   }
 
+  const applyFormDraft = () => {
+    if (!selectedEntityConfig) {
+      return
+    }
+
+    try {
+      const parsedForm = parseFormDraft(
+        formFormDraft,
+        selectedEntityConfig.objectApiName ?? '',
+      )
+      const nextConfig = applySectionToEntityConfig(selectedEntityConfig, 'form', parsedForm)
+      setSelectedEntityConfig(nextConfig)
+      setEditorError(null)
+      setSaveInfo('Sezione Form applicata in locale')
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Valori form non validi per la sezione Form'
+      setEditorError(message)
+    }
+  }
+
   const saveSelectedEntityConfig = async () => {
     if (!selectedEntityConfig) {
       return
@@ -518,12 +602,45 @@ export function EntityAdminConfigPage() {
         selectedEntityConfig,
       )
       setSelectedEntityConfig(payload.entity)
-      setSaveInfo('Configurazione salvata su PostgreSQL')
+      setSaveInfo(
+        isCreateRoute ? 'Entity creata su PostgreSQL' : 'Configurazione salvata su PostgreSQL',
+      )
       navigateToEntitySection(payload.entity.id, selectedSection, true)
       await refreshEntityList()
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Errore salvataggio entity config'
+      setPageError(message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const saveNewEntityConfig = async () => {
+    const nextConfig = createEntityConfigFromBaseDraft(baseFormDraft)
+
+    if (!nextConfig) {
+      setEditorError(
+        baseFormDraft.id.trim() === NEW_ENTITY_SENTINEL
+          ? `Entity Id non puo essere ${NEW_ENTITY_SENTINEL}`
+          : 'Compila id, label e objectApiName per creare la entity',
+      )
+      return
+    }
+
+    setSaving(true)
+    setSaveInfo(null)
+    setPageError(null)
+    setEditorError(null)
+
+    try {
+      const payload = await upsertEntityAdminConfig(nextConfig.id, nextConfig)
+      setSelectedEntityConfig(payload.entity)
+      setSaveInfo('Entity creata su PostgreSQL')
+      navigateToEntitySection(payload.entity.id, 'base', true)
+      await refreshEntityList()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Errore creazione entity config'
       setPageError(message)
     } finally {
       setSaving(false)
@@ -540,6 +657,10 @@ export function EntityAdminConfigPage() {
       return current > maxIndex ? maxIndex : current
     })
   }, [listFormDraft.views.length])
+
+  useEffect(() => {
+    setSaveInfo(null)
+  }, [isCreateRoute, selectedEntityId, selectedSection])
 
   const canSearchObjectApiNameSuggestions =
     selectedSection === 'base' && selectedEntityConfig !== null
@@ -606,73 +727,103 @@ export function EntityAdminConfigPage() {
   }, [canSearchObjectApiNameSuggestions, objectApiNameSearchValue])
 
   return (
-    <div className="relative min-h-screen bg-[linear-gradient(180deg,_#f8fafc_0%,_#eef2ff_100%)] text-slate-900">
-      <div className="hidden lg:block">
-        <div className="fixed left-0 top-[57px] h-[calc(100vh-57px)] w-80">
-          <EntityAdminSidebar
-            entities={entities}
-            selectedEntityId={selectedEntityId}
-            selectedSection={selectedSection}
-            onSelectEntity={handleSelectEntity}
-            onSelectSection={handleSelectSection}
-          />
-        </div>
-      </div>
-
-      <main className="min-h-screen px-4 py-6 sm:px-6 lg:pl-[21rem]">
-        <div className="mx-auto flex w-full max-w-6xl flex-col gap-5">
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-5">
           <header className="rounded-2xl border border-slate-200 bg-white/90 p-6 shadow-sm backdrop-blur-sm">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">
-              Admin
-            </p>
-            <h1 className="mt-2 text-2xl font-bold tracking-tight">
-              Entity Config PostgreSQL
-            </h1>
-            <p className="mt-2 text-sm text-slate-600">
-              Sidebar a category e sub category persistenti in hash path.
-            </p>
-            <p className="mt-2 text-xs text-slate-500">
-              Path: <code className="font-mono">#{hashPath}</code>
-            </p>
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">
+                  Admin
+                </p>
+                <h1 className="mt-2 text-2xl font-bold tracking-tight">
+                  Entity Config PostgreSQL
+                </h1>
+                <p className="mt-2 text-sm text-slate-600">
+                  {isCreateRoute
+                    ? 'Creazione di una nuova entity tramite configurazione base minima.'
+                    : isEntityListRoute
+                    ? 'Catalogo entità dedicato, pensato per trovare e aprire rapidamente una configurazione.'
+                    : 'Workspace di editing con pannelli contestuali per la configurazione selezionata.'}
+                </p>
+                <p className="mt-2 text-xs text-slate-500">
+                  Path: <code className="font-mono">#{hashPath}</code>
+                </p>
+              </div>
+
+              {isCreateRoute ? (
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={handleBackToEntityList}
+                    className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
+                  >
+                    Torna al catalogo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void saveNewEntityConfig()
+                    }}
+                    disabled={saving}
+                    className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-65"
+                  >
+                    {saving ? 'Creazione...' : 'Crea entity'}
+                  </button>
+                </div>
+              ) : !isEntityListRoute && selectedEntitySummary ? (
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={handleBackToEntityList}
+                    className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
+                  >
+                    Lista entità
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void saveSelectedEntityConfig()
+                    }}
+                    disabled={!selectedEntityConfig || saving}
+                    className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-65"
+                  >
+                    {saving ? 'Salvataggio...' : 'Salva su PostgreSQL'}
+                  </button>
+                </div>
+              ) : null}
+            </div>
           </header>
 
-          <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:hidden">
-            <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
-              Entity
-              <select
-                value={selectedEntityId ?? ''}
-                onChange={(event) => {
-                  const nextId = event.target.value.trim()
-                  if (nextId.length > 0) {
-                    handleSelectEntity(nextId)
-                  }
-                }}
-                className="mt-2 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
-              >
-                {entities.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.label} ({item.id})
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="mt-3 block text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
-              Sezione
-              <select
-                value={selectedSection}
-                onChange={(event) =>
-                  handleSelectSection(event.target.value as EntityConfigSectionKey)
-                }
-                className="mt-2 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
-              >
-                {Object.entries(sectionLabels).map(([key, label]) => (
-                  <option key={key} value={key}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </section>
+          {!isEntityListRoute && !isCreateRoute && selectedEntitySummary ? (
+            <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                    Pannelli configurazione
+                  </p>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Navigazione locale dell&apos;entità selezionata. La sidebar sinistra resta riservata ai moduli admin.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  {sectionOrder.map((section) => (
+                    <button
+                      key={section}
+                      type="button"
+                      onClick={() => handleSelectSection(section)}
+                      className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                        selectedSection === section
+                          ? 'border-slate-900 bg-slate-900 text-white'
+                          : 'border-slate-300 bg-white text-slate-700 hover:border-slate-400 hover:bg-slate-50'
+                      }`}
+                    >
+                      {sectionLabels[section]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </section>
+          ) : null}
 
           {loadingList ? (
             <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -686,7 +837,7 @@ export function EntityAdminConfigPage() {
             </section>
           ) : null}
 
-          {!loadingList && !pageError && !selectedEntitySummary ? (
+          {!loadingList && !pageError && entities.length === 0 && !isCreateRoute ? (
             <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <p className="text-sm text-slate-600">
                 Nessuna entity configurata in PostgreSQL.
@@ -694,7 +845,41 @@ export function EntityAdminConfigPage() {
             </section>
           ) : null}
 
-          {selectedEntitySummary ? (
+          {!loadingList && !pageError && isEntityListRoute ? (
+            <EntityAdminCatalog
+              entities={filteredEntities}
+              query={resourceQuery}
+              onQueryChange={setResourceQuery}
+              onSelectEntity={handleSelectEntity}
+              onCreateEntity={handleCreateEntity}
+            />
+          ) : null}
+
+          {isCreateRoute ? (
+            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                    Nuova entity
+                  </p>
+                  <h2 className="text-xl font-semibold text-slate-900">
+                    Compila la sezione Base
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Per la creazione iniziale sono richiesti solo `id`, `label` e `objectApiName`.
+                  </p>
+                </div>
+              </div>
+
+              {saveInfo ? (
+                <p className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                  {saveInfo}
+                </p>
+              ) : null}
+            </section>
+          ) : null}
+
+          {!isEntityListRoute && selectedEntitySummary ? (
             <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
@@ -708,16 +893,6 @@ export function EntityAdminConfigPage() {
                     {selectedEntitySummary.id} - {selectedEntitySummary.objectApiName}
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    void saveSelectedEntityConfig()
-                  }}
-                  disabled={!selectedEntityConfig || saving}
-                  className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-65"
-                >
-                  {saving ? 'Salvataggio...' : 'Salva su PostgreSQL'}
-                </button>
               </div>
 
               <div className="mt-4 grid gap-2 sm:grid-cols-4">
@@ -762,8 +937,11 @@ export function EntityAdminConfigPage() {
                 showSuggestions={shouldShowObjectApiNameSuggestions}
                 onSelectSuggestion={selectObjectApiNameSuggestion}
                 onApply={applyBaseDraft}
+                eyebrow={isCreateRoute ? 'Create' : 'Form'}
+                title={isCreateRoute ? 'Nuova entity' : 'Sezione BASE'}
+                showApplyButton={!isCreateRoute}
               />
-            ) : selectedSection === 'list' ? (
+            ) : !isCreateRoute && selectedSection === 'list' ? (
               <EntityConfigListForm
                 value={listFormDraft}
                 error={editorError}
@@ -780,7 +958,7 @@ export function EntityAdminConfigPage() {
                 onToggleViewDefault={toggleListViewDefault}
                 onApply={applyListDraft}
               />
-            ) : selectedSection === 'detail' ? (
+            ) : !isCreateRoute && selectedSection === 'detail' ? (
               <EntityConfigDetailForm
                 value={detailFormDraft}
                 error={editorError}
@@ -788,7 +966,15 @@ export function EntityAdminConfigPage() {
                 onChange={updateDetailDraft}
                 onApply={applyDetailDraft}
               />
-            ) : (
+            ) : !isCreateRoute && selectedSection === 'form' ? (
+              <EntityConfigFormForm
+                value={formFormDraft}
+                error={editorError}
+                baseObjectApiName={selectedEntityConfig.objectApiName ?? ''}
+                onChange={setFormFormDraft}
+                onApply={applyFormDraft}
+              />
+            ) : !isCreateRoute ? (
               <EntityConfigSectionEditor
                 section={selectedSection}
                 value={sectionDraft}
@@ -796,10 +982,9 @@ export function EntityAdminConfigPage() {
                 onChange={setSectionDraft}
                 onApply={applySectionDraft}
               />
-            )
+            ) : null
+            
           ) : null}
-        </div>
-      </main>
     </div>
   )
 }
@@ -807,6 +992,115 @@ export function EntityAdminConfigPage() {
 type SummaryChipProps = {
   label: string
   value: number
+}
+
+type EntityAdminCatalogProps = {
+  entities: EntityAdminConfigSummary[]
+  query: string
+  onQueryChange: (value: string) => void
+  onSelectEntity: (entityId: string) => void
+  onCreateEntity: () => void
+}
+
+function EntityAdminCatalog({
+  entities,
+  query,
+  onQueryChange,
+  onSelectEntity,
+  onCreateEntity,
+}: EntityAdminCatalogProps) {
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex flex-col gap-4 border-b border-slate-200 pb-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+            Catalogo
+          </p>
+          <h2 className="mt-1 text-xl font-semibold text-slate-900">
+            Lista entità configurate
+          </h2>
+          <p className="mt-1 text-sm text-slate-600">
+            Seleziona una riga per entrare nel workspace della singola configurazione.
+          </p>
+        </div>
+
+        <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-end">
+          <div className="w-full sm:min-w-80">
+            <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+              Filtro
+              <input
+                type="search"
+                value={query}
+                onChange={(event) => onQueryChange(event.target.value)}
+                placeholder="Cerca per label, id o object API name"
+                className="mt-2 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+              />
+            </label>
+          </div>
+
+          <button
+            type="button"
+            onClick={onCreateEntity}
+            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700"
+          >
+            Nuova entity
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-4 overflow-hidden rounded-xl border border-slate-200">
+        <div className="overflow-x-auto">
+          <div className="min-w-[760px]">
+            <div className="grid grid-cols-[minmax(0,2fr)_minmax(0,1.2fr)_repeat(3,minmax(84px,0.6fr))_auto] gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+              <span>Entità</span>
+              <span>Object</span>
+              <span>Views</span>
+              <span>Detail</span>
+              <span>Form</span>
+              <span className="text-right">Azione</span>
+            </div>
+
+            {entities.length === 0 ? (
+              <div className="px-4 py-10 text-sm text-slate-500">
+                {query.trim().length > 0
+                  ? 'Nessuna entità corrisponde al filtro.'
+                  : 'Nessuna entità disponibile.'}
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-200">
+                {entities.map((entity) => (
+                  <article
+                    key={entity.id}
+                    className="grid grid-cols-[minmax(0,2fr)_minmax(0,1.2fr)_repeat(3,minmax(84px,0.6fr))_auto] gap-3 px-4 py-4 text-sm text-slate-700"
+                  >
+                    <div className="min-w-0">
+                      <p className="font-semibold text-slate-900">{entity.label}</p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        ID {entity.id} · aggiornato {formatTimestamp(entity.updatedAt)}
+                      </p>
+                    </div>
+                    <div className="min-w-0 text-sm text-slate-600">{entity.objectApiName}</div>
+                    <div className="font-medium text-slate-900">{entity.viewCount}</div>
+                    <div className="font-medium text-slate-900">{entity.detailSectionCount}</div>
+                    <div className="font-medium text-slate-900">{entity.formSectionCount}</div>
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => onSelectEntity(entity.id)}
+                        className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
+                      >
+                        Apri
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </section>
+  )
 }
 
 function SummaryChip({ label, value }: SummaryChipProps) {
@@ -824,13 +1118,17 @@ function isSectionKey(value: string | undefined): value is EntityConfigSectionKe
   return value === 'base' || value === 'list' || value === 'detail' || value === 'form'
 }
 
+function isNewEntityParam(value: string | undefined): boolean {
+  return typeof value === 'string' && value.trim() === NEW_ENTITY_SENTINEL
+}
+
 function normalizeEntityIdParam(value: string | undefined): string | null {
   if (typeof value !== 'string') {
     return null
   }
 
   const trimmed = value.trim()
-  return trimmed.length > 0 ? trimmed : null
+  return trimmed.length > 0 && trimmed !== NEW_ENTITY_SENTINEL ? trimmed : null
 }
 
 function normalizeSectionParam(value: string | undefined): EntityConfigSectionKey {
@@ -839,6 +1137,23 @@ function normalizeSectionParam(value: string | undefined): EntityConfigSectionKe
 
 function buildAdminPath(entityId: string, section: EntityConfigSectionKey): string {
   return `/admin/entity-config/${encodeURIComponent(entityId)}/${section}`
+}
+
+function buildCreateAdminPath(): string {
+  return `/admin/entity-config/${NEW_ENTITY_SENTINEL}/base`
+}
+
+function formatTimestamp(value: string): string {
+  const date = new Date(value)
+
+  if (Number.isNaN(date.getTime())) {
+    return value
+  }
+
+  return new Intl.DateTimeFormat('it-IT', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+  }).format(date)
 }
 
 function extractSectionValue(
@@ -954,6 +1269,19 @@ type BaseFormDraft = {
 
 type BaseFormDraftKey = keyof BaseFormDraft
 
+function createEmptyEntityConfig(): EntityConfig {
+  return {
+    id: '',
+    label: '',
+    description: '',
+    objectApiName: '',
+    navigation: undefined,
+    list: undefined,
+    detail: undefined,
+    form: undefined,
+  }
+}
+
 function createEmptyBaseFormDraft(): BaseFormDraft {
   return {
     id: '',
@@ -971,5 +1299,30 @@ function createBaseFormDraft(entity: EntityConfig): BaseFormDraft {
     description: entity.description ?? '',
     objectApiName: entity.objectApiName ?? '',
     basePath: entity.navigation?.basePath ?? '',
+  }
+}
+
+function createEntityConfigFromBaseDraft(baseDraft: BaseFormDraft): EntityConfig | null {
+  const id = baseDraft.id.trim()
+  const label = baseDraft.label.trim()
+  const objectApiName = baseDraft.objectApiName.trim()
+
+  if (id.length === 0 || label.length === 0 || objectApiName.length === 0) {
+    return null
+  }
+
+  if (id === NEW_ENTITY_SENTINEL) {
+    return null
+  }
+
+  return {
+    id,
+    label,
+    description: baseDraft.description.trim(),
+    objectApiName,
+    navigation:
+      baseDraft.basePath.trim().length > 0
+        ? { basePath: baseDraft.basePath.trim() }
+        : undefined,
   }
 }

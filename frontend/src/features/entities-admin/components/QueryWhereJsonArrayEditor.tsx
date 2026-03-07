@@ -1,7 +1,13 @@
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
+
+import { searchEntityAdminObjectFields } from '../entity-admin-api'
+import type { SalesforceObjectFieldSuggestion } from '../entity-admin-types'
+
 type QueryWhereJsonArrayEditorProps = {
   value: string
   onChange: (value: string) => void
   availableFields: string[]
+  objectApiName?: string
 }
 
 type ValueType = 'string' | 'number' | 'boolean' | 'null' | 'array'
@@ -26,12 +32,85 @@ export function QueryWhereJsonArrayEditor({
   value,
   onChange,
   availableFields,
+  objectApiName,
 }: QueryWhereJsonArrayEditorProps) {
-  const fieldOptions = availableFields
-    .map((field) => field.trim())
-    .filter((field) => field.length > 0)
-  const fieldListId = 'query-where-field-options'
+  const fieldListId = useId()
+  const [suggestions, setSuggestions] = useState<SalesforceObjectFieldSuggestion[]>([])
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false)
+  const [suggestionsError, setSuggestionsError] = useState<string | null>(null)
+  const searchTimeoutRef = useRef<number | null>(null)
+  const requestIdRef = useRef(0)
+  const normalizedObjectApiName = objectApiName?.trim() ?? ''
+  const effectiveSuggestionsError =
+    normalizedObjectApiName.length > 0 ? suggestionsError : null
+  const effectiveLoadingSuggestions =
+    normalizedObjectApiName.length > 0 ? loadingSuggestions : false
+  const fieldOptions = useMemo(() => {
+    const normalizedAvailableFields = availableFields
+      .map((field) => field.trim())
+      .filter((field) => field.length > 0)
+    const suggestionNames =
+      normalizedObjectApiName.length > 0
+        ? suggestions.map((field) => field.name.trim()).filter(Boolean)
+        : []
+
+    return Array.from(new Set([...normalizedAvailableFields, ...suggestionNames])).sort(
+      (left, right) => left.localeCompare(right),
+    )
+  }, [availableFields, normalizedObjectApiName, suggestions])
   const { rows, error } = parseWhereConditions(value)
+
+  const scheduleFieldSuggestions = (nextValue: string) => {
+    if (searchTimeoutRef.current !== null) {
+      window.clearTimeout(searchTimeoutRef.current)
+    }
+
+    if (normalizedObjectApiName.length === 0) {
+      return
+    }
+
+    setLoadingSuggestions(true)
+    setSuggestionsError(null)
+    const nextRequestId = requestIdRef.current + 1
+    requestIdRef.current = nextRequestId
+
+    searchTimeoutRef.current = window.setTimeout(() => {
+      void searchEntityAdminObjectFields(normalizedObjectApiName, nextValue.trim(), 50)
+        .then((payload) => {
+          if (requestIdRef.current !== nextRequestId) {
+            return
+          }
+
+          setSuggestions(payload.items ?? [])
+          setSuggestionsError(null)
+        })
+        .catch((fetchError) => {
+          if (requestIdRef.current !== nextRequestId) {
+            return
+          }
+
+          const message =
+            fetchError instanceof Error
+              ? fetchError.message
+              : 'Errore caricamento campi Salesforce'
+          setSuggestions([])
+          setSuggestionsError(message)
+        })
+        .finally(() => {
+          if (requestIdRef.current === nextRequestId) {
+            setLoadingSuggestions(false)
+          }
+        })
+    }, 200)
+  }
+
+  useEffect(() => {
+    return () => {
+      if (searchTimeoutRef.current !== null) {
+        window.clearTimeout(searchTimeoutRef.current)
+      }
+    }
+  }, [])
 
   const emitRows = (nextRows: WhereConditionDraft[]) => {
     const serialized = serializeWhereConditions(nextRows)
@@ -89,6 +168,12 @@ export function QueryWhereJsonArrayEditor({
         </p>
       ) : null}
 
+      {!error && effectiveSuggestionsError ? (
+        <p className="mt-2 rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-xs text-rose-700">
+          {effectiveSuggestionsError}
+        </p>
+      ) : null}
+
       {fieldOptions.length > 0 ? (
         <datalist id={fieldListId}>
           {fieldOptions.map((field) => (
@@ -114,7 +199,19 @@ export function QueryWhereJsonArrayEditor({
                   list={fieldListId}
                   type="text"
                   value={row.field}
-                  onChange={(event) => updateRow(index, { field: event.target.value })}
+                  onFocus={() => scheduleFieldSuggestions(row.field)}
+                  onChange={(event) => {
+                    const nextValue = event.target.value
+                    scheduleFieldSuggestions(nextValue)
+                    updateRow(index, { field: nextValue })
+                  }}
+                  placeholder={
+                    normalizedObjectApiName.length > 0
+                      ? effectiveLoadingSuggestions
+                        ? 'Caricamento campi queryabili...'
+                        : 'Cerca tra i campi queryabili Salesforce'
+                      : undefined
+                  }
                   className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
                 />
               </label>
