@@ -136,6 +136,11 @@ export type VisibilityDebugRequest = {
   requestedFields?: string[]
 }
 
+export type VisibilityDebugPreviewRequest = VisibilityDebugRequest & {
+  requestedFields: string[]
+  limit?: number
+}
+
 export type VisibilityDebugContactSuggestion = {
   id: string
   name?: string
@@ -166,4 +171,18 @@ export type VisibilityDebugEvaluation = {
   baseWhere?: string
   finalWhere?: string
   rowCount?: number
+}
+
+export type VisibilityDebugPreviewScalar = string | number | boolean | null
+
+export type VisibilityDebugPreviewSkipReason = 'VISIBILITY_DENY' | 'NO_VISIBLE_FIELDS'
+
+export type VisibilityDebugPreview = {
+  visibility: VisibilityDebugEvaluation
+  selectedFields: string[]
+  soql?: string
+  records: Array<Record<string, VisibilityDebugPreviewScalar>>
+  rowCount: number
+  executed: boolean
+  executionSkippedReason?: VisibilityDebugPreviewSkipReason
 }

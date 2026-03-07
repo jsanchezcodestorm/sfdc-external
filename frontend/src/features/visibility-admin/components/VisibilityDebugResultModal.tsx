@@ -1,10 +1,15 @@
 import { DetailBlock, DetailMetric, ToneBadge } from './VisibilityAdminPrimitives'
 
-import type { VisibilityDebugEvaluation } from '../visibility-admin-types'
+import type {
+  VisibilityDebugEvaluation,
+  VisibilityDebugPreview,
+  VisibilityDebugPreviewScalar,
+} from '../visibility-admin-types'
 
 type VisibilityDebugResultModalProps = {
   open: boolean
   result: VisibilityDebugEvaluation | null
+  preview: VisibilityDebugPreview | null
   onClose: () => void
 }
 
@@ -51,12 +56,92 @@ function BadgeList({
   )
 }
 
+function formatPreviewValue(value: VisibilityDebugPreviewScalar): string {
+  if (value === null) {
+    return '-'
+  }
+
+  return String(value)
+}
+
+function buildPreviewStatusLabel(preview: VisibilityDebugPreview): string {
+  if (preview.executed) {
+    return 'Preview eseguita'
+  }
+
+  return preview.executionSkippedReason === 'VISIBILITY_DENY'
+    ? 'Preview bloccata'
+    : 'Preview senza campi'
+}
+
+function buildPreviewSkipMessage(preview: VisibilityDebugPreview): string {
+  if (preview.executionSkippedReason === 'VISIBILITY_DENY') {
+    return 'Preview non eseguita: la visibility ha negato l accesso per questo contesto.'
+  }
+
+  if (preview.executionSkippedReason === 'NO_VISIBLE_FIELDS') {
+    return 'Preview non eseguita: nessuno dei campi richiesti resta visibile dopo il filtro field-level.'
+  }
+
+  return 'Preview non eseguita.'
+}
+
+function PreviewRecordsTable({
+  selectedFields,
+  records,
+}: {
+  selectedFields: string[]
+  records: Array<Record<string, VisibilityDebugPreviewScalar>>
+}) {
+  if (selectedFields.length === 0) {
+    return <p className="text-sm text-slate-700">Nessun campo selezionato per il preview.</p>
+  }
+
+  if (records.length === 0) {
+    return <p className="text-sm text-slate-700">Nessun record restituito dal preview.</p>
+  }
+
+  return (
+    <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+      <table className="min-w-full divide-y divide-slate-200 text-left text-sm text-slate-700">
+        <thead className="bg-slate-50">
+          <tr>
+            {selectedFields.map((fieldName) => (
+              <th
+                key={fieldName}
+                scope="col"
+                className="px-3 py-2 font-semibold text-slate-600"
+              >
+                {fieldName}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100 bg-white">
+          {records.map((record, rowIndex) => (
+            <tr key={`preview-row-${rowIndex}`}>
+              {selectedFields.map((fieldName) => (
+                <td key={`${rowIndex}-${fieldName}`} className="px-3 py-2 align-top text-slate-800">
+                  {formatPreviewValue(record[fieldName] ?? null)}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 export function VisibilityDebugResultModal({
   open,
   result,
+  preview,
   onClose,
 }: VisibilityDebugResultModalProps) {
-  if (!open || !result) {
+  const activeResult = preview?.visibility ?? result
+
+  if (!open || !activeResult) {
     return null
   }
 
@@ -96,22 +181,27 @@ export function VisibilityDebugResultModal({
                     Decision Summary
                   </p>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <ToneBadge tone={result.decision === 'ALLOW' ? 'green' : 'rose'}>
-                      {result.decision}
+                    <ToneBadge tone={activeResult.decision === 'ALLOW' ? 'green' : 'rose'}>
+                      {activeResult.decision}
                     </ToneBadge>
-                    {result.recordType ? (
-                      <ToneBadge tone="amber">{result.recordType}</ToneBadge>
+                    {activeResult.recordType ? (
+                      <ToneBadge tone="amber">{activeResult.recordType}</ToneBadge>
+                    ) : null}
+                    {preview ? (
+                      <ToneBadge tone={preview.executed ? 'sky' : 'amber'}>
+                        {buildPreviewStatusLabel(preview)}
+                      </ToneBadge>
                     ) : null}
                   </div>
                 </div>
 
                 <div className="grid gap-3 sm:grid-cols-2 xl:min-w-[30rem] xl:grid-cols-4">
-                  <DetailMetric label="Decision" value={result.decision} />
-                  <DetailMetric label="Reason Code" value={result.reasonCode} />
-                  <DetailMetric label="Policy Version" value={String(result.policyVersion)} />
+                  <DetailMetric label="Decision" value={activeResult.decision} />
+                  <DetailMetric label="Reason Code" value={activeResult.reasonCode} />
+                  <DetailMetric label="Policy Version" value={String(activeResult.policyVersion)} />
                   <DetailMetric
                     label="Assignments"
-                    value={String(result.matchedAssignments?.length ?? 0)}
+                    value={String(activeResult.matchedAssignments?.length ?? 0)}
                   />
                 </div>
               </div>
@@ -121,16 +211,16 @@ export function VisibilityDebugResultModal({
               <div className="space-y-6">
                 <DetailBlock label="Request Context">
                   <div className="grid gap-3 sm:grid-cols-2">
-                    <MetadataItem label="Object API Name" value={result.objectApiName} />
-                    <MetadataItem label="Contact ID" value={result.contactId} monospace />
+                    <MetadataItem label="Object API Name" value={activeResult.objectApiName} />
+                    <MetadataItem label="Contact ID" value={activeResult.contactId} monospace />
                     <MetadataItem
                       label="Record Type"
-                      value={result.recordType || '-'}
+                      value={activeResult.recordType || '-'}
                     />
                     <MetadataItem
                       label="Row Count"
                       value={
-                        typeof result.rowCount === 'number' ? String(result.rowCount) : '-'
+                        typeof activeResult.rowCount === 'number' ? String(activeResult.rowCount) : '-'
                       }
                     />
                   </div>
@@ -143,7 +233,7 @@ export function VisibilityDebugResultModal({
                         Applied Cones
                       </p>
                       <BadgeList
-                        items={result.appliedCones}
+                        items={activeResult.appliedCones}
                         tone="sky"
                         emptyLabel="Nessun cone applicato."
                       />
@@ -154,7 +244,7 @@ export function VisibilityDebugResultModal({
                         Applied Rules
                       </p>
                       <BadgeList
-                        items={result.appliedRules}
+                        items={activeResult.appliedRules}
                         tone="slate"
                         emptyLabel="Nessuna rule applicata."
                       />
@@ -165,7 +255,7 @@ export function VisibilityDebugResultModal({
                         Matched Assignments
                       </p>
                       <BadgeList
-                        items={result.matchedAssignments ?? []}
+                        items={activeResult.matchedAssignments ?? []}
                         tone="amber"
                         emptyLabel="Nessun assignment matchato."
                       />
@@ -180,7 +270,7 @@ export function VisibilityDebugResultModal({
                         Compiled Fields
                       </p>
                       <BadgeList
-                        items={result.compiledFields ?? []}
+                        items={activeResult.compiledFields ?? []}
                         tone="green"
                         emptyLabel="Nessun field set whitelist compilato."
                       />
@@ -191,35 +281,67 @@ export function VisibilityDebugResultModal({
                         Denied Fields
                       </p>
                       <BadgeList
-                        items={result.deniedFields ?? []}
+                        items={activeResult.deniedFields ?? []}
                         tone="rose"
                         emptyLabel="Nessun field deny compilato."
                       />
                     </div>
+
+                    {preview ? (
+                      <div>
+                        <p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                          Selected Fields
+                        </p>
+                        <BadgeList
+                          items={preview.selectedFields}
+                          tone="sky"
+                          emptyLabel="Nessun campo selezionato per la preview."
+                        />
+                      </div>
+                    ) : null}
                   </div>
                 </DetailBlock>
               </div>
 
               <div className="space-y-6">
                 <DetailBlock label="Final WHERE" preformatted>
-                  {result.finalWhere || '-'}
+                  {activeResult.finalWhere || '-'}
                 </DetailBlock>
+
+                {preview ? (
+                  <>
+                    <DetailBlock label="Executed SOQL" preformatted>
+                      {preview.soql || '-'}
+                    </DetailBlock>
+
+                    <DetailBlock label="Preview Data">
+                      {preview.executed ? (
+                        <PreviewRecordsTable
+                          selectedFields={preview.selectedFields}
+                          records={preview.records}
+                        />
+                      ) : (
+                        <p className="text-sm text-slate-700">{buildPreviewSkipMessage(preview)}</p>
+                      )}
+                    </DetailBlock>
+                  </>
+                ) : null}
 
                 <div className="grid gap-6">
                   <DetailBlock label="Base WHERE" preformatted>
-                    {result.baseWhere || '-'}
+                    {activeResult.baseWhere || '-'}
                   </DetailBlock>
 
                   <DetailBlock label="Compiled Predicate" preformatted>
-                    {result.compiledPredicate || '-'}
+                    {activeResult.compiledPredicate || '-'}
                   </DetailBlock>
 
                   <DetailBlock label="Compiled Allow Predicate" preformatted>
-                    {result.compiledAllowPredicate || '-'}
+                    {activeResult.compiledAllowPredicate || '-'}
                   </DetailBlock>
 
                   <DetailBlock label="Compiled Deny Predicate" preformatted>
-                    {result.compiledDenyPredicate || '-'}
+                    {activeResult.compiledDenyPredicate || '-'}
                   </DetailBlock>
                 </div>
               </div>

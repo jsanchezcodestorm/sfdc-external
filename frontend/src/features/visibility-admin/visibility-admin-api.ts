@@ -9,6 +9,8 @@ import type {
   VisibilityConeListResponse,
   VisibilityDebugContactSuggestionResponse,
   VisibilityDebugEvaluation,
+  VisibilityDebugPreview,
+  VisibilityDebugPreviewRequest,
   VisibilityDebugRequest,
   VisibilityRule,
   VisibilityRuleDetailResponse,
@@ -145,6 +147,15 @@ export async function evaluateVisibilityDebug(
   payload: VisibilityDebugRequest,
 ): Promise<VisibilityDebugEvaluation> {
   return apiFetch<VisibilityDebugEvaluation>('/visibility/admin/debug/evaluate', {
+    method: 'POST',
+    body: payload,
+  })
+}
+
+export async function previewVisibilityDebug(
+  payload: VisibilityDebugPreviewRequest,
+): Promise<VisibilityDebugPreview> {
+  return apiFetch<VisibilityDebugPreview>('/visibility/admin/debug/preview', {
     method: 'POST',
     body: payload,
   })

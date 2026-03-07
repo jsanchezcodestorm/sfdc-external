@@ -3,12 +3,13 @@ import { useEffect, useMemo, useState } from 'react'
 import { fetchAclPermissions } from '../../acl-admin/acl-admin-api'
 import { SalesforceFieldMultiSelect } from '../../entities-admin/components/SalesforceFieldMultiSelect'
 import { ObjectApiNameQuickFind } from '../../entities-admin/components/detail-form/ObjectApiNameQuickFind'
-import { evaluateVisibilityDebug } from '../visibility-admin-api'
+import { evaluateVisibilityDebug, previewVisibilityDebug } from '../visibility-admin-api'
 import { ContactQuickFind } from '../components/ContactQuickFind'
 import { VisibilityDebugResultModal } from '../components/VisibilityDebugResultModal'
 import type {
   VisibilityDebugContactSuggestion,
   VisibilityDebugEvaluation,
+  VisibilityDebugPreview,
 } from '../visibility-admin-types'
 
 type DebugDraft = {
@@ -18,6 +19,7 @@ type DebugDraft = {
   recordType: string
   baseWhere: string
   requestedFields: string[]
+  previewLimit: number
 }
 
 const EMPTY_DEBUG_DRAFT: DebugDraft = {
@@ -27,15 +29,17 @@ const EMPTY_DEBUG_DRAFT: DebugDraft = {
   recordType: '',
   baseWhere: '',
   requestedFields: [],
+  previewLimit: 10,
 }
 
 export function VisibilityDebugPage() {
   const [draft, setDraft] = useState<DebugDraft>(EMPTY_DEBUG_DRAFT)
   const [permissionCodes, setPermissionCodes] = useState<string[]>([])
   const [loadingPermissions, setLoadingPermissions] = useState(true)
-  const [running, setRunning] = useState(false)
+  const [runningAction, setRunningAction] = useState<'evaluate' | 'preview' | null>(null)
   const [pageError, setPageError] = useState<string | null>(null)
   const [result, setResult] = useState<VisibilityDebugEvaluation | null>(null)
+  const [preview, setPreview] = useState<VisibilityDebugPreview | null>(null)
   const [isResultModalOpen, setIsResultModalOpen] = useState(false)
   const [selectedContactId, setSelectedContactId] = useState<string | null>(null)
   const [isRecordTypeAutoFilled, setIsRecordTypeAutoFilled] = useState(false)
@@ -120,7 +124,7 @@ export function VisibilityDebugPage() {
   }
 
   const runEvaluation = async () => {
-    setRunning(true)
+    setRunningAction('evaluate')
     setPageError(null)
 
     try {
@@ -135,17 +139,51 @@ export function VisibilityDebugPage() {
       })
 
       setResult(payload)
+      setPreview(null)
       setIsResultModalOpen(true)
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Errore esecuzione debug visibility'
       setPageError(message)
       setResult(null)
+      setPreview(null)
       setIsResultModalOpen(false)
     } finally {
-      setRunning(false)
+      setRunningAction(null)
     }
   }
+
+  const runPreview = async () => {
+    setRunningAction('preview')
+    setPageError(null)
+
+    try {
+      const payload = await previewVisibilityDebug({
+        objectApiName: draft.objectApiName.trim(),
+        contactId: draft.contactId.trim(),
+        permissions: draft.permissions,
+        recordType: draft.recordType.trim() || undefined,
+        baseWhere: draft.baseWhere.trim() || undefined,
+        requestedFields: draft.requestedFields,
+        limit: draft.previewLimit,
+      })
+
+      setResult(payload.visibility)
+      setPreview(payload)
+      setIsResultModalOpen(true)
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Errore esecuzione preview visibility'
+      setPageError(message)
+      setResult(null)
+      setPreview(null)
+      setIsResultModalOpen(false)
+    } finally {
+      setRunningAction(null)
+    }
+  }
+
+  const canRunPreview = draft.requestedFields.length > 0
 
   return (
     <div className="w-full">
@@ -224,7 +262,7 @@ export function VisibilityDebugPage() {
             label="Requested Fields"
             objectApiName={draft.objectApiName}
             value={draft.requestedFields}
-            helperText="Campo facoltativo: se valorizzato, il debug mostra anche il field set finale filtrato."
+            helperText="Campo facoltativo per l evaluate puro; obbligatorio per Preview dati."
             onChange={(requestedFields) =>
               setDraft((current) => ({
                 ...current,
@@ -232,6 +270,28 @@ export function VisibilityDebugPage() {
               }))
             }
           />
+
+          <label className="text-sm font-medium text-slate-700">
+            Preview Limit
+            <input
+              type="number"
+              min={1}
+              max={25}
+              value={draft.previewLimit}
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  previewLimit: Number.isFinite(event.target.valueAsNumber)
+                    ? event.target.valueAsNumber
+                    : 10,
+                }))
+              }
+              className="mt-2 block w-full max-w-40 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+            />
+            <span className="mt-1 block text-xs text-slate-500">
+              Campione massimo 25 record per preview.
+            </span>
+          </label>
 
           <div>
             <p className="text-sm font-medium text-slate-700">Permissions</p>
@@ -259,16 +319,26 @@ export function VisibilityDebugPage() {
             )}
           </div>
 
-          <div className="flex justify-end">
+          <div className="flex flex-wrap justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                void runPreview()
+              }}
+              disabled={runningAction !== null || !canRunPreview}
+              className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-2 text-sm font-semibold text-sky-900 transition hover:border-sky-300 hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-65"
+            >
+              {runningAction === 'preview' ? 'Preview...' : 'Preview dati'}
+            </button>
             <button
               type="button"
               onClick={() => {
                 void runEvaluation()
               }}
-              disabled={running}
+              disabled={runningAction !== null}
               className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-65"
             >
-              {running ? 'Valutazione...' : 'Esegui debug'}
+              {runningAction === 'evaluate' ? 'Valutazione...' : 'Esegui debug'}
             </button>
           </div>
         </div>
@@ -277,6 +347,7 @@ export function VisibilityDebugPage() {
       <VisibilityDebugResultModal
         open={isResultModalOpen}
         result={result}
+        preview={preview}
         onClose={() => setIsResultModalOpen(false)}
       />
     </div>
