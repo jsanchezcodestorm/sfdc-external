@@ -198,6 +198,7 @@ model EntityConfigRecord {
   listConfig     EntityListConfigRecord?
   detailConfig   EntityDetailConfigRecord?
   formConfig     EntityFormConfigRecord?
+  appAssignments AppEntityAssignmentRecord[]
 
   @@map("entity_configs")
 }
@@ -318,6 +319,49 @@ model EntityFormSectionConfigRecord {
 
   @@index([entityId, sortOrder])
   @@map("entity_form_section_configs")
+}
+
+model AppConfigRecord {
+  id          String                        @id @db.VarChar(64)
+  label       String                        @db.VarChar(128)
+  description String?                       @db.VarChar(512)
+  sortOrder   Int                           @default(0)
+  createdAt   DateTime                      @default(now())
+  updatedAt   DateTime                      @updatedAt
+  entities    AppEntityAssignmentRecord[]
+  permissions AppPermissionAssignmentRecord[]
+
+  @@index([sortOrder, label])
+  @@map("app_configs")
+}
+
+model AppEntityAssignmentRecord {
+  appId     String             @db.VarChar(64)
+  entityId  String             @db.VarChar(64)
+  sortOrder Int
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+  app       AppConfigRecord    @relation(fields: [appId], references: [id], onDelete: Cascade)
+  entity    EntityConfigRecord @relation(fields: [entityId], references: [id], onDelete: Cascade)
+
+  @@id([appId, entityId])
+  @@index([appId, sortOrder])
+  @@index([entityId])
+  @@map("app_entity_assignments")
+}
+
+model AppPermissionAssignmentRecord {
+  appId          String          @db.VarChar(64)
+  permissionCode String          @db.VarChar(80)
+  sortOrder      Int
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  app            AppConfigRecord @relation(fields: [appId], references: [id], onDelete: Cascade)
+
+  @@id([appId, permissionCode])
+  @@index([appId, sortOrder])
+  @@index([permissionCode])
+  @@map("app_permission_assignments")
 }
 
 model AclPermissionRecord {

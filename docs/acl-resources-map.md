@@ -6,6 +6,7 @@ Questo documento definisce come progettare, implementare e governare ACL nel pro
 Obiettivi:
 - rendere PostgreSQL l unica sorgente di verita per permission catalog, default permissions e risorse
 - rendere PostgreSQL la sorgente di verita anche per le assegnazioni permission -> Contact
+- rendere PostgreSQL la sorgente di verita anche per il mapping permission -> app disponibili
 - mantenere enforcement backend fail-closed
 - dare una mappa operativa dei resource id usati dall applicazione
 
@@ -27,6 +28,12 @@ Gestione amministrativa:
 - `GET /acl/admin/contact-permissions/:contactId`
 - `PUT /acl/admin/contact-permissions/:contactId`
 - `DELETE /acl/admin/contact-permissions/:contactId`
+- `GET /acl/admin/contact-suggestions`
+- `GET /apps/admin`
+- `GET /apps/admin/:appId`
+- `POST /apps/admin`
+- `PUT /apps/admin/:appId`
+- `DELETE /apps/admin/:appId`
 
 Il `PUT` sostituisce in modo atomico l intero snapshot:
 ```json
@@ -49,7 +56,14 @@ Default permissions:
 Direct contact permissions:
 - codici permission espliciti assegnati a uno specifico `Contact`
 - si combinano in modo additivo con i default permissions
-- diventano effettivi alla sessione successiva
+- diventano effettivi dalla request autenticata successiva
+
+Permission -> app assignments:
+- ogni permission puo pubblicare zero o piu app nel launcher frontend
+- il mapping e gestito nel contratto admin delle permission tramite `appIds`
+- `GET /apps/available` restituisce solo le app raggiunte da almeno una permission effettiva dell utente
+- per ogni app, il backend include solo le entity che passano il controllo ACL `entity:<entityId>`
+- un app senza entity visibili non viene restituita al frontend
 
 Resource types supportati:
 - `rest`
@@ -75,6 +89,8 @@ REST:
 - `rest:global-search`
 - `rest:entities-read`
 - `rest:entities-write`
+- `rest:apps-read`
+- `rest:apps-admin`
 - `rest:entities-config-admin`
 - `rest:query-execute`
 - `rest:query-template-admin`
@@ -94,6 +110,7 @@ QUERY:
 ROUTE:
 - `route:home`
 - `route:operations-pipeline`
+- `route:admin-apps`
 - `route:admin-visibility`
 - `route:admin-entity-config`
 - `route:admin-acl`

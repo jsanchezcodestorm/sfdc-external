@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 
 import { AclModule } from './acl/acl.module';
+import { AppsModule } from './apps/apps.module';
 import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
 import { EntitiesModule } from './entities/entities.module';
@@ -22,6 +23,7 @@ import { VisibilityModule } from './visibility/visibility.module';
     AuditModule,
     PrismaModule,
     AclModule,
+    AppsModule,
     AuthModule,
     SalesforceModule,
     VisibilityModule,

@@ -40,6 +40,7 @@ flowchart LR
 ### Backend (NestJS)
 - `Auth`: login Google, sessione JWT HttpOnly, restore session
 - `ACL`: risorse `rest:*`, `entity:*`, `query:*`, `route:*`
+- `Apps Catalog`: catalogo app, associazioni app -> entity e permission -> app
 - `Salesforce Connector`: query/CRUD/describe/search centralizzati via `jsforce`
 - `Entities Engine`: configurazioni list/detail/form/related list guidate da JSON
 - `Query Engine`: template query DSL/SOQL con validazioni runtime
@@ -47,7 +48,9 @@ flowchart LR
 
 ### Frontend (React/Vite)
 - autenticazione tramite cookie di sessione backend
+- launcher home che mostra le app disponibili per l utente autenticato
 - routing protetto e navigazione dinamica guidata da ACL
+- backoffice `/#/admin/apps` per il catalogo app e integrazione ACL
 - consumo endpoint backend senza accesso diretto a Salesforce
 
 ### PostgreSQL (Prisma)
@@ -58,6 +61,12 @@ Repository unico per visibility:
 - `visibility.user_scope_cache`
 - `visibility.audit_log`
 
+Repository tecnico aggiuntivo per catalogo app e ACL:
+- `app_configs`
+- `app_entity_assignments`
+- `app_permission_assignments`
+- `acl_contact_permissions`
+
 ## 6) Flussi chiave
 
 ### 6.1 Login e sessione
@@ -65,6 +74,7 @@ Repository unico per visibility:
 2. Backend valida token e risolve Contact Salesforce attivo
 3. Backend emette JWT e lo salva in cookie HttpOnly
 4. Ogni chiamata API usa cookie + guard di sessione
+5. A ogni request autenticata il backend ricalcola i permission code effettivi come `defaultPermissions + acl_contact_permissions + admin fallback`
 
 ### 6.2 Lettura dati protetta
 1. richiesta API autenticata
@@ -77,6 +87,14 @@ Repository unico per visibility:
 ### 6.3 Configurazione dinamica
 - entita e query template sono lette da file versionati
 - modifiche funzionali (liste, colonne, filtri, template) senza toccare codice core
+
+### 6.4 Catalogo app e launcher
+1. Il backoffice gestisce il catalogo app tramite `/#/admin/apps`
+2. Ogni app puo associare piu entity configurate
+3. Ogni permission puo pubblicare zero o piu app tramite `appIds`
+4. La home autenticata chiama `GET /apps/available`
+5. Il backend filtra le app per permission effettive e poi per ACL `entity:<entityId>`
+6. Il frontend salva in `localStorage` l `appId` selezionato per utente e usa i path entity esistenti `/#/s/:entityId`
 
 ## 7) Modello di sicurezza
 - autenticazione federata Google + sessione cookie sicura
@@ -106,19 +124,34 @@ Repository unico per visibility:
 - metriche: latenza query, hit/miss cache, errori policy/auth
 - runbook produzione per deploy, incident e rollback
 
-## 11) Confini e non-obiettivi
+## 11) Contratti applicativi rilevanti
+Catalogo app admin:
+- `GET /apps/admin` -> `{ items: [{ id, label, description?, sortOrder, entityCount, permissionCount, updatedAt }] }`
+- `GET /apps/admin/:appId` -> `{ app: { id, label, description?, sortOrder, entityIds: string[] } }`
+- `POST|PUT /apps/admin` -> `{ app: { id, label, description?, sortOrder?, entityIds: string[] } }`
+
+Launcher utente:
+- `GET /apps/available` -> `{ items: [{ id, label, description?, entities: [{ id, label, description?, basePath?, objectApiName }] }] }`
+- il launcher non introduce un nuovo enforcement applicativo oltre ad ACL e visibility gia esistenti
+- la selezione dell app resta un contesto UI persistito per utente nel browser
+
+ACL admin permission:
+- mutation permission -> `{ permission: { code, label?, description?, aliases? }, appIds: string[] }`
+- detail permission -> `appIds[]` e `appCount`
+
+## 12) Confini e non-obiettivi
 - Salesforce resta system of record business
 - PostgreSQL non sostituisce Salesforce sui dati dominio, ma governa policy/cache/audit visibility
 - il frontend non applica regole di sicurezza definitive: enforcement finale solo backend
 
-## 12) Roadmap adozione
+## 13) Roadmap adozione
 - Fase A: foundation (monorepo, auth, connector)
 - Fase B: ACL e navigazione
 - Fase C: entities/query config-driven
 - Fase D: visibility engine + audit + policy repository PostgreSQL
 - Fase E: hardening, performance, runbook
 
-## 13) Documenti correlati
+## 14) Documenti correlati
 - `docs/security-model.md`
 - `docs/acl-resources-map.md`
 - `docs/entity-config-guide.md`
