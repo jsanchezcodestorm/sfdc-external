@@ -1,5 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 
+import { AuditWriteService } from '../audit/audit-write.service';
+
 import { AclAdminConfigRepository } from './acl-admin-config.repository';
 import type {
   AclAdminDefaultPermissionsResponse,
@@ -23,7 +25,8 @@ export class AclAdminConfigService {
   constructor(
     private readonly aclConfigRepository: AclConfigRepository,
     private readonly aclAdminConfigRepository: AclAdminConfigRepository,
-    private readonly aclService: AclService
+    private readonly aclService: AclService,
+    private readonly auditWriteService: AuditWriteService
   ) {}
 
   async listPermissions(): Promise<AclAdminPermissionListResponse> {
@@ -50,6 +53,15 @@ export class AclAdminConfigService {
     const permission = normalizeAclPermissionDefinitionInput(payload, 'permission');
     const persisted = await this.persistSnapshot(upsertPermissionInSnapshot(snapshot, permission));
     const nextPermission = this.requirePermission(persisted, permission.code);
+    await this.auditWriteService.recordApplicationSuccessOrThrow({
+      action: 'ACL_PERMISSION_CREATE',
+      targetType: 'acl-permission',
+      targetId: permission.code,
+      payload: permission,
+      metadata: {
+        aliasesCount: nextPermission.aliases?.length ?? 0
+      }
+    });
     return this.mapPermissionDetail(persisted, nextPermission);
   }
 
@@ -63,6 +75,16 @@ export class AclAdminConfigService {
       upsertPermissionInSnapshot(snapshot, permission, previousCode)
     );
     const nextPermission = this.requirePermission(persisted, permission.code);
+    await this.auditWriteService.recordApplicationSuccessOrThrow({
+      action: 'ACL_PERMISSION_UPDATE',
+      targetType: 'acl-permission',
+      targetId: permission.code,
+      payload: permission,
+      metadata: {
+        previousCode,
+        aliasesCount: nextPermission.aliases?.length ?? 0
+      }
+    });
     return this.mapPermissionDetail(persisted, nextPermission);
   }
 
@@ -71,6 +93,14 @@ export class AclAdminConfigService {
     const snapshot = await this.loadSnapshot();
     this.requirePermission(snapshot, normalizedCode);
     await this.persistSnapshot(deletePermissionFromSnapshot(snapshot, normalizedCode));
+    await this.auditWriteService.recordApplicationSuccessOrThrow({
+      action: 'ACL_PERMISSION_DELETE',
+      targetType: 'acl-permission',
+      targetId: normalizedCode,
+      metadata: {
+        permissionCode: normalizedCode
+      }
+    });
   }
 
   async listResources(): Promise<AclAdminResourceListResponse> {
@@ -107,6 +137,16 @@ export class AclAdminConfigService {
     const resource = normalizeAclResourceConfigInput(payload, 'resource');
     const persisted = await this.persistSnapshot(upsertResourceInSnapshot(snapshot, resource));
     const nextResource = this.requireResource(persisted, resource.id);
+    await this.auditWriteService.recordApplicationSuccessOrThrow({
+      action: 'ACL_RESOURCE_CREATE',
+      targetType: 'acl-resource',
+      targetId: resource.id,
+      payload: resource,
+      metadata: {
+        type: nextResource.type,
+        permissionCount: nextResource.permissions.length
+      }
+    });
     return { resource: nextResource };
   }
 
@@ -120,6 +160,17 @@ export class AclAdminConfigService {
       upsertResourceInSnapshot(snapshot, resource, previousId)
     );
     const nextResource = this.requireResource(persisted, resource.id);
+    await this.auditWriteService.recordApplicationSuccessOrThrow({
+      action: 'ACL_RESOURCE_UPDATE',
+      targetType: 'acl-resource',
+      targetId: resource.id,
+      payload: resource,
+      metadata: {
+        previousId,
+        type: nextResource.type,
+        permissionCount: nextResource.permissions.length
+      }
+    });
     return { resource: nextResource };
   }
 
@@ -128,6 +179,14 @@ export class AclAdminConfigService {
     const snapshot = await this.loadSnapshot();
     this.requireResource(snapshot, normalizedId);
     await this.persistSnapshot(deleteResourceFromSnapshot(snapshot, normalizedId));
+    await this.auditWriteService.recordApplicationSuccessOrThrow({
+      action: 'ACL_RESOURCE_DELETE',
+      targetType: 'acl-resource',
+      targetId: normalizedId,
+      metadata: {
+        resourceId: normalizedId
+      }
+    });
   }
 
   async getDefaultPermissions(): Promise<AclAdminDefaultPermissionsResponse> {
@@ -145,6 +204,15 @@ export class AclAdminConfigService {
     const persisted = await this.persistSnapshot({
       ...snapshot,
       defaultPermissions: nextSnapshot.defaultPermissions
+    });
+    await this.auditWriteService.recordApplicationSuccessOrThrow({
+      action: 'ACL_DEFAULT_PERMISSIONS_UPDATE',
+      targetType: 'acl-default-permissions',
+      targetId: 'default-permissions',
+      payload: permissionCodes,
+      metadata: {
+        enabledCount: persisted.defaultPermissions.length
+      }
     });
     return this.mapDefaultPermissions(persisted);
   }
