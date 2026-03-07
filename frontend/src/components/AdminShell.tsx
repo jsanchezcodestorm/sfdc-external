@@ -358,7 +358,11 @@ function buildAuditModule(pathname: string, search: string): WorkspaceSidebarMod
   const detailMatch = matchPath('/admin/audit/:stream/:auditId', pathname)
   const detailStream = detailMatch?.params.stream
   const activeStream =
-    detailStream && (detailStream === 'security' || detailStream === 'visibility' || detailStream === 'application')
+    detailStream &&
+    (detailStream === 'security' ||
+      detailStream === 'visibility' ||
+      detailStream === 'application' ||
+      detailStream === 'query')
       ? detailStream
       : parseAuditTab(new URLSearchParams(search).get('tab'))
 
@@ -389,6 +393,13 @@ function buildAuditModule(pathname: string, search: string): WorkspaceSidebarMod
         to: `${buildAuditListPath()}${buildAuditSearch('application')}`,
         caption: AUDIT_TAB_COPY.application.description,
         isActive: activeStream === 'application',
+      },
+      {
+        id: 'audit-query',
+        label: AUDIT_TAB_COPY.query.title,
+        to: `${buildAuditListPath()}${buildAuditSearch('query')}`,
+        caption: AUDIT_TAB_COPY.query.description,
+        isActive: activeStream === 'query',
       },
     ],
   }

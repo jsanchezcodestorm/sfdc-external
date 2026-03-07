@@ -3,6 +3,7 @@ import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 
 import {
   fetchApplicationAuditList,
+  fetchQueryAuditList,
   fetchSecurityAuditList,
   fetchVisibilityAuditList,
 } from '../audit-admin-api'
@@ -10,6 +11,8 @@ import type {
   ApplicationAuditQuery,
   ApplicationAuditSummary,
   AuditStream,
+  QueryAuditQuery,
+  QueryAuditSummary,
   SecurityAuditQuery,
   SecurityAuditSummary,
   VisibilityAuditQuery,
@@ -46,8 +49,14 @@ export function AuditAdminPage() {
       : {}),
     limit: DEFAULT_AUDIT_LIMIT,
   })
+  const [queryFilters, setQueryFilters] = useState<QueryAuditQuery>({
+    ...(initialTab === 'query'
+      ? (parseAuditFilters('query', searchParams) as QueryAuditQuery)
+      : {}),
+    limit: DEFAULT_AUDIT_LIMIT,
+  })
   const [items, setItems] = useState<
-    SecurityAuditSummary[] | VisibilityAuditSummary[] | ApplicationAuditSummary[]
+    SecurityAuditSummary[] | VisibilityAuditSummary[] | ApplicationAuditSummary[] | QueryAuditSummary[]
   >([])
   const [nextCursor, setNextCursor] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -63,8 +72,12 @@ export function AuditAdminPage() {
       return visibilityFilters
     }
 
-    return applicationFilters
-  }, [activeTab, applicationFilters, securityFilters, visibilityFilters])
+    if (activeTab === 'application') {
+      return applicationFilters
+    }
+
+    return queryFilters
+  }, [activeTab, applicationFilters, queryFilters, securityFilters, visibilityFilters])
 
   useEffect(() => {
     const nextTab = parseAuditTab(searchParams.get('tab'))
@@ -80,7 +93,12 @@ export function AuditAdminPage() {
       return
     }
 
-    setApplicationFilters(parseAuditFilters('application', searchParams) as ApplicationAuditQuery)
+    if (nextTab === 'application') {
+      setApplicationFilters(parseAuditFilters('application', searchParams) as ApplicationAuditQuery)
+      return
+    }
+
+    setQueryFilters(parseAuditFilters('query', searchParams) as QueryAuditQuery)
   }, [searchParams])
 
   useEffect(() => {
@@ -112,8 +130,20 @@ export function AuditAdminPage() {
           return
         }
 
-        const payload = await fetchApplicationAuditList({
-          ...applicationFilters,
+        if (activeTab === 'application') {
+          const payload = await fetchApplicationAuditList({
+            ...applicationFilters,
+            cursor: undefined,
+          })
+          if (!cancelled) {
+            setItems(payload.items)
+            setNextCursor(payload.nextCursor)
+          }
+          return
+        }
+
+        const payload = await fetchQueryAuditList({
+          ...queryFilters,
           cursor: undefined,
         })
         if (!cancelled) {
@@ -138,7 +168,7 @@ export function AuditAdminPage() {
     return () => {
       cancelled = true
     }
-  }, [activeTab, applicationFilters, securityFilters, visibilityFilters])
+  }, [activeTab, applicationFilters, queryFilters, securityFilters, visibilityFilters])
 
   function syncSearchParams(
     stream: AuditStream,
@@ -170,9 +200,16 @@ export function AuditAdminPage() {
         })
         setItems((current) => [...current, ...payload.items] as typeof current)
         setNextCursor(payload.nextCursor)
-      } else {
+      } else if (activeTab === 'application') {
         const payload = await fetchApplicationAuditList({
           ...applicationFilters,
+          cursor: nextCursor,
+        })
+        setItems((current) => [...current, ...payload.items] as typeof current)
+        setNextCursor(payload.nextCursor)
+      } else {
+        const payload = await fetchQueryAuditList({
+          ...queryFilters,
           cursor: nextCursor,
         })
         setItems((current) => [...current, ...payload.items] as typeof current)
@@ -217,13 +254,25 @@ export function AuditAdminPage() {
       return
     }
 
+    if (activeTab === 'application') {
+      const nextFilters = {
+        ...applicationFilters,
+        [key]: value,
+        cursor: undefined,
+        limit: DEFAULT_AUDIT_LIMIT,
+      }
+      setApplicationFilters(nextFilters)
+      syncSearchParams(activeTab, nextFilters)
+      return
+    }
+
     const nextFilters = {
-      ...applicationFilters,
+      ...queryFilters,
       [key]: value,
       cursor: undefined,
       limit: DEFAULT_AUDIT_LIMIT,
     }
-    setApplicationFilters(nextFilters)
+    setQueryFilters(nextFilters)
     syncSearchParams(activeTab, nextFilters)
   }
 
@@ -415,6 +464,59 @@ export function AuditAdminPage() {
               </label>
             </>
           ) : null}
+          {activeTab === 'query' ? (
+            <>
+              <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                Query Kind
+                <input
+                  type="text"
+                  value={queryFilters.queryKind ?? ''}
+                  onChange={(event) => updateFilter('queryKind', event.target.value)}
+                  className="mt-2 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+                />
+              </label>
+              <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                Status
+                <select
+                  value={queryFilters.status ?? ''}
+                  onChange={(event) => updateFilter('status', event.target.value)}
+                  className="mt-2 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+                >
+                  <option value="">Tutti</option>
+                  <option value="PENDING">PENDING</option>
+                  <option value="SUCCESS">SUCCESS</option>
+                  <option value="FAILURE">FAILURE</option>
+                </select>
+              </label>
+              <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                Target Id
+                <input
+                  type="text"
+                  value={queryFilters.targetId ?? ''}
+                  onChange={(event) => updateFilter('targetId', event.target.value)}
+                  className="mt-2 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+                />
+              </label>
+              <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                Object API Name
+                <input
+                  type="text"
+                  value={queryFilters.objectApiName ?? ''}
+                  onChange={(event) => updateFilter('objectApiName', event.target.value)}
+                  className="mt-2 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+                />
+              </label>
+              <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                Record Id
+                <input
+                  type="text"
+                  value={queryFilters.recordId ?? ''}
+                  onChange={(event) => updateFilter('recordId', event.target.value)}
+                  className="mt-2 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+                />
+              </label>
+            </>
+          ) : null}
         </div>
       </section>
 
@@ -460,6 +562,16 @@ export function AuditAdminPage() {
                         <th className="px-4 py-3 text-left">Target</th>
                         <th className="px-4 py-3 text-left">Status</th>
                         <th className="px-4 py-3 text-left">Contact</th>
+                        <th className="px-4 py-3 text-right">Azioni</th>
+                      </tr>
+                    ) : null}
+                    {activeTab === 'query' ? (
+                      <tr>
+                        <th className="px-4 py-3 text-left">Created</th>
+                        <th className="px-4 py-3 text-left">Query</th>
+                        <th className="px-4 py-3 text-left">Target</th>
+                        <th className="px-4 py-3 text-left">Status</th>
+                        <th className="px-4 py-3 text-left">Rows</th>
                         <th className="px-4 py-3 text-right">Azioni</th>
                       </tr>
                     ) : null}
@@ -547,6 +659,40 @@ export function AuditAdminPage() {
                               <div className="text-xs text-slate-500">{item.errorCode || '-'}</div>
                             </td>
                             <td className="px-4 py-3 text-slate-700">{item.contactId}</td>
+                            <td className="px-4 py-3 text-right">
+                              <button
+                                type="button"
+                                onClick={() => openDetail(item.id)}
+                                className="rounded-md border border-slate-300 px-2 py-1 text-xs font-semibold uppercase tracking-[0.08em] text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
+                              >
+                                View
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      : null}
+                    {activeTab === 'query'
+                      ? (items as QueryAuditSummary[]).map((item) => (
+                          <tr key={item.id} className="bg-white">
+                            <td className="px-4 py-3 text-slate-700">
+                              {new Date(item.createdAt).toLocaleString()}
+                            </td>
+                            <td className="px-4 py-3 text-slate-700">
+                              <div className="font-semibold text-slate-900">{item.queryKind}</div>
+                              <div className="text-xs text-slate-500">{item.objectApiName}</div>
+                            </td>
+                            <td className="px-4 py-3 text-slate-700">
+                              <div>{item.targetId}</div>
+                              <div className="text-xs text-slate-500">{item.recordId || '-'}</div>
+                            </td>
+                            <td className="px-4 py-3 text-slate-700">
+                              <div>{item.status}</div>
+                              <div className="text-xs text-slate-500">{item.errorCode || '-'}</div>
+                            </td>
+                            <td className="px-4 py-3 text-slate-700">
+                              <div>{item.rowCount}</div>
+                              <div className="text-xs text-slate-500">{item.durationMs} ms</div>
+                            </td>
                             <td className="px-4 py-3 text-right">
                               <button
                                 type="button"

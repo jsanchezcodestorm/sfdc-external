@@ -5,6 +5,9 @@ import type {
   ApplicationAuditQuery,
   ApplicationAuditSummary,
   AuditCursorPage,
+  QueryAuditDetail,
+  QueryAuditQuery,
+  QueryAuditSummary,
   SecurityAuditDetail,
   SecurityAuditQuery,
   SecurityAuditSummary,
@@ -88,4 +91,20 @@ export function fetchApplicationAuditList(
 
 export function fetchApplicationAuditDetail(id: string): Promise<ApplicationAuditDetail> {
   return apiFetch<ApplicationAuditDetail>(`/audit/application/${encodeURIComponent(id)}`)
+}
+
+export function fetchQueryAuditList(
+  query: QueryAuditQuery,
+): Promise<AuditCursorPage<QueryAuditSummary>> {
+  return apiFetch<AuditCursorPage<QueryAuditSummary>>(
+    `/audit/query${buildQueryString({
+      ...query,
+      from: serializeDate(query.from),
+      to: serializeDate(query.to),
+    })}`,
+  )
+}
+
+export function fetchQueryAuditDetail(id: string): Promise<QueryAuditDetail> {
+  return apiFetch<QueryAuditDetail>(`/audit/query/${encodeURIComponent(id)}`)
 }

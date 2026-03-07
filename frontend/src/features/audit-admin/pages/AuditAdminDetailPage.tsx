@@ -3,11 +3,13 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom'
 
 import {
   fetchApplicationAuditDetail,
+  fetchQueryAuditDetail,
   fetchSecurityAuditDetail,
   fetchVisibilityAuditDetail,
 } from '../audit-admin-api'
 import type {
   ApplicationAuditDetail,
+  QueryAuditDetail,
   SecurityAuditDetail,
   VisibilityAuditDetail,
 } from '../audit-admin-types'
@@ -18,7 +20,7 @@ import {
   isAuditStream,
 } from '../audit-admin-utils'
 
-type AuditDetail = SecurityAuditDetail | VisibilityAuditDetail | ApplicationAuditDetail
+type AuditDetail = SecurityAuditDetail | VisibilityAuditDetail | ApplicationAuditDetail | QueryAuditDetail
 
 type RouteParams = {
   stream?: string
@@ -75,7 +77,16 @@ export function AuditAdminDetailPage() {
           return
         }
 
-        const payload = await fetchApplicationAuditDetail(auditId)
+        if (stream === 'application') {
+          const payload = await fetchApplicationAuditDetail(auditId)
+          if (!cancelled) {
+            setDetail(payload)
+            setPageError(null)
+          }
+          return
+        }
+
+        const payload = await fetchQueryAuditDetail(auditId)
         if (!cancelled) {
           setDetail(payload)
           setPageError(null)
@@ -110,7 +121,14 @@ export function AuditAdminDetailPage() {
   const scalarEntries = useMemo(
     () =>
       detail
-        ? Object.entries(detail).filter(([key]) => key !== 'metadata' && key !== 'result')
+        ? Object.entries(detail).filter(
+            ([key]) =>
+              key !== 'metadata' &&
+              key !== 'result' &&
+              key !== 'resolvedSoql' &&
+              key !== 'baseWhere' &&
+              key !== 'finalWhere',
+          )
         : [],
     [detail],
   )
@@ -182,6 +200,24 @@ export function AuditAdminDetailPage() {
                 <JsonPreview value={detail.result} />
               </DetailBlock>
             ) : null}
+
+            {'resolvedSoql' in detail ? (
+              <DetailBlock label="Resolved SOQL">
+                <QueryTextPreview value={detail.resolvedSoql} />
+              </DetailBlock>
+            ) : null}
+
+            {'baseWhere' in detail ? (
+              <DetailBlock label="Base WHERE">
+                <QueryTextPreview value={detail.baseWhere} />
+              </DetailBlock>
+            ) : null}
+
+            {'finalWhere' in detail ? (
+              <DetailBlock label="Final WHERE">
+                <QueryTextPreview value={detail.finalWhere} />
+              </DetailBlock>
+            ) : null}
           </div>
         ) : null}
       </section>
@@ -226,6 +262,14 @@ function JsonPreview({ value }: { value: unknown }) {
   return (
     <pre className="overflow-x-auto rounded-xl border border-slate-200 bg-slate-950 p-4 text-xs text-slate-100">
       {JSON.stringify(value ?? null, null, 2)}
+    </pre>
+  )
+}
+
+function QueryTextPreview({ value }: { value: string }) {
+  return (
+    <pre className="overflow-x-auto whitespace-pre-wrap rounded-xl border border-slate-200 bg-slate-950 p-4 text-xs text-slate-100">
+      {value.trim().length > 0 ? value : '-'}
     </pre>
   )
 }

@@ -1,4 +1,4 @@
-export type AuditStream = 'security' | 'visibility' | 'application'
+export type AuditStream = 'security' | 'visibility' | 'application' | 'query'
 
 export type AuditCursorPage<T> = {
   items: T[]
@@ -67,6 +67,32 @@ export type ApplicationAuditDetail = ApplicationAuditSummary & {
   result: unknown
 }
 
+export type QueryAuditSummary = {
+  id: string
+  requestId: string
+  createdAt: string
+  completedAt: string | null
+  contactId: string
+  queryKind: string
+  targetId: string
+  objectApiName: string
+  recordId: string | null
+  status: 'PENDING' | 'SUCCESS' | 'FAILURE'
+  rowCount: number
+  durationMs: number
+  errorCode: string | null
+}
+
+export type QueryAuditDetail = QueryAuditSummary & {
+  resolvedSoql: string
+  baseWhere: string
+  baseWhereHash: string
+  finalWhere: string
+  finalWhereHash: string
+  metadata: unknown
+  result: unknown
+}
+
 export type SecurityAuditQuery = {
   from?: string
   to?: string
@@ -104,4 +130,18 @@ export type ApplicationAuditQuery = {
   status?: 'PENDING' | 'SUCCESS' | 'FAILURE' | ''
   targetType?: string
   objectApiName?: string
+}
+
+export type QueryAuditQuery = {
+  from?: string
+  to?: string
+  contactId?: string
+  requestId?: string
+  cursor?: string
+  limit?: number
+  queryKind?: string
+  status?: 'PENDING' | 'SUCCESS' | 'FAILURE' | ''
+  targetId?: string
+  objectApiName?: string
+  recordId?: string
 }

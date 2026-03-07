@@ -1,6 +1,7 @@
 import type {
   ApplicationAuditQuery,
   AuditStream,
+  QueryAuditQuery,
   SecurityAuditQuery,
   VisibilityAuditQuery,
 } from './audit-admin-types'
@@ -9,6 +10,7 @@ type SearchableAuditFilters =
   | SecurityAuditQuery
   | VisibilityAuditQuery
   | ApplicationAuditQuery
+  | QueryAuditQuery
 
 const COMMON_FILTER_KEYS = ['from', 'to', 'contactId', 'requestId'] as const
 
@@ -16,11 +18,12 @@ const STREAM_FILTER_KEYS: Record<AuditStream, readonly string[]> = {
   security: ['eventType', 'decision', 'reasonCode', 'endpoint'],
   visibility: ['objectApiName', 'queryKind', 'decision', 'reasonCode'],
   application: ['action', 'status', 'targetType', 'objectApiName'],
+  query: ['queryKind', 'status', 'targetId', 'objectApiName', 'recordId'],
 }
 
 export const DEFAULT_AUDIT_LIMIT = 25
 
-export const AUDIT_STREAMS: AuditStream[] = ['security', 'visibility', 'application']
+export const AUDIT_STREAMS: AuditStream[] = ['security', 'visibility', 'application', 'query']
 
 export const AUDIT_TAB_COPY: Record<AuditStream, { title: string; description: string }> = {
   security: {
@@ -35,10 +38,14 @@ export const AUDIT_TAB_COPY: Record<AuditStream, { title: string; description: s
     title: 'Application',
     description: 'CRUD applicativi, configurazioni admin e mutazioni verso Salesforce.',
   },
+  query: {
+    title: 'Query',
+    description: 'Query SOQL runtime risolte, complete di testo finale e outcome esecuzione.',
+  },
 }
 
 export function isAuditStream(value: string | null | undefined): value is AuditStream {
-  return value === 'security' || value === 'visibility' || value === 'application'
+  return value === 'security' || value === 'visibility' || value === 'application' || value === 'query'
 }
 
 export function parseAuditTab(value: string | null | undefined): AuditStream {
