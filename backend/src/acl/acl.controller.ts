@@ -57,7 +57,7 @@ export class AclController {
   @Post('admin/permissions')
   @AclResource('rest:acl-config-admin')
   createPermission(@Body() dto: UpsertAclPermissionDto): Promise<AclAdminPermissionResponse> {
-    return this.aclAdminConfigService.createPermission(dto.permission);
+    return this.aclAdminConfigService.createPermission(dto.permission, dto.appIds);
   }
 
   @Put('admin/permissions/:permissionCode')
@@ -66,7 +66,7 @@ export class AclController {
     @Param('permissionCode') permissionCode: string,
     @Body() dto: UpsertAclPermissionDto
   ): Promise<AclAdminPermissionResponse> {
-    return this.aclAdminConfigService.updatePermission(permissionCode, dto.permission);
+    return this.aclAdminConfigService.updatePermission(permissionCode, dto.permission, dto.appIds);
   }
 
   @Delete('admin/permissions/:permissionCode')

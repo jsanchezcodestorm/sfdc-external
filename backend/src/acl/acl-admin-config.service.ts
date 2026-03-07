@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 
 import { AuditWriteService } from '../audit/audit-write.service';
 
@@ -30,28 +30,44 @@ export class AclAdminConfigService {
   ) {}
 
   async listPermissions(): Promise<AclAdminPermissionListResponse> {
-    const snapshot = await this.loadSnapshot();
+    const [snapshot, permissionAppIds] = await Promise.all([
+      this.loadSnapshot(),
+      this.loadPermissionAppIds()
+    ]);
     return {
-      items: snapshot.permissions.map((permission) => this.mapPermissionSummary(snapshot, permission))
+      items: snapshot.permissions.map((permission) =>
+        this.mapPermissionSummary(snapshot, permission, permissionAppIds)
+      )
     };
   }
 
   async getPermission(permissionCode: string): Promise<AclAdminPermissionResponse> {
     const normalizedCode = normalizeCanonicalPermissionCode(permissionCode, 'permissionCode');
-    const snapshot = await this.loadSnapshot();
+    const [snapshot, permissionAppIds] = await Promise.all([
+      this.loadSnapshot(),
+      this.loadPermissionAppIds()
+    ]);
     const permission = snapshot.permissions.find((entry) => entry.code === normalizedCode);
 
     if (!permission) {
       throw new NotFoundException(`ACL permission ${normalizedCode} not found`);
     }
 
-    return this.mapPermissionDetail(snapshot, permission);
+    return this.mapPermissionDetail(snapshot, permission, permissionAppIds);
   }
 
-  async createPermission(payload: unknown): Promise<AclAdminPermissionResponse> {
+  async createPermission(payload: unknown, appIdsPayload: unknown): Promise<AclAdminPermissionResponse> {
     const snapshot = await this.loadSnapshot();
     const permission = normalizeAclPermissionDefinitionInput(payload, 'permission');
-    const persisted = await this.persistSnapshot(upsertPermissionInSnapshot(snapshot, permission));
+    const appIds = await this.normalizeAppIds(appIdsPayload);
+    const persisted = await this.persistSnapshot(upsertPermissionInSnapshot(snapshot, permission), {
+      replacedPermissionAppAssignments: [
+        {
+          permissionCode: permission.code,
+          appIds
+        }
+      ]
+    });
     const nextPermission = this.requirePermission(persisted, permission.code);
     await this.auditWriteService.recordApplicationSuccessOrThrow({
       action: 'ACL_PERMISSION_CREATE',
@@ -59,30 +75,42 @@ export class AclAdminConfigService {
       targetId: permission.code,
       payload: permission,
       metadata: {
-        aliasesCount: nextPermission.aliases?.length ?? 0
+        aliasesCount: nextPermission.aliases?.length ?? 0,
+        appCount: appIds.length
       }
     });
-    return this.mapPermissionDetail(persisted, nextPermission);
+    return this.mapPermissionDetail(persisted, nextPermission, new Map([[permission.code, appIds]]));
   }
 
-  async updatePermission(permissionCode: string, payload: unknown): Promise<AclAdminPermissionResponse> {
+  async updatePermission(
+    permissionCode: string,
+    payload: unknown,
+    appIdsPayload: unknown
+  ): Promise<AclAdminPermissionResponse> {
     const previousCode = normalizeCanonicalPermissionCode(permissionCode, 'permissionCode');
     const snapshot = await this.loadSnapshot();
     this.requirePermission(snapshot, previousCode);
 
     const permission = normalizeAclPermissionDefinitionInput(payload, 'permission');
+    const appIds = await this.normalizeAppIds(appIdsPayload);
     const persisted = await this.persistSnapshot(
       upsertPermissionInSnapshot(snapshot, permission, previousCode),
-      previousCode !== permission.code
-        ? {
-            renamedPermissionCodes: [
+      {
+        renamedPermissionCodes: previousCode !== permission.code
+          ? [
               {
                 previousCode,
-                nextCode: permission.code,
-              },
-            ],
+                nextCode: permission.code
+              }
+            ]
+          : undefined,
+        replacedPermissionAppAssignments: [
+          {
+            permissionCode: permission.code,
+            appIds
           }
-        : undefined
+        ]
+      }
     );
     const nextPermission = this.requirePermission(persisted, permission.code);
     await this.auditWriteService.recordApplicationSuccessOrThrow({
@@ -92,10 +120,11 @@ export class AclAdminConfigService {
       payload: permission,
       metadata: {
         previousCode,
-        aliasesCount: nextPermission.aliases?.length ?? 0
+        aliasesCount: nextPermission.aliases?.length ?? 0,
+        appCount: appIds.length
       }
     });
-    return this.mapPermissionDetail(persisted, nextPermission);
+    return this.mapPermissionDetail(persisted, nextPermission, new Map([[permission.code, appIds]]));
   }
 
   async deletePermission(permissionCode: string): Promise<void> {
@@ -245,25 +274,30 @@ export class AclAdminConfigService {
 
   private mapPermissionSummary(
     snapshot: AclConfigSnapshot,
-    permission: AclPermissionDefinition
+    permission: AclPermissionDefinition,
+    permissionAppIds: Map<string, string[]>
   ): AclAdminPermissionListResponse['items'][number] {
+    const appIds = permissionAppIds.get(permission.code) ?? [];
     return {
       code: permission.code,
       label: permission.label,
       description: permission.description,
       aliases: [...(permission.aliases ?? [])],
       isDefault: snapshot.defaultPermissions.includes(permission.code),
-      resourceCount: snapshot.resources.filter((resource) => resource.permissions.includes(permission.code)).length
+      resourceCount: snapshot.resources.filter((resource) => resource.permissions.includes(permission.code)).length,
+      appCount: appIds.length
     };
   }
 
   private mapPermissionDetail(
     snapshot: AclConfigSnapshot,
-    permission: AclPermissionDefinition
+    permission: AclPermissionDefinition,
+    permissionAppIds: Map<string, string[]>
   ): AclAdminPermissionResponse {
     const resourceIds = snapshot.resources
       .filter((resource) => resource.permissions.includes(permission.code))
       .map((resource) => resource.id);
+    const appIds = [...(permissionAppIds.get(permission.code) ?? [])];
 
     return {
       permission: {
@@ -272,7 +306,9 @@ export class AclAdminConfigService {
       },
       isDefault: snapshot.defaultPermissions.includes(permission.code),
       resourceIds,
-      resourceCount: resourceIds.length
+      resourceCount: resourceIds.length,
+      appIds,
+      appCount: appIds.length
     };
   }
 
@@ -309,6 +345,49 @@ export class AclAdminConfigService {
       ...resource,
       permissions: [...resource.permissions]
     };
+  }
+
+  private async loadPermissionAppIds(): Promise<Map<string, string[]>> {
+    const rows = await this.aclAdminConfigRepository.listPermissionAppAssignments();
+    const map = new Map<string, string[]>();
+
+    for (const row of rows) {
+      const current = map.get(row.permissionCode);
+      if (current) {
+        current.push(row.appId);
+      } else {
+        map.set(row.permissionCode, [row.appId]);
+      }
+    }
+
+    return map;
+  }
+
+  private async normalizeAppIds(value: unknown): Promise<string[]> {
+    if (!Array.isArray(value)) {
+      throw new BadRequestException('appIds must be an array');
+    }
+
+    const appIds = value.map((entry, index) => {
+      if (typeof entry !== 'string') {
+        throw new BadRequestException(`appIds[${index}] must be a non-empty string`);
+      }
+
+      const normalized = entry.trim();
+      if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(normalized)) {
+        throw new BadRequestException(`appIds[${index}] must be lowercase kebab-case`);
+      }
+
+      return normalized;
+    });
+    const uniqueAppIds = [...new Set(appIds)];
+
+    if (uniqueAppIds.length !== appIds.length) {
+      throw new BadRequestException('appIds must not contain duplicates');
+    }
+
+    await this.aclAdminConfigRepository.assertAppIdsExist(uniqueAppIds);
+    return uniqueAppIds;
   }
 }
 

@@ -60,7 +60,7 @@ export function AclDefaultsPage() {
     try {
       const payload = await updateAclDefaultPermissions(enabledCodes)
       setItems(payload.items ?? [])
-      setSaveInfo('Default permissions salvate su PostgreSQL')
+      setSaveInfo('Default permissions salvate')
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Errore salvataggio default permissions'

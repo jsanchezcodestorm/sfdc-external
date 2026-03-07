@@ -22,6 +22,7 @@ export type AclAdminPermissionSummary = {
   aliases: string[]
   isDefault: boolean
   resourceCount: number
+  appCount: number
 }
 
 export type AclAdminPermissionListResponse = {
@@ -33,6 +34,8 @@ export type AclAdminPermissionResponse = {
   isDefault: boolean
   resourceIds: string[]
   resourceCount: number
+  appIds: string[]
+  appCount: number
 }
 
 export type AclAdminResourceSummary = {

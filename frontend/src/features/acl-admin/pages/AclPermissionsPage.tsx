@@ -111,6 +111,7 @@ export function AclPermissionsPage() {
                   <th className="px-4 py-3 text-left">Aliases</th>
                   <th className="px-4 py-3 text-left">Default</th>
                   <th className="px-4 py-3 text-left">Resources</th>
+                  <th className="px-4 py-3 text-left">Apps</th>
                   <th className="px-4 py-3 text-right">Azioni</th>
                 </tr>
               </thead>
@@ -123,6 +124,7 @@ export function AclPermissionsPage() {
                       <td className="px-4 py-3 text-slate-700">{item.aliases.length}</td>
                       <td className="px-4 py-3 text-slate-700">{item.isDefault ? 'Si' : '-'}</td>
                       <td className="px-4 py-3 text-slate-700">{item.resourceCount}</td>
+                      <td className="px-4 py-3 text-slate-700">{item.appCount}</td>
                       <td className="px-4 py-3">
                         <div className="flex justify-end gap-2">
                           <button
@@ -149,7 +151,7 @@ export function AclPermissionsPage() {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={6} className="px-4 py-10 text-sm text-slate-500">
+                    <td colSpan={7} className="px-4 py-10 text-sm text-slate-500">
                       {query.trim().length > 0
                         ? 'Nessun permesso corrisponde al filtro.'
                         : 'Nessun permesso configurato.'}

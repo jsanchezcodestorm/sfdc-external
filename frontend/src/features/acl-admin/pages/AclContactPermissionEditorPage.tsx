@@ -322,8 +322,8 @@ export function AclContactPermissionEditorPage({
               <div>
                 <p className="text-sm font-medium text-slate-700">Explicit permissions</p>
                 <p className="mt-1 text-xs text-slate-500">
-                  Seleziona solo permission code non-default. Diventeranno effettivi dal login
-                  successivo.
+                  Seleziona solo permission code non-default. Diventano effettivi dalla prossima
+                  request autenticata.
                 </p>
               </div>
               <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">

@@ -4,9 +4,12 @@ import { useNavigate, useParams } from 'react-router-dom'
 import {
   createAclPermission,
   fetchAclPermission,
+  fetchAclPermissions,
   updateAclPermission,
 } from '../acl-admin-api'
-import type { AclPermissionDefinition } from '../acl-admin-types'
+import type { AclAdminPermissionSummary, AclPermissionDefinition } from '../acl-admin-types'
+import { fetchAppAdminList } from '../../apps-admin/apps-admin-api'
+import type { AppAdminSummary } from '../../apps-admin/apps-admin-types'
 import { createEmptyPermission, normalizePermission } from '../acl-admin-utils'
 
 type AclPermissionEditorPageProps = {
@@ -22,6 +25,9 @@ export function AclPermissionEditorPage({ mode }: AclPermissionEditorPageProps) 
   const params = useParams<RouteParams>()
   const previousCode = params.permissionCode ? decodeURIComponent(params.permissionCode) : null
   const [draft, setDraft] = useState<AclPermissionDefinition>(createEmptyPermission())
+  const [apps, setApps] = useState<AppAdminSummary[]>([])
+  const [permissions, setPermissions] = useState<AclAdminPermissionSummary[]>([])
+  const [selectedAppIds, setSelectedAppIds] = useState<string[]>([])
   const [loading, setLoading] = useState(mode === 'edit')
   const [saving, setSaving] = useState(false)
   const [pageError, setPageError] = useState<string | null>(null)
@@ -29,20 +35,27 @@ export function AclPermissionEditorPage({ mode }: AclPermissionEditorPageProps) 
   useEffect(() => {
     if (mode !== 'edit' || !previousCode) {
       setDraft(createEmptyPermission())
-      setLoading(false)
-      return
+      setSelectedAppIds([])
     }
 
     let cancelled = false
     setLoading(true)
 
-    void fetchAclPermission(previousCode)
-      .then((payload) => {
+    const loadPromise =
+      mode === 'edit' && previousCode
+        ? Promise.all([fetchAclPermissions(), fetchAppAdminList(), fetchAclPermission(previousCode)])
+        : Promise.all([fetchAclPermissions(), fetchAppAdminList(), Promise.resolve(null)])
+
+    void loadPromise
+      .then(([permissionsPayload, appsPayload, permissionPayload]) => {
         if (cancelled) {
           return
         }
 
-        setDraft(payload.permission)
+        setPermissions(permissionsPayload.items ?? [])
+        setApps(appsPayload.items ?? [])
+        setDraft(permissionPayload?.permission ?? createEmptyPermission())
+        setSelectedAppIds(permissionPayload?.appIds ?? [])
         setPageError(null)
       })
       .catch((error) => {
@@ -52,6 +65,8 @@ export function AclPermissionEditorPage({ mode }: AclPermissionEditorPageProps) 
 
         const message = error instanceof Error ? error.message : 'Errore caricamento permission'
         setPageError(message)
+        setApps([])
+        setPermissions([])
       })
       .finally(() => {
         if (!cancelled) {
@@ -64,11 +79,24 @@ export function AclPermissionEditorPage({ mode }: AclPermissionEditorPageProps) 
     }
   }, [mode, previousCode])
 
+  const toggleApp = (appId: string) => {
+    setSelectedAppIds((current) =>
+      current.includes(appId)
+        ? current.filter((entry) => entry !== appId)
+        : [...current, appId],
+    )
+  }
+
   const savePermission = async () => {
     const normalized = normalizePermission(draft)
 
     if (!normalized.code) {
       setPageError('Il permission code è obbligatorio')
+      return
+    }
+
+    if (isDuplicateCode) {
+      setPageError('Esiste gia una permission con questo code')
       return
     }
 
@@ -78,8 +106,8 @@ export function AclPermissionEditorPage({ mode }: AclPermissionEditorPageProps) 
     try {
       const payload =
         mode === 'create'
-          ? await createAclPermission(normalized)
-          : await updateAclPermission(previousCode ?? normalized.code, normalized)
+          ? await createAclPermission(normalized, selectedAppIds)
+          : await updateAclPermission(previousCode ?? normalized.code, normalized, selectedAppIds)
 
       navigate(`/admin/acl/permissions/${encodeURIComponent(payload.permission.code)}`, {
         replace: true,
@@ -91,6 +119,15 @@ export function AclPermissionEditorPage({ mode }: AclPermissionEditorPageProps) 
       setSaving(false)
     }
   }
+
+  const selectedAppSet = new Set(selectedAppIds)
+  const isDuplicateCode =
+    draft.code.trim().length > 0 &&
+    permissions.some(
+      (permission) =>
+        permission.code.toLowerCase() === draft.code.trim().toLowerCase() &&
+        permission.code !== previousCode,
+    )
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -152,6 +189,11 @@ export function AclPermissionEditorPage({ mode }: AclPermissionEditorPageProps) 
                 }
                 className="mt-2 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
               />
+              {isDuplicateCode ? (
+                <p className="mt-2 text-xs text-rose-700">
+                  Esiste gia una permission con questo code.
+                </p>
+              ) : null}
             </label>
 
             <label className="text-sm font-medium text-slate-700">
@@ -231,6 +273,49 @@ export function AclPermissionEditorPage({ mode }: AclPermissionEditorPageProps) 
                 </button>
               </div>
             ))}
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-4">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm font-medium text-slate-700">App disponibili</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  Seleziona le app rese disponibili agli utenti che ricevono questo permesso.
+                </p>
+              </div>
+              <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
+                {selectedAppIds.length} selezionate
+              </p>
+            </div>
+
+            {apps.length === 0 ? (
+              <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                Nessuna app configurata. Crea prima almeno una app nel catalogo admin.
+              </p>
+            ) : (
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                {apps.map((app) => (
+                  <label
+                    key={app.id}
+                    className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedAppSet.has(app.id)}
+                      onChange={() => toggleApp(app.id)}
+                      className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-sky-500"
+                    />
+                    <div className="min-w-0">
+                      <p className="font-semibold text-slate-950">{app.label}</p>
+                      <p className="mt-1 font-mono text-xs text-slate-500">{app.id}</p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {app.entityCount} entity associate
+                      </p>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}

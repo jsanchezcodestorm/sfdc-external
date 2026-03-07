@@ -127,16 +127,20 @@ export function AclPermissionDetailPage() {
         <p className="mt-4 text-sm text-slate-600">Caricamento permission...</p>
       ) : payload ? (
         <div className="mt-5 space-y-5">
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <DetailMetric label="Default" value={payload.isDefault ? 'Si' : 'No'} />
             <DetailMetric label="Aliases" value={String(payload.permission.aliases.length)} />
             <DetailMetric label="Resources" value={String(payload.resourceCount)} />
+            <DetailMetric label="Apps" value={String(payload.appCount)} />
           </div>
 
           <DetailBlock label="Label">{payload.permission.label || '-'}</DetailBlock>
           <DetailBlock label="Description">{payload.permission.description || '-'}</DetailBlock>
           <DetailBlock label="Aliases">
             {payload.permission.aliases.length > 0 ? payload.permission.aliases.join(', ') : '-'}
+          </DetailBlock>
+          <DetailBlock label="App Ids">
+            {payload.appIds.length > 0 ? payload.appIds.join(', ') : '-'}
           </DetailBlock>
           <DetailBlock label="Resource Ids">
             {payload.resourceIds.length > 0 ? payload.resourceIds.join(', ') : '-'}

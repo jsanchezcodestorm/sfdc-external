@@ -32,6 +32,18 @@ test('replaceSnapshot preserves renamed assignments and prunes deleted/default p
     defaultPermissions: [] as Array<Record<string, unknown>>,
     resources: [] as Array<Record<string, unknown>>,
     resourcePermissions: [] as Array<Record<string, unknown>>,
+    appPermissionAssignments: [
+      {
+        appId: 'sales',
+        permissionCode: 'LEGACY_READ',
+        sortOrder: 0,
+      },
+      {
+        appId: 'sales',
+        permissionCode: 'DROP_ME',
+        sortOrder: 1,
+      },
+    ] as Array<{ appId: string; permissionCode: string; sortOrder: number }>,
   };
 
   const tx = {
@@ -57,6 +69,42 @@ test('replaceSnapshot preserves renamed assignments and prunes deleted/default p
         state.contactPermissions = state.contactPermissions.filter(
           (row) => !toDelete.has(row.permissionCode),
         );
+      },
+    },
+    appPermissionAssignmentRecord: {
+      async updateMany(input: {
+        where: { permissionCode: string };
+        data: { permissionCode: string };
+      }) {
+        for (const row of state.appPermissionAssignments) {
+          if (row.permissionCode === input.where.permissionCode) {
+            row.permissionCode = input.data.permissionCode;
+          }
+        }
+      },
+      async deleteMany(input?: { where?: { permissionCode?: { in?: string[] } | string } }) {
+        const permissionCode = input?.where?.permissionCode;
+        if (!permissionCode) {
+          state.appPermissionAssignments = [];
+          return;
+        }
+
+        if (typeof permissionCode === 'string') {
+          state.appPermissionAssignments = state.appPermissionAssignments.filter(
+            (row) => row.permissionCode !== permissionCode,
+          );
+          return;
+        }
+
+        if (permissionCode.in) {
+          const toDelete = new Set(permissionCode.in as string[]);
+          state.appPermissionAssignments = state.appPermissionAssignments.filter(
+            (row) => !toDelete.has(row.permissionCode),
+          );
+        }
+      },
+      async createMany(input: { data: Array<{ appId: string; permissionCode: string; sortOrder: number }> }) {
+        state.appPermissionAssignments.push(...input.data);
       },
     },
     aclResourcePermissionRecord: {
@@ -135,6 +183,10 @@ test('replaceSnapshot preserves renamed assignments and prunes deleted/default p
 
   assert.deepEqual(
     state.contactPermissions.map((row) => row.permissionCode).sort(),
+    ['CONTACT_READ'],
+  );
+  assert.deepEqual(
+    state.appPermissionAssignments.map((row) => row.permissionCode).sort(),
     ['CONTACT_READ'],
   );
 });
