@@ -9,7 +9,8 @@ export function AclAdminLayout() {
         </p>
         <h1 className="mt-2 text-2xl font-bold tracking-tight">ACL PostgreSQL</h1>
         <p className="mt-2 text-sm text-slate-600">
-          Catalogo permessi, default permissions e risorse ACL con flusso list, view ed edit dedicato.
+          Catalogo permessi, defaults, assegnazioni dirette ai Contact e risorse ACL con workflow
+          admin dedicato.
         </p>
       </header>
       <Outlet />

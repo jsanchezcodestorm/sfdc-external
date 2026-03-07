@@ -191,7 +191,7 @@ function buildAclModule(pathname: string): WorkspaceSidebarModule {
     id: 'acl',
     label: 'ACL',
     to: '/admin/acl/permissions',
-    description: 'Permessi, defaults e risorse ACL.',
+    description: 'Permessi, defaults, assegnazioni Contact e risorse ACL.',
     isActive,
     items: [
       {
@@ -207,6 +207,13 @@ function buildAclModule(pathname: string): WorkspaceSidebarModule {
         to: '/admin/acl/defaults',
         caption: 'Default permissions',
         isActive: pathname.startsWith('/admin/acl/defaults'),
+      },
+      {
+        id: 'acl-contact-permissions',
+        label: 'Contact Permissions',
+        to: '/admin/acl/contact-permissions',
+        caption: 'Assegnazioni esplicite per Contact',
+        isActive: pathname.startsWith('/admin/acl/contact-permissions'),
       },
       {
         id: 'acl-resources',

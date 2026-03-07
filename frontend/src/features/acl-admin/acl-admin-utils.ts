@@ -1,4 +1,9 @@
-import type { AclPermissionDefinition, AclResourceConfig, AclResourceType } from './acl-admin-types'
+import type {
+  AclAdminContactPermission,
+  AclPermissionDefinition,
+  AclResourceConfig,
+  AclResourceType,
+} from './acl-admin-types'
 
 export const ACL_RESOURCE_TYPE_OPTIONS: Array<{ value: AclResourceType; label: string }> = [
   { value: 'rest', label: 'REST' },
@@ -47,6 +52,54 @@ export function normalizeResource(resource: AclResourceConfig): AclResourceConfi
     description: resource.description?.trim() || undefined,
     permissions: uniqueValues(resource.permissions.map((permission) => permission.trim())),
   }
+}
+
+export type AclContactPermissionDraft = {
+  contactId: string
+  permissionCodes: string[]
+}
+
+export function createEmptyContactPermissionDraft(contactId = ''): AclContactPermissionDraft {
+  return {
+    contactId,
+    permissionCodes: [],
+  }
+}
+
+export function createContactPermissionDraft(
+  value: AclAdminContactPermission,
+): AclContactPermissionDraft {
+  return {
+    contactId: value.contactId,
+    permissionCodes: [...value.permissionCodes],
+  }
+}
+
+export function normalizeContactPermissionDraft(
+  draft: AclContactPermissionDraft,
+): AclContactPermissionDraft {
+  return {
+    contactId: draft.contactId.trim(),
+    permissionCodes: uniqueValues(
+      draft.permissionCodes.map((permissionCode) => permissionCode.trim()).filter(Boolean),
+    ),
+  }
+}
+
+export function formatAclDateTime(value?: string): string {
+  if (!value) {
+    return '-'
+  }
+
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) {
+    return value
+  }
+
+  return new Intl.DateTimeFormat('it-IT', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+  }).format(parsed)
 }
 
 function uniqueValues(values: string[]): string[] {

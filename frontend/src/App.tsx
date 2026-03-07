@@ -4,6 +4,8 @@ import { AppShell } from './components/AppShell'
 import { RequireAuth } from './features/auth/components/RequireAuth'
 import { RequireAdmin } from './features/auth/components/RequireAdmin'
 import { AclAdminLayout } from './features/acl-admin/pages/AclAdminLayout'
+import { AclContactPermissionEditorPage } from './features/acl-admin/pages/AclContactPermissionEditorPage'
+import { AclContactPermissionsPage } from './features/acl-admin/pages/AclContactPermissionsPage'
 import { AclDefaultsPage } from './features/acl-admin/pages/AclDefaultsPage'
 import { AclPermissionDetailPage } from './features/acl-admin/pages/AclPermissionDetailPage'
 import { AclPermissionEditorPage } from './features/acl-admin/pages/AclPermissionEditorPage'
@@ -72,6 +74,15 @@ function App() {
               <Route path="permissions/:permissionCode" element={<AclPermissionDetailPage />} />
               <Route path="permissions/:permissionCode/edit" element={<AclPermissionEditorPage mode="edit" />} />
               <Route path="defaults" element={<AclDefaultsPage />} />
+              <Route path="contact-permissions" element={<AclContactPermissionsPage />} />
+              <Route
+                path="contact-permissions/__new__"
+                element={<AclContactPermissionEditorPage mode="create" />}
+              />
+              <Route
+                path="contact-permissions/:contactId/edit"
+                element={<AclContactPermissionEditorPage mode="edit" />}
+              />
               <Route path="resources" element={<AclResourcesPage />} />
               <Route path="resources/__new__" element={<AclResourceEditorPage mode="create" />} />
               <Route path="resources/:resourceId" element={<AclResourceDetailPage />} />

@@ -61,3 +61,34 @@ export type AclAdminDefaultPermissionItem = {
 export type AclAdminDefaultPermissionsResponse = {
   items: AclAdminDefaultPermissionItem[]
 }
+
+export type AclAdminContactPermissionSummary = {
+  contactId: string
+  permissionCodes: string[]
+  permissionCount: number
+  updatedAt: string
+}
+
+export type AclAdminContactPermissionListResponse = {
+  items: AclAdminContactPermissionSummary[]
+}
+
+export type AclAdminContactPermission = {
+  contactId: string
+  permissionCodes: string[]
+  updatedAt?: string
+}
+
+export type AclAdminContactPermissionResponse = {
+  contactPermissions: AclAdminContactPermission
+}
+
+export type AclAdminContactSuggestion = {
+  id: string
+  name?: string
+  recordTypeDeveloperName?: string
+}
+
+export type AclAdminContactSuggestionResponse = {
+  items: AclAdminContactSuggestion[]
+}

@@ -1,6 +1,9 @@
 import { apiFetch } from '../../lib/api'
 
 import type {
+  AclAdminContactPermissionListResponse,
+  AclAdminContactPermissionResponse,
+  AclAdminContactSuggestionResponse,
   AclAdminDefaultPermissionsResponse,
   AclAdminPermissionListResponse,
   AclAdminPermissionResponse,
@@ -97,4 +100,49 @@ export async function updateAclDefaultPermissions(
     method: 'PUT',
     body: { permissionCodes },
   })
+}
+
+export async function fetchAclContactPermissions(): Promise<AclAdminContactPermissionListResponse> {
+  return apiFetch<AclAdminContactPermissionListResponse>('/acl/admin/contact-permissions')
+}
+
+export async function fetchAclContactPermission(
+  contactId: string,
+): Promise<AclAdminContactPermissionResponse> {
+  return apiFetch<AclAdminContactPermissionResponse>(
+    `/acl/admin/contact-permissions/${encodeURIComponent(contactId)}`,
+  )
+}
+
+export async function updateAclContactPermission(
+  contactId: string,
+  permissionCodes: string[],
+): Promise<AclAdminContactPermissionResponse> {
+  return apiFetch<AclAdminContactPermissionResponse>(
+    `/acl/admin/contact-permissions/${encodeURIComponent(contactId)}`,
+    {
+      method: 'PUT',
+      body: { permissionCodes },
+    },
+  )
+}
+
+export async function deleteAclContactPermission(contactId: string): Promise<void> {
+  await apiFetch<void>(`/acl/admin/contact-permissions/${encodeURIComponent(contactId)}`, {
+    method: 'DELETE',
+  })
+}
+
+export async function fetchAclContactSuggestions(
+  query: string,
+  limit = 8,
+): Promise<AclAdminContactSuggestionResponse> {
+  const params = new URLSearchParams({
+    q: query,
+    limit: String(limit),
+  })
+
+  return apiFetch<AclAdminContactSuggestionResponse>(
+    `/acl/admin/contact-suggestions?${params.toString()}`,
+  )
 }
