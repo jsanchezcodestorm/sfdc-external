@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import { BadRequestException } from '@nestjs/common';
+
 import { EntityAdminConfigService } from './entity-admin-config.service';
 
 type TestField = {
@@ -277,6 +279,79 @@ test('previewEntityBootstrap omits form without writable fields and stays non mu
       warning.includes('Preset list: nessun campo testuale filterable disponibile')
     )
   );
+  assert.equal(counters.repositoryCalls, 0);
+  assert.equal(counters.auditCalls, 0);
+});
+
+test('createEntityConfig rejects raw where clauses before touching the repository', async () => {
+  const { service, counters } = createService([]);
+
+  await assert.rejects(
+    () =>
+      service.createEntityConfig({
+        entity: {
+          id: 'account',
+          label: 'Account',
+          objectApiName: 'Account',
+          detail: {
+            query: {
+              object: 'Account',
+              where: ["Id = '{{id}}'"],
+            },
+            sections: [
+              {
+                title: 'Overview',
+                fields: [{ field: 'Name' }],
+              },
+            ],
+          },
+        },
+      }),
+    (error: unknown) =>
+      error instanceof BadRequestException &&
+      error.message === 'entity.detail.query.where[0] raw string clauses are not supported',
+  );
+
+  assert.equal(counters.repositoryCalls, 0);
+  assert.equal(counters.auditCalls, 0);
+});
+
+test('createEntityConfig rejects unsupported query operators before touching the repository', async () => {
+  const { service, counters } = createService([]);
+
+  await assert.rejects(
+    () =>
+      service.createEntityConfig({
+        entity: {
+          id: 'account',
+          label: 'Account',
+          objectApiName: 'Account',
+          detail: {
+            query: {
+              object: 'Account',
+              where: [
+                {
+                  field: 'Id',
+                  operator: 'CONTAINS',
+                  value: '{{id}}',
+                },
+              ],
+            },
+            sections: [
+              {
+                title: 'Overview',
+                fields: [{ field: 'Name' }],
+              },
+            ],
+          },
+        },
+      }),
+    (error: unknown) =>
+      error instanceof BadRequestException &&
+      error.message ===
+        'entity.detail.query.where[0].operator must be one of =, !=, <, <=, >, >=, IN, NOT IN, LIKE',
+  );
+
   assert.equal(counters.repositoryCalls, 0);
   assert.equal(counters.auditCalls, 0);
 });

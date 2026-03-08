@@ -15,6 +15,7 @@ import {
   EntityListViewConfig,
   EntityRelatedListConfig
 } from '../entities.types';
+import { normalizeEntityQueryConfig } from '../entity-query-config.validation';
 
 import { EntityAdminConfigRepository, EntityAdminConfigSummary } from './entity-admin-config.repository';
 
@@ -881,13 +882,12 @@ export class EntityAdminConfigService {
     const view = this.requireObject(value, `entity.list.views[${index}] must be an object`);
     const id = this.requireString(view.id, `entity.list.views[${index}].id is required`);
     const label = this.requireString(view.label, `entity.list.views[${index}].label is required`);
-    const query = this.requireObject(view.query, `entity.list.views[${index}].query is required`);
     const columns = this.normalizeColumns(view.columns, `entity.list.views[${index}].columns`);
 
     return {
       id,
       label,
-      query: query as unknown as EntityListViewConfig['query'],
+      query: normalizeEntityQueryConfig(view.query, `entity.list.views[${index}].query`),
       columns,
       description: this.asOptionalString(view.description),
       default: this.asOptionalBoolean(view.default),
@@ -904,7 +904,6 @@ export class EntityAdminConfigService {
     }
 
     const detail = this.requireObject(value, 'entity.detail must be an object');
-    const query = this.requireObject(detail.query, 'entity.detail.query is required');
     const sections = this.requireArray(detail.sections, 'entity.detail.sections must be an array')
       .map((entry, index) => this.normalizeDetailSection(entry, index));
 
@@ -913,7 +912,7 @@ export class EntityAdminConfigService {
     }
 
     return {
-      query: query as unknown as EntityDetailConfig['query'],
+      query: normalizeEntityQueryConfig(detail.query, 'entity.detail.query'),
       sections,
       relatedLists: this.normalizeRelatedListsArray(detail.relatedLists),
       titleTemplate: this.asOptionalString(detail.titleTemplate),
@@ -960,13 +959,15 @@ export class EntityAdminConfigService {
     const relatedList = this.requireObject(value, `entity.detail.relatedLists[${index}] must be an object`);
     const id = this.requireString(relatedList.id, `entity.detail.relatedLists[${index}].id is required`);
     const label = this.requireString(relatedList.label, `entity.detail.relatedLists[${index}].label is required`);
-    const query = this.requireObject(relatedList.query, `entity.detail.relatedLists[${index}].query is required`);
     const columns = this.normalizeColumns(relatedList.columns, `entity.detail.relatedLists[${index}].columns`);
 
     return {
       id,
       label,
-      query: query as unknown as EntityRelatedListConfig['query'],
+      query: normalizeEntityQueryConfig(
+        relatedList.query,
+        `entity.detail.relatedLists[${index}].query`
+      ),
       columns,
       description: this.asOptionalString(relatedList.description),
       actions: this.normalizeActionsArray(relatedList.actions, `entity.detail.relatedLists[${index}].actions`),
@@ -986,7 +987,6 @@ export class EntityAdminConfigService {
     const title = this.requireObject(form.title, 'entity.form.title is required');
     const createTitle = this.requireString(title.create, 'entity.form.title.create is required');
     const editTitle = this.requireString(title.edit, 'entity.form.title.edit is required');
-    const query = this.requireObject(form.query, 'entity.form.query is required');
     const sections = this.requireArray(form.sections, 'entity.form.sections must be an array')
       .map((entry, index) => this.normalizeFormSection(entry, index));
 
@@ -999,7 +999,7 @@ export class EntityAdminConfigService {
         create: createTitle,
         edit: editTitle
       },
-      query: query as unknown as EntityFormConfig['query'],
+      query: normalizeEntityQueryConfig(form.query, 'entity.form.query'),
       subtitle: this.asOptionalString(form.subtitle),
       sections
     };

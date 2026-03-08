@@ -161,15 +161,30 @@ Contratto query:
 - `orderBy[]` (optional)
 - `limit` (optional)
 
-`where[]` supporta due forme:
-1. string raw (inserita cosi come in SOQL)
-2. object:
-   - `raw` (precedenza massima)
-   - oppure `field` + `operator` (default `=`) + `value`
+`where[]` supporta solo object:
+- `field` (required)
+- `operator` (optional, default `=`)
+- `value` (required)
+
+Operatori supportati:
+- `=`
+- `!=`
+- `<`
+- `<=`
+- `>`
+- `>=`
+- `IN`
+- `NOT IN`
+- `LIKE`
 
 `value` puo essere:
 - scalar: string | number | boolean | null
-- array: genera `(<v1>, <v2>, ...)`
+- array: consentito solo con `IN` / `NOT IN`
+
+Vincoli hard-enforced:
+- `null` consentito solo con `=` / `!=`
+- `LIKE` accetta solo stringhe scalari
+- `where` raw/string non strutturato non e supportato
 
 Template placeholders:
 - sintassi: `{{key}}`
@@ -230,7 +245,7 @@ Conseguenza:
 ## 12) Convenzioni raccomandate
 - mantenere `entity_configs.id == entityId` usato in ACL e routing
 - in `query.fields` includere sempre `Id` nelle viste tabellari e dettaglio
-- evitare `where` string raw se non strettamente necessario; preferire condizioni object
+- usare solo condizioni object in `where[]`; non sono ammessi frammenti SOQL raw
 - per azioni `link`, usare target relativi e placeholder espliciti (`view/{{Id}}`)
 - usare `default: true` su una sola view per entita
 - documentare ogni nuova entita anche su `docs/acl-resources-map.md`
@@ -253,7 +268,6 @@ Conseguenza:
 ## 14) Limiti attuali da considerare nel progetto nuovo
 - non esiste schema JSON hard-enforced a build time (validazione e runtime/lazy)
 - payload JSONB invalidi rispetto al contratto producono errore runtime lato backend
-- le query raw via string in `where` sono potenti ma riducono controllabilita
 - la metadata `lookup` e applicata lato frontend; non fa parte della validazione campi backend completa
 
 ## 15) Admin configurazione (PostgreSQL)

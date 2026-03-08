@@ -1,13 +1,25 @@
 export type EntityQueryContext = Record<string, string | number | boolean | null | undefined>;
 
+export type EntityQueryScalarValue = string | number | boolean | null;
+
+export type EntityQueryOperator =
+  | '='
+  | '!='
+  | '<'
+  | '<='
+  | '>'
+  | '>='
+  | 'IN'
+  | 'NOT IN'
+  | 'LIKE';
+
 export type EntityQueryWhereObject = {
-  raw?: string;
-  field?: string;
-  operator?: string;
-  value?: string | number | boolean | null | Array<string | number | boolean | null>;
+  field: string;
+  operator: EntityQueryOperator;
+  value: EntityQueryScalarValue | EntityQueryScalarValue[];
 };
 
-export type EntityQueryWhere = string | EntityQueryWhereObject;
+export type EntityQueryWhere = EntityQueryWhereObject;
 
 export interface EntityQueryOrderBy {
   field: string;

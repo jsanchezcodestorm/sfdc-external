@@ -12,6 +12,7 @@ import type {
   EntityListViewConfig,
   EntityRelatedListConfig
 } from '../entities.types';
+import { normalizeEntityQueryConfig } from '../entity-query-config.validation';
 
 type EntityConfigRecordWithRelations = Prisma.EntityConfigRecordGetPayload<{
   include: {
@@ -187,10 +188,6 @@ export class EntityConfigRepository {
       viewConfigRecord.label,
       `Entity list view config ${entityId}/${id} is invalid: label is required`
     );
-    const query = this.requireObject(
-      viewConfigRecord.queryJson,
-      `Entity list view config ${entityId}/${id} is invalid: query is required`
-    );
     const columns = this.asStringOrObjectArray(viewConfigRecord.columnsJson);
 
     if (columns.length === 0) {
@@ -200,7 +197,10 @@ export class EntityConfigRepository {
     return {
       id,
       label,
-      query: query as unknown as EntityListViewConfig['query'],
+      query: normalizeEntityQueryConfig(
+        viewConfigRecord.queryJson,
+        `Entity list view config ${entityId}/${id} is invalid: query`
+      ),
       columns: columns as unknown as EntityListViewConfig['columns'],
       description: this.asOptionalString(viewConfigRecord.description),
       default: viewConfigRecord.isDefault ? true : undefined,
@@ -217,10 +217,6 @@ export class EntityConfigRepository {
     entityId: string,
     detailConfigRecord: EntityDetailConfigRecordWithRelations
   ): EntityDetailConfig {
-    const query = this.requireObject(
-      detailConfigRecord.queryJson,
-      `Entity detail config ${entityId} is invalid: query is required`
-    );
     const sections = detailConfigRecord.sections.map((sectionConfigRecord) =>
       this.mapDetailSectionConfig(entityId, sectionConfigRecord)
     );
@@ -234,7 +230,10 @@ export class EntityConfigRepository {
     );
 
     return {
-      query: query as unknown as EntityDetailConfig['query'],
+      query: normalizeEntityQueryConfig(
+        detailConfigRecord.queryJson,
+        `Entity detail config ${entityId} is invalid: query`
+      ),
       sections,
       relatedLists: relatedLists.length > 0 ? relatedLists : undefined,
       titleTemplate: this.asOptionalString(detailConfigRecord.titleTemplate),
@@ -279,10 +278,6 @@ export class EntityConfigRepository {
       relatedListConfigRecord.label,
       `Entity related-list config ${entityId}/${id} is invalid: label is required`
     );
-    const query = this.requireObject(
-      relatedListConfigRecord.queryJson,
-      `Entity related-list config ${entityId}/${id} is invalid: query is required`
-    );
     const columns = this.asStringOrObjectArray(relatedListConfigRecord.columnsJson);
 
     if (columns.length === 0) {
@@ -292,7 +287,10 @@ export class EntityConfigRepository {
     return {
       id,
       label,
-      query: query as unknown as EntityRelatedListConfig['query'],
+      query: normalizeEntityQueryConfig(
+        relatedListConfigRecord.queryJson,
+        `Entity related-list config ${entityId}/${id} is invalid: query`
+      ),
       columns: columns as unknown as EntityRelatedListConfig['columns'],
       description: this.asOptionalString(relatedListConfigRecord.description),
       actions: this.asTypedObjectArray<NonNullable<EntityRelatedListConfig['actions']>[number]>(
@@ -316,10 +314,6 @@ export class EntityConfigRepository {
       formConfigRecord.editTitle,
       `Entity form config ${entityId} is invalid: title.edit is required`
     );
-    const query = this.requireObject(
-      formConfigRecord.queryJson,
-      `Entity form config ${entityId} is invalid: query is required`
-    );
     const sections = formConfigRecord.sections.map((sectionConfigRecord) =>
       this.mapFormSectionConfig(entityId, sectionConfigRecord)
     );
@@ -333,7 +327,10 @@ export class EntityConfigRepository {
         create: createTitle,
         edit: editTitle
       },
-      query: query as unknown as EntityFormConfig['query'],
+      query: normalizeEntityQueryConfig(
+        formConfigRecord.queryJson,
+        `Entity form config ${entityId} is invalid: query`
+      ),
       subtitle: this.asOptionalString(formConfigRecord.subtitle),
       sections
     };
