@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { matchPath, useBeforeUnload, useBlocker, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { useBeforeUnload, useBlocker, useLocation, useNavigate, useParams } from 'react-router-dom'
 
 import { useAppDialog } from '../../../components/app-dialog'
 import type { EntityConfig } from '../../entities/entity-types'
@@ -24,8 +24,13 @@ import {
   buildEntityEditPath,
   buildEntityViewPath,
   ENTITY_CONFIG_SECTION_LABELS,
-  isEntityConfigSection,
+  type EntityConfigDetailEditorAreaKey,
+  type EntityConfigFormEditorAreaKey,
+  isEntityConfigDetailEditorArea,
+  isEntityConfigEditSessionPath,
+  isEntityConfigFormEditorArea,
   NEW_ENTITY_SENTINEL,
+  parseEntityConfigEditPath,
 } from '../entity-admin-routing'
 import { EntityBootstrapPreviewPanel } from '../components/EntityBootstrapPreviewPanel'
 import { EntityConfigBaseForm } from '../components/EntityConfigBaseForm'
@@ -58,7 +63,8 @@ import type {
 
 type RouteParams = {
   entityId?: string
-  section?: string
+  detailArea?: string
+  formArea?: string
 }
 
 type EntityAdminLocationState = {
@@ -73,15 +79,21 @@ export function EntityAdminConfigPage() {
   const blockedNavigationKeyRef = useRef<string | null>(null)
 
   const isCreateRoute = location.pathname === buildEntityCreatePath()
+  const activeEditRoute = useMemo(
+    () => parseEntityConfigEditPath(location.pathname),
+    [location.pathname],
+  )
   const selectedEntityId =
-    params.entityId && params.entityId !== NEW_ENTITY_SENTINEL
+    activeEditRoute?.entityId ??
+    (params.entityId && params.entityId !== NEW_ENTITY_SENTINEL
       ? decodeURIComponent(params.entityId)
-      : null
+      : null)
   const activeSection = isCreateRoute
     ? 'base'
-    : isEntityConfigSection(params.section)
-    ? params.section
-    : null
+    : activeEditRoute?.section ??
+      (params.detailArea ? 'detail' : params.formArea ? 'form' : null)
+  const activeDetailArea = activeEditRoute?.detailArea ?? null
+  const activeFormArea = activeEditRoute?.formArea ?? null
   const isEditRoute = Boolean(selectedEntityId) && activeSection !== null
   const isEntityListRoute = selectedEntityId === null && !isCreateRoute
   const isViewRoute = Boolean(selectedEntityId) && !isEditRoute
@@ -242,12 +254,20 @@ export function EntityAdminConfigPage() {
   }, [isCreateRoute, navigate, params.entityId])
 
   useEffect(() => {
-    if (!selectedEntityId || !params.section || activeSection !== null) {
+    if (!selectedEntityId || !params.detailArea || isEntityConfigDetailEditorArea(params.detailArea)) {
       return
     }
 
-    navigate(buildEntityEditPath(selectedEntityId, 'base'), { replace: true })
-  }, [activeSection, navigate, params.section, selectedEntityId])
+    navigate(buildEntityEditPath(selectedEntityId, 'detail'), { replace: true })
+  }, [navigate, params.detailArea, selectedEntityId])
+
+  useEffect(() => {
+    if (!selectedEntityId || !params.formArea || isEntityConfigFormEditorArea(params.formArea)) {
+      return
+    }
+
+    navigate(buildEntityEditPath(selectedEntityId, 'form'), { replace: true })
+  }, [navigate, params.formArea, selectedEntityId])
 
   useEffect(() => {
     if (!selectedEntityConfig) {
@@ -288,7 +308,7 @@ export function EntityAdminConfigPage() {
 
   useEffect(() => {
     setSaveInfo(null)
-  }, [activeSection, isCreateRoute, isEditRoute, selectedEntityId])
+  }, [activeDetailArea, activeFormArea, activeSection, isCreateRoute, isEditRoute, selectedEntityId])
 
   useEffect(() => {
     const nextSaveInfo = readLocationSaveInfo(location.state)
@@ -337,7 +357,7 @@ export function EntityAdminConfigPage() {
         return false
       }
 
-      return !isSameEntityEditSessionPath(nextLocation.pathname, selectedEntityId)
+      return !isEntityConfigEditSessionPath(nextLocation.pathname, selectedEntityId)
     },
     [hasUnsavedChanges, isEditRoute, saving, selectedEntityId],
   )
@@ -652,6 +672,28 @@ export function EntityAdminConfigPage() {
     setSelectedListViewIndex(index)
   }
 
+  const handleSelectDetailArea = useCallback(
+    (nextArea: EntityConfigDetailEditorAreaKey) => {
+      if (!selectedEntityId) {
+        return
+      }
+
+      navigate(buildEntityEditPath(selectedEntityId, 'detail', nextArea))
+    },
+    [navigate, selectedEntityId],
+  )
+
+  const handleSelectFormArea = useCallback(
+    (nextArea: EntityConfigFormEditorAreaKey) => {
+      if (!selectedEntityId) {
+        return
+      }
+
+      navigate(buildEntityEditPath(selectedEntityId, 'form', nextArea))
+    },
+    [navigate, selectedEntityId],
+  )
+
   const updateDetailDraft = (nextDraft: DetailFormDraft) => {
     setDetailFormDraft(nextDraft)
     setSaveInfo(null)
@@ -722,7 +764,15 @@ export function EntityAdminConfigPage() {
       setSelectedEntityConfig(payload.entity)
       setAclResourceConfigured(payload.aclResourceConfigured)
       setSaveInfo('Configurazione salvata')
-      navigate(buildEntityEditPath(payload.entity.id, activeSection ?? 'base'), { replace: true })
+      navigate(
+        buildEntityEditPathForSection(
+          payload.entity.id,
+          activeSection ?? 'base',
+          activeDetailArea,
+          activeFormArea,
+        ),
+        { replace: true },
+      )
       await refreshEntityList()
     } catch (error) {
       const message =
@@ -1038,14 +1088,18 @@ export function EntityAdminConfigPage() {
               value={detailFormDraft}
               error={editorError}
               baseObjectApiName={baseFormDraft.objectApiName}
+              activeArea={activeDetailArea ?? 'header-query'}
               onChange={updateDetailDraft}
+              onAreaChange={handleSelectDetailArea}
             />
           ) : (
             <EntityConfigFormForm
               value={formFormDraft}
               error={editorError}
               baseObjectApiName={baseFormDraft.objectApiName}
+              activeArea={activeFormArea ?? 'header-query'}
               onChange={setFormFormDraft}
+              onAreaChange={handleSelectFormArea}
             />
           )}
         </>
@@ -1499,11 +1553,19 @@ function isFormFormDraftEmpty(draft: FormFormDraft): boolean {
   return JSON.stringify(draft) === JSON.stringify(createEmptyFormDraft())
 }
 
-function isSameEntityEditSessionPath(pathname: string, entityId: string): boolean {
-  const match = matchPath('/admin/entity-config/:entityId/edit/:section', pathname)
-  if (!match?.params.entityId || !isEntityConfigSection(match.params.section)) {
-    return false
+function buildEntityEditPathForSection(
+  entityId: string,
+  section: EntityConfigSectionKey,
+  detailArea: EntityConfigDetailEditorAreaKey | null,
+  formArea: EntityConfigFormEditorAreaKey | null,
+): string {
+  if (section === 'detail') {
+    return buildEntityEditPath(entityId, 'detail', detailArea ?? undefined)
   }
 
-  return decodeURIComponent(match.params.entityId) === entityId
+  if (section === 'form') {
+    return buildEntityEditPath(entityId, 'form', formArea ?? undefined)
+  }
+
+  return buildEntityEditPath(entityId, section)
 }
