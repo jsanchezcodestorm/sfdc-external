@@ -81,7 +81,16 @@ const router = createHashRouter(
               <Route path="entity-config" element={<EntityAdminConfigPage />} />
               <Route path="entity-config/__new__/base" element={<EntityAdminConfigPage />} />
               <Route path="entity-config/:entityId" element={<EntityAdminConfigPage />} />
-              <Route path="entity-config/:entityId/edit/:section" element={<EntityAdminConfigPage />} />
+              <Route path="entity-config/:entityId/edit/base" element={<EntityAdminConfigPage />} />
+              <Route path="entity-config/:entityId/edit/list" element={<EntityAdminConfigPage />} />
+              <Route
+                path="entity-config/:entityId/edit/detail/:detailArea"
+                element={<EntityAdminConfigPage />}
+              />
+              <Route
+                path="entity-config/:entityId/edit/form/:formArea"
+                element={<EntityAdminConfigPage />}
+              />
             </Route>
 
             <Route element={<RequireRouteAccess routeId={ADMIN_APPS_ROUTE_ID} />}>

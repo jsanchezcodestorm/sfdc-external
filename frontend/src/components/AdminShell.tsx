@@ -15,7 +15,7 @@ import {
   buildEntityViewPath,
   ENTITY_CONFIG_SECTION_LABELS,
   ENTITY_CONFIG_SECTION_ORDER,
-  isEntityConfigSection,
+  parseEntityConfigEditPath,
 } from '../features/entities-admin/entity-admin-routing'
 import {
   WorkspaceSidebar,
@@ -135,13 +135,11 @@ function buildEntityConfigModule(
   const isActive = pathname.startsWith('/admin/entity-config')
   const isCatalogRoute = pathname === buildEntityCatalogPath()
   const isCreateRoute = pathname === buildEntityCreatePath()
-  const editMatch = matchPath('/admin/entity-config/:entityId/edit/:section', pathname)
+  const editMatch = parseEntityConfigEditPath(pathname)
   const viewMatch = isCreateRoute ? null : matchPath('/admin/entity-config/:entityId', pathname)
-  const activeSection = isEntityConfigSection(editMatch?.params.section)
-    ? editMatch?.params.section
-    : null
-  const entityId = editMatch?.params.entityId
-    ? decodeURIComponent(editMatch.params.entityId)
+  const activeSection = editMatch?.section ?? null
+  const entityId = editMatch?.entityId
+    ? editMatch.entityId
     : viewMatch?.params.entityId
     ? decodeURIComponent(viewMatch.params.entityId)
     : null
