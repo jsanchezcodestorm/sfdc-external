@@ -15,6 +15,7 @@ function createEvaluation(
     decision: 'ALLOW',
     reasonCode: 'ALLOW_MATCH',
     policyVersion: 9,
+    objectPolicyVersion: 4,
     objectApiName: 'Account',
     contactId: CONTACT_ID,
     recordType: 'administration',
@@ -76,6 +77,53 @@ function createVisibilityAdminService(options?: {
       applyFieldVisibilityCalls,
       recordAuditCalls,
       queryCalls,
+    },
+  };
+}
+
+function createInvalidationHarness() {
+  const policyMetaUpsertCalls: Array<Record<string, unknown>> = [];
+  const objectVersionUpsertCalls: Array<Record<string, unknown>> = [];
+  const userScopeDeleteManyCalls: Array<Record<string, unknown>> = [];
+  const definitionDeleteManyCalls: Array<Record<string, unknown>> = [];
+
+  const service = new VisibilityAdminService(
+    {} as never,
+    {} as never,
+    {} as never,
+  );
+
+  const tx = {
+    visibilityPolicyMeta: {
+      async upsert(input: Record<string, unknown>) {
+        policyMetaUpsertCalls.push(input);
+      },
+    },
+    visibilityObjectPolicyVersion: {
+      async upsert(input: Record<string, unknown>) {
+        objectVersionUpsertCalls.push(input);
+      },
+    },
+    visibilityUserScopeCache: {
+      async deleteMany(input: Record<string, unknown>) {
+        userScopeDeleteManyCalls.push(input);
+      },
+    },
+    visibilityPolicyDefinitionCache: {
+      async deleteMany(input: Record<string, unknown>) {
+        definitionDeleteManyCalls.push(input);
+      },
+    },
+  };
+
+  return {
+    service,
+    tx,
+    calls: {
+      definitionDeleteManyCalls,
+      objectVersionUpsertCalls,
+      policyMetaUpsertCalls,
+      userScopeDeleteManyCalls,
     },
   };
 }
@@ -211,4 +259,56 @@ test('previewDebug validates requestedFields and limit', async () => {
       error instanceof BadRequestException &&
       error.message === 'limit must be an integer between 1 and 25',
   );
+});
+
+test('targeted invalidation increments global and object versions and deletes only affected caches', async () => {
+  const { service, tx, calls } = createInvalidationHarness();
+
+  await (
+    service as unknown as {
+      bumpPolicyVersionAndInvalidateCaches(
+        tx: Record<string, unknown>,
+        affectedObjectApiNames: Array<string | undefined>,
+      ): Promise<void>;
+    }
+  ).bumpPolicyVersionAndInvalidateCaches(tx as never, ['Account', undefined, 'Contact', 'Account']);
+
+  assert.equal(calls.policyMetaUpsertCalls.length, 1);
+  assert.equal(calls.objectVersionUpsertCalls.length, 2);
+  assert.deepEqual(
+    calls.objectVersionUpsertCalls.map((entry) => (entry.where as Record<string, string>).objectApiName),
+    ['Account', 'Contact'],
+  );
+  assert.deepEqual(
+    ((calls.userScopeDeleteManyCalls[0].where as Record<string, unknown>).objectApiName as Record<
+      string,
+      string[]
+    >).in,
+    ['Account', 'Contact'],
+  );
+  assert.deepEqual(
+    ((calls.definitionDeleteManyCalls[0].where as Record<string, unknown>).objectApiName as Record<
+      string,
+      string[]
+    >).in,
+    ['Account', 'Contact'],
+  );
+});
+
+test('targeted invalidation with no affected objects only bumps global policy version', async () => {
+  const { service, tx, calls } = createInvalidationHarness();
+
+  await (
+    service as unknown as {
+      bumpPolicyVersionAndInvalidateCaches(
+        tx: Record<string, unknown>,
+        affectedObjectApiNames: Array<string | undefined>,
+      ): Promise<void>;
+    }
+  ).bumpPolicyVersionAndInvalidateCaches(tx as never, []);
+
+  assert.equal(calls.policyMetaUpsertCalls.length, 1);
+  assert.equal(calls.objectVersionUpsertCalls.length, 0);
+  assert.equal(calls.userScopeDeleteManyCalls.length, 0);
+  assert.equal(calls.definitionDeleteManyCalls.length, 0);
 });

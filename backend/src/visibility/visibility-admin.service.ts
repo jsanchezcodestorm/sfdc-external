@@ -180,7 +180,7 @@ export class VisibilityAdminService {
           },
         });
 
-        await this.bumpPolicyVersionAndClearCache(tx);
+        await this.bumpPolicyVersionAndInvalidateCaches(tx, []);
       });
     } catch (error) {
       this.rethrowUniqueConflict(error, `Visibility cone code ${cone.code} already exists`);
@@ -206,6 +206,7 @@ export class VisibilityAdminService {
 
     try {
       await this.prisma.$transaction(async (tx) => {
+        const affectedObjects = await this.listObjectApiNamesForCone(tx, coneId);
         await tx.visibilityCone.update({
           where: { id: coneId },
           data: {
@@ -216,7 +217,7 @@ export class VisibilityAdminService {
           },
         });
 
-        await this.bumpPolicyVersionAndClearCache(tx);
+        await this.bumpPolicyVersionAndInvalidateCaches(tx, affectedObjects);
       });
     } catch (error) {
       this.rethrowUniqueConflict(error, `Visibility cone code ${cone.code} already exists`);
@@ -230,8 +231,9 @@ export class VisibilityAdminService {
     await this.ensureConeExists(coneId);
 
     await this.prisma.$transaction(async (tx) => {
+      const affectedObjects = await this.listObjectApiNamesForCone(tx, coneId);
       await tx.visibilityCone.delete({ where: { id: coneId } });
-      await this.bumpPolicyVersionAndClearCache(tx);
+      await this.bumpPolicyVersionAndInvalidateCaches(tx, affectedObjects);
     });
   }
 
@@ -296,7 +298,7 @@ export class VisibilityAdminService {
         },
       });
 
-      await this.bumpPolicyVersionAndClearCache(tx);
+      await this.bumpPolicyVersionAndInvalidateCaches(tx, [rule.objectApiName]);
       return row;
     });
 
@@ -309,6 +311,10 @@ export class VisibilityAdminService {
     const rule = await this.normalizeRule(ruleId, payload.rule);
 
     await this.prisma.$transaction(async (tx) => {
+      const existingRule = await tx.visibilityRule.findUnique({
+        where: { id: ruleId },
+        select: { objectApiName: true },
+      });
       await tx.visibilityRule.update({
         where: { id: ruleId },
         data: {
@@ -328,7 +334,10 @@ export class VisibilityAdminService {
         },
       });
 
-      await this.bumpPolicyVersionAndClearCache(tx);
+      await this.bumpPolicyVersionAndInvalidateCaches(tx, [
+        existingRule?.objectApiName,
+        rule.objectApiName,
+      ]);
     });
 
     return this.getRule(ruleId);
@@ -339,8 +348,12 @@ export class VisibilityAdminService {
     await this.ensureRuleExists(ruleId);
 
     await this.prisma.$transaction(async (tx) => {
+      const existingRule = await tx.visibilityRule.findUnique({
+        where: { id: ruleId },
+        select: { objectApiName: true },
+      });
       await tx.visibilityRule.delete({ where: { id: ruleId } });
-      await this.bumpPolicyVersionAndClearCache(tx);
+      await this.bumpPolicyVersionAndInvalidateCaches(tx, [existingRule?.objectApiName]);
     });
   }
 
@@ -396,6 +409,7 @@ export class VisibilityAdminService {
     const assignment = await this.normalizeAssignment(undefined, payload.assignment);
 
     const created = await this.prisma.$transaction(async (tx) => {
+      const affectedObjects = await this.listObjectApiNamesForCone(tx, assignment.coneId);
       const row = await tx.visibilityAssignment.create({
         data: {
           coneId: assignment.coneId,
@@ -407,7 +421,7 @@ export class VisibilityAdminService {
         },
       });
 
-      await this.bumpPolicyVersionAndClearCache(tx);
+      await this.bumpPolicyVersionAndInvalidateCaches(tx, affectedObjects);
       return row;
     });
 
@@ -423,6 +437,14 @@ export class VisibilityAdminService {
     const assignment = await this.normalizeAssignment(assignmentId, payload.assignment);
 
     await this.prisma.$transaction(async (tx) => {
+      const existingAssignment = await tx.visibilityAssignment.findUnique({
+        where: { id: assignmentId },
+        select: { coneId: true },
+      });
+      const affectedObjects = this.mergeObjectApiNames(
+        await this.listObjectApiNamesForCone(tx, existingAssignment?.coneId),
+        await this.listObjectApiNamesForCone(tx, assignment.coneId),
+      );
       await tx.visibilityAssignment.update({
         where: { id: assignmentId },
         data: {
@@ -435,7 +457,7 @@ export class VisibilityAdminService {
         },
       });
 
-      await this.bumpPolicyVersionAndClearCache(tx);
+      await this.bumpPolicyVersionAndInvalidateCaches(tx, affectedObjects);
     });
 
     return this.getAssignment(assignmentId);
@@ -446,8 +468,13 @@ export class VisibilityAdminService {
     await this.ensureAssignmentExists(assignmentId);
 
     await this.prisma.$transaction(async (tx) => {
+      const existingAssignment = await tx.visibilityAssignment.findUnique({
+        where: { id: assignmentId },
+        select: { coneId: true },
+      });
+      const affectedObjects = await this.listObjectApiNamesForCone(tx, existingAssignment?.coneId);
       await tx.visibilityAssignment.delete({ where: { id: assignmentId } });
-      await this.bumpPolicyVersionAndClearCache(tx);
+      await this.bumpPolicyVersionAndInvalidateCaches(tx, affectedObjects);
     });
   }
 
@@ -670,7 +697,10 @@ export class VisibilityAdminService {
     };
   }
 
-  private async bumpPolicyVersionAndClearCache(tx: PrismaTransaction): Promise<void> {
+  private async bumpPolicyVersionAndInvalidateCaches(
+    tx: PrismaTransaction,
+    affectedObjectApiNames: Array<string | undefined>,
+  ): Promise<void> {
     await tx.visibilityPolicyMeta.upsert({
       where: { id: 1 },
       create: {
@@ -684,7 +714,79 @@ export class VisibilityAdminService {
       },
     });
 
-    await tx.visibilityUserScopeCache.deleteMany({});
+    const normalizedObjectApiNames = this.mergeObjectApiNames(affectedObjectApiNames);
+    if (normalizedObjectApiNames.length === 0) {
+      return;
+    }
+
+    await Promise.all([
+      ...normalizedObjectApiNames.map((objectApiName) =>
+        tx.visibilityObjectPolicyVersion.upsert({
+          where: { objectApiName },
+          create: {
+            objectApiName,
+            policyVersion: 2n,
+          },
+          update: {
+            policyVersion: {
+              increment: 1,
+            },
+          },
+        }),
+      ),
+      tx.visibilityUserScopeCache.deleteMany({
+        where: {
+          objectApiName: {
+            in: normalizedObjectApiNames,
+          },
+        },
+      }),
+      tx.visibilityPolicyDefinitionCache.deleteMany({
+        where: {
+          objectApiName: {
+            in: normalizedObjectApiNames,
+          },
+        },
+      }),
+    ]);
+  }
+
+  private async listObjectApiNamesForCone(
+    tx: PrismaTransaction,
+    coneId: string | undefined,
+  ): Promise<string[]> {
+    if (!coneId) {
+      return [];
+    }
+
+    const rows = await tx.visibilityRule.findMany({
+      where: { coneId },
+      select: { objectApiName: true },
+      distinct: ['objectApiName'],
+    });
+
+    return this.mergeObjectApiNames(rows.map((row) => row.objectApiName));
+  }
+
+  private mergeObjectApiNames(...values: Array<Array<string | undefined> | string | undefined>): string[] {
+    const merged: string[] = [];
+
+    for (const value of values) {
+      if (Array.isArray(value)) {
+        for (const entry of value) {
+          if (entry && !merged.includes(entry)) {
+            merged.push(entry);
+          }
+        }
+        continue;
+      }
+
+      if (value && !merged.includes(value)) {
+        merged.push(value);
+      }
+    }
+
+    return merged.sort((left, right) => left.localeCompare(right));
   }
 
   private async ensureConeExists(coneId: string): Promise<void> {
