@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
 
+import { CsrfGuard } from '../auth/guards/csrf.guard';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AclResource } from '../common/decorators/acl-resource.decorator';
 import { AclGuard } from '../common/guards/acl.guard';
@@ -8,7 +9,7 @@ import { RawQueryDto } from './dto/raw-query.dto';
 import { SalesforceService } from './salesforce.service';
 
 @Controller('salesforce')
-@UseGuards(JwtAuthGuard, AclGuard)
+@UseGuards(JwtAuthGuard, CsrfGuard, AclGuard)
 export class SalesforceController {
   constructor(private readonly salesforceService: SalesforceService) {}
 

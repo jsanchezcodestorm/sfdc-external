@@ -8,6 +8,7 @@ import type { NextFunction, Request, Response } from 'express';
 import { AppModule } from './app.module';
 import { AuditExceptionFilter } from './audit/audit-exception.filter';
 import { RequestContextService } from './audit/request-context.service';
+import { extractRequestOrigin, readAllowedFrontendOrigins } from './common/utils/frontend-origins';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
@@ -15,7 +16,7 @@ async function bootstrap(): Promise<void> {
   const requestContextService = app.get(RequestContextService);
 
   const port = configService.get<number>('PORT', 3000);
-  const origin = configService.get<string>('FRONTEND_ORIGIN', 'http://localhost:5173');
+  const allowedOrigins = readAllowedFrontendOrigins(configService);
 
   app.setGlobalPrefix('api');
 
@@ -25,7 +26,15 @@ async function bootstrap(): Promise<void> {
   );
 
   app.enableCors({
-    origin,
+    origin: (requestOrigin, callback) => {
+      if (!requestOrigin) {
+        callback(null, true);
+        return;
+      }
+
+      const normalizedOrigin = extractRequestOrigin(requestOrigin);
+      callback(null, normalizedOrigin !== null && allowedOrigins.includes(normalizedOrigin));
+    },
     credentials: true
   });
 

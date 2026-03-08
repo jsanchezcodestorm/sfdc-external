@@ -20,6 +20,7 @@ npm exec --workspace backend prisma -- migrate dev --schema prisma/schema.prisma
 
 - `GET /api/health`
 - `POST /api/auth/google`
+- `GET /api/auth/csrf`
 - `GET /api/auth/session`
 - `POST /api/auth/logout`
 - `GET /api/navigation`

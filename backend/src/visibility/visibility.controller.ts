@@ -12,6 +12,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 
+import { CsrfGuard } from '../auth/guards/csrf.guard';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AclResource } from '../common/decorators/acl-resource.decorator';
 import { AclGuard } from '../common/guards/acl.guard';
@@ -25,7 +26,7 @@ import { UpsertVisibilityRuleDto } from './dto/upsert-visibility-rule.dto';
 import { VisibilityAdminService } from './visibility-admin.service';
 
 @Controller('visibility')
-@UseGuards(JwtAuthGuard, AclGuard)
+@UseGuards(JwtAuthGuard, CsrfGuard, AclGuard)
 export class VisibilityController {
   constructor(private readonly visibilityAdminService: VisibilityAdminService) {}
 

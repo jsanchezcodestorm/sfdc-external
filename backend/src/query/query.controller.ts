@@ -1,5 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Put, UseGuards } from '@nestjs/common';
 
+import { CsrfGuard } from '../auth/guards/csrf.guard';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import type { SessionUser } from '../auth/session-user.interface';
 import { AclResource } from '../common/decorators/acl-resource.decorator';
@@ -12,7 +13,7 @@ import { QueryService } from './query.service';
 import { QueryAdminTemplateService } from './services/query-admin-template.service';
 
 @Controller('query')
-@UseGuards(JwtAuthGuard, AclGuard)
+@UseGuards(JwtAuthGuard, CsrfGuard, AclGuard)
 export class QueryController {
   constructor(
     private readonly queryService: QueryService,

@@ -12,6 +12,7 @@ import {
   UseGuards
 } from '@nestjs/common';
 
+import { CsrfGuard } from '../auth/guards/csrf.guard';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AclResource } from '../common/decorators/acl-resource.decorator';
 import { AclGuard } from '../common/guards/acl.guard';
@@ -35,7 +36,7 @@ import { UpsertAclPermissionDto } from './dto/upsert-acl-permission.dto';
 import { UpsertAclResourceDto } from './dto/upsert-acl-resource.dto';
 
 @Controller('acl')
-@UseGuards(JwtAuthGuard, AclGuard)
+@UseGuards(JwtAuthGuard, CsrfGuard, AclGuard)
 export class AclController {
   constructor(
     private readonly aclAdminConfigService: AclAdminConfigService,

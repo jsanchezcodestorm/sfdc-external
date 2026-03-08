@@ -7,14 +7,23 @@ import { RequestContextService } from '../audit/request-context.service';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 
 import { AuthService } from './auth.service';
+import { CsrfService } from './csrf.service';
 import { GoogleLoginDto } from './dto/google-login.dto';
+import { CsrfGuard } from './guards/csrf.guard';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import type { SessionUser } from './session-user.interface';
 
+interface AuthSessionResponse {
+  user: SessionUser;
+  csrfToken: string;
+}
+
 @Controller('auth')
+@UseGuards(CsrfGuard)
 export class AuthController {
   constructor(
     private readonly authService: AuthService,
+    private readonly csrfService: CsrfService,
     private readonly auditWriteService: AuditWriteService,
     private readonly requestContextService: RequestContextService
   ) {}
@@ -23,7 +32,7 @@ export class AuthController {
   async loginWithGoogle(
     @Body() dto: GoogleLoginDto,
     @Res({ passthrough: true }) response: Response
-  ): Promise<{ user: SessionUser }> {
+  ): Promise<AuthSessionResponse> {
     try {
       const { token, user } = await this.authService.loginWithGoogleIdToken(dto.idToken);
       this.requestContextService.setUser(user);
@@ -38,8 +47,9 @@ export class AuthController {
       });
 
       response.cookie(SESSION_COOKIE_NAME, token, this.authService.getSessionCookieOptions());
+      const csrfToken = this.csrfService.issueToken(response);
 
-      return { user };
+      return { user, csrfToken };
     } catch (error) {
       await this.auditWriteService.recordSecurityEventOrThrow({
         eventType: 'AUTH',
@@ -54,14 +64,25 @@ export class AuthController {
     }
   }
 
+  @Get('csrf')
+  getCsrfToken(@Res({ passthrough: true }) response: Response): { csrfToken: string } {
+    const csrfToken = this.csrfService.issueToken(response);
+    return { csrfToken };
+  }
+
   @Get('session')
   @UseGuards(JwtAuthGuard)
-  getSession(@CurrentUser() user: SessionUser): { user: SessionUser } {
-    return { user };
+  getSession(
+    @CurrentUser() user: SessionUser,
+    @Res({ passthrough: true }) response: Response
+  ): AuthSessionResponse {
+    const csrfToken = this.csrfService.issueToken(response);
+    return { user, csrfToken };
   }
 
   @Post('logout')
   logout(@Res({ passthrough: true }) response: Response): { success: boolean } {
+    this.csrfService.clearToken(response);
     response.clearCookie(SESSION_COOKIE_NAME, this.authService.getClearCookieOptions());
     void this.auditWriteService.recordSecurityEventBestEffort({
       eventType: 'AUTH',
