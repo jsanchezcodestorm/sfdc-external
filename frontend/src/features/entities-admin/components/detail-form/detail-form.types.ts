@@ -1,12 +1,15 @@
 export type DetailFieldDraft = {
+  clientId: string
   label: string
   field: string
   template: string
+  sourceMode: 'field' | 'template'
   highlight: boolean
   format: '' | 'date' | 'datetime'
 }
 
 export type DetailSectionDraft = {
+  clientId: string
   title: string
   fields: DetailFieldDraft[]
 }

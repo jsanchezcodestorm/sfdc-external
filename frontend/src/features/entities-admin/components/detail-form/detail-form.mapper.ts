@@ -41,12 +41,17 @@ export function createDetailFormDraft(
 
   const query = detail.query
   const sections: DetailSectionDraft[] = (detail.sections ?? []).map((section) => ({
+    clientId: createDetailDraftClientId('section'),
     title: section.title ?? '',
     fields:
       section.fields?.map((field) => ({
+        clientId: createDetailDraftClientId('field'),
         label: field.label ?? '',
         field: field.field ?? '',
         template: field.template ?? '',
+        sourceMode: typeof field.template === 'string' && field.template.trim().length > 0
+          ? 'template'
+          : 'field',
         highlight: Boolean(field.highlight),
         format:
           field.format === 'date' || field.format === 'datetime' ? field.format : '',
@@ -346,21 +351,31 @@ function createEmptyPathStatusStepDraft(): PathStatusStepDraft {
   }
 }
 
-function createEmptyDetailSectionDraft(title = ''): DetailSectionDraft {
+export function createEmptyDetailSectionDraft(title = ''): DetailSectionDraft {
   return {
+    clientId: createDetailDraftClientId('section'),
     title,
     fields: [createEmptyDetailFieldDraft()],
   }
 }
 
-function createEmptyDetailFieldDraft(): DetailFieldDraft {
+export function createEmptyDetailFieldDraft(): DetailFieldDraft {
   return {
+    clientId: createDetailDraftClientId('field'),
     label: '',
     field: '',
     template: '',
+    sourceMode: 'field',
     highlight: false,
     format: '',
   }
+}
+
+let detailDraftClientIdCounter = 0
+
+function createDetailDraftClientId(prefix: 'section' | 'field'): string {
+  detailDraftClientIdCounter += 1
+  return `${prefix}-${detailDraftClientIdCounter}`
 }
 
 function formatColumnsDraft(columns: RelatedListConfig['columns'] | undefined): string {
