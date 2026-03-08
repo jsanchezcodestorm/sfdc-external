@@ -23,6 +23,7 @@ import {
   buildVisibilityRuleCreatePath,
   buildVisibilityRulesListPath,
   buildVisibilityRuleViewPath,
+  getVisibilityRuleDisplayLabel,
 } from '../visibility-admin-utils'
 
 type RouteParams = {
@@ -243,8 +244,11 @@ export function VisibilityConeDetailPage() {
                     className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-white px-3 py-3 sm:flex-row sm:items-center sm:justify-between"
                   >
                     <div>
-                      <p className="text-sm font-semibold text-slate-900">{rule.objectApiName}</p>
+                      <p className="text-sm font-semibold text-slate-900">
+                        {getVisibilityRuleDisplayLabel(rule)}
+                      </p>
                       <p className="mt-1 text-xs text-slate-500">
+                        {rule.description ? `${rule.objectApiName} · ` : ''}
                         {rule.effect} · {rule.active ? 'Active' : 'Inactive'}
                       </p>
                     </div>

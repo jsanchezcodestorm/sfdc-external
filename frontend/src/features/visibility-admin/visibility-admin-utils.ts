@@ -19,6 +19,7 @@ export type VisibilityConeDraft = {
 export type VisibilityRuleDraft = {
   coneId: string
   objectApiName: string
+  description: string
   effect: VisibilityDecision
   condition: VisibilityRuleNode
   fieldsAllowed: string[]
@@ -138,6 +139,7 @@ export function createEmptyVisibilityRuleDraft(defaultConeId = ''): VisibilityRu
   return {
     coneId: defaultConeId,
     objectApiName: '',
+    description: '',
     effect: 'ALLOW',
     condition: createEmptyVisibilityRuleNode(),
     fieldsAllowed: [],
@@ -150,6 +152,7 @@ export function createVisibilityRuleDraft(rule: VisibilityRule): VisibilityRuleD
   return {
     coneId: rule.coneId,
     objectApiName: rule.objectApiName,
+    description: rule.description ?? '',
     effect: rule.effect,
     condition: cloneVisibilityRuleNode(rule.condition),
     fieldsAllowed: [...(rule.fieldsAllowed ?? [])],
@@ -164,12 +167,20 @@ export function parseVisibilityRuleDraft(
   return {
     coneId: draft.coneId.trim(),
     objectApiName: draft.objectApiName.trim(),
+    description: normalizeOptionalText(draft.description),
     effect: draft.effect,
     condition: cloneVisibilityRuleNode(draft.condition),
     fieldsAllowed: normalizeFieldList(draft.fieldsAllowed),
     fieldsDenied: normalizeFieldList(draft.fieldsDenied),
     active: draft.active,
   }
+}
+
+export function getVisibilityRuleDisplayLabel(rule: {
+  description?: string
+  objectApiName: string
+}): string {
+  return rule.description?.trim() || rule.objectApiName
 }
 
 export function createEmptyVisibilityAssignmentDraft(defaultConeId = ''): VisibilityAssignmentDraft {

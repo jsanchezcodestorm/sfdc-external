@@ -69,6 +69,7 @@ export type VisibilityRule = {
   id: string
   coneId: string
   objectApiName: string
+  description?: string
   effect: VisibilityDecision
   condition: VisibilityRuleNode
   fieldsAllowed?: string[]
@@ -81,6 +82,7 @@ export type VisibilityRuleSummary = {
   coneId: string
   coneCode: string
   objectApiName: string
+  description?: string
   effect: VisibilityDecision
   active: boolean
   fieldsAllowedCount: number

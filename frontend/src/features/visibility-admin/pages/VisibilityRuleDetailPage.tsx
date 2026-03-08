@@ -14,6 +14,7 @@ import {
   buildVisibilityConeViewPath,
   buildVisibilityRuleEditPath,
   buildVisibilityRulesListPath,
+  getVisibilityRuleDisplayLabel,
 } from '../visibility-admin-utils'
 
 type RouteParams = {
@@ -76,6 +77,7 @@ export function VisibilityRuleDetailPage() {
     () => cones.find((cone) => cone.id === payload?.rule.coneId) ?? null,
     [cones, payload],
   )
+  const pageTitle = payload ? getVisibilityRuleDisplayLabel(payload.rule) : 'Visibility rule'
 
   const removeRule = async () => {
     if (!ruleId) {
@@ -114,9 +116,7 @@ export function VisibilityRuleDetailPage() {
           <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
             View
           </p>
-          <h2 className="mt-1 text-xl font-semibold text-slate-900">
-            {payload?.rule.objectApiName || 'Visibility rule'}
-          </h2>
+          <h2 className="mt-1 text-xl font-semibold text-slate-900">{pageTitle}</h2>
         </div>
 
         <div className="flex flex-wrap gap-2">
@@ -194,6 +194,13 @@ export function VisibilityRuleDetailPage() {
               </div>
             ) : (
               <code className="font-mono text-xs text-slate-800">{payload.rule.coneId}</code>
+            )}
+          </DetailBlock>
+          <DetailBlock label="Description">
+            {payload.rule.description ? (
+              payload.rule.description
+            ) : (
+              <p className="text-sm text-slate-700">Nessuna description configurata.</p>
             )}
           </DetailBlock>
           <DetailBlock label="Object API Name">{payload.rule.objectApiName}</DetailBlock>

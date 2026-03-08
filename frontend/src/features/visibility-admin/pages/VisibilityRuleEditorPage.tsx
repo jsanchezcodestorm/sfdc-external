@@ -18,6 +18,7 @@ import type {
 } from '../visibility-admin-types'
 import {
   buildVisibilityConeViewPath,
+  getVisibilityRuleDisplayLabel,
   buildVisibilityRuleViewPath,
   buildVisibilityRulesListPath,
   createEmptyVisibilityRuleDraft,
@@ -107,6 +108,14 @@ export function VisibilityRuleEditorPage({ mode }: VisibilityRuleEditorPageProps
     () => cones.find((cone) => cone.id === draft.coneId) ?? null,
     [cones, draft.coneId],
   )
+  const pageTitle = useMemo(() => {
+    const label = getVisibilityRuleDisplayLabel(draft).trim()
+    if (label) {
+      return label
+    }
+
+    return mode === 'create' ? 'Nuova visibility rule' : 'Visibility rule'
+  }, [draft, mode])
 
   const saveRule = async () => {
     let parsedRule: Omit<VisibilityRule, 'id'>
@@ -149,9 +158,7 @@ export function VisibilityRuleEditorPage({ mode }: VisibilityRuleEditorPageProps
           <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
             {mode === 'create' ? 'Create' : 'Edit'}
           </p>
-          <h2 className="mt-1 text-xl font-semibold text-slate-900">
-            {mode === 'create' ? 'Nuova visibility rule' : draft.objectApiName || 'Visibility rule'}
-          </h2>
+          <h2 className="mt-1 text-xl font-semibold text-slate-900">{pageTitle}</h2>
         </div>
 
         <div className="flex flex-wrap gap-2">
@@ -257,6 +264,22 @@ export function VisibilityRuleEditorPage({ mode }: VisibilityRuleEditorPageProps
                   }))
                 }
                 placeholder="Account"
+              />
+            </label>
+
+            <label className="text-sm font-medium text-slate-700 lg:col-span-2">
+              Description
+              <textarea
+                value={draft.description}
+                onChange={(event) =>
+                  setDraft((current) => ({
+                    ...current,
+                    description: event.target.value,
+                  }))
+                }
+                rows={3}
+                placeholder="Descrizione amministrativa per distinguere questa rule"
+                className="mt-2 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
               />
             </label>
 

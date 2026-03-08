@@ -14,6 +14,7 @@ import {
   buildVisibilityRuleEditPath,
   buildVisibilityRuleViewPath,
   formatVisibilityDateTime,
+  getVisibilityRuleDisplayLabel,
 } from '../visibility-admin-utils'
 
 export function VisibilityRulesPage() {
@@ -77,7 +78,7 @@ export function VisibilityRulesPage() {
         return true
       }
 
-      return [item.coneCode, item.objectApiName, item.effect]
+      return [item.coneCode, item.objectApiName, item.description ?? '', item.effect]
         .join(' ')
         .toLowerCase()
         .includes(normalizedQuery)
@@ -134,7 +135,7 @@ export function VisibilityRulesPage() {
               type="search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Cerca per cone, object API name o effect"
+              placeholder="Cerca per cone, description, object API name o effect"
               className="mt-2 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
             />
           </label>
@@ -191,6 +192,7 @@ export function VisibilityRulesPage() {
               <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
                 <tr>
                   <th className="px-4 py-3 text-left">Cone</th>
+                  <th className="px-4 py-3 text-left">Description</th>
                   <th className="px-4 py-3 text-left">Object API Name</th>
                   <th className="px-4 py-3 text-left">Effect</th>
                   <th className="px-4 py-3 text-left">Active</th>
@@ -211,6 +213,17 @@ export function VisibilityRulesPage() {
                         >
                           {item.coneCode}
                         </Link>
+                      </td>
+                      <td className="px-4 py-3 text-slate-700">
+                        {item.description ? (
+                          <div className="space-y-1">
+                            <p className="font-medium text-slate-900">
+                              {getVisibilityRuleDisplayLabel(item)}
+                            </p>
+                          </div>
+                        ) : (
+                          <span className="text-slate-400">-</span>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-slate-700">{item.objectApiName}</td>
                       <td className="px-4 py-3 text-slate-700">
@@ -246,7 +259,7 @@ export function VisibilityRulesPage() {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={8} className="px-4 py-10 text-sm text-slate-500">
+                    <td colSpan={9} className="px-4 py-10 text-sm text-slate-500">
                       {query.trim().length > 0 || selectedConeId
                         ? 'Nessuna rule corrisponde ai filtri attivi.'
                         : 'Nessuna visibility rule configurata.'}
