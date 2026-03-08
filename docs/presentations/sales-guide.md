@@ -8,15 +8,15 @@ Riferimenti pricing verificati su fonti pubbliche ufficiali Salesforce al 8 marz
 
 La chiave commerciale piu forte e il contenimento della pressione del licensing Salesforce.
 
-Il progetto non sostituisce Salesforce e non elimina il licensing. Il punto e diverso: non tutte le popolazioni utente devono essere trattate come se avessero bisogno dello stesso footprint di accesso, dello stesso livello di esperienza e dello stesso costo di licensing.
+Il progetto non sostituisce Salesforce. Il punto e diverso: non tutte le popolazioni utente devono essere trattate come se avessero bisogno dello stesso footprint di accesso, dello stesso livello di esperienza e dello stesso costo di licensing.
 
-La piattaforma rende sostenibile un modello piu selettivo e governato, dove il dato resta in Salesforce ma l'accesso puo essere organizzato in modo piu efficiente, piu controllato e piu adatto al caso d'uso reale.
+La piattaforma rende sostenibile un modello piu selettivo e governato, dove il dato resta in Salesforce ma l'accesso puo essere organizzato in modo piu efficiente, piu controllato e piu adatto al caso d'uso reale. In molti scenari questo puo tradursi in una riduzione anche molto rilevante del fabbisogno di licensing Salesforce per le popolazioni satellite, pur restando una valutazione da ricondurre al caso d'uso e al perimetro contrattuale del cliente.
 
 ## Elevator pitch
 
 Molte organizzazioni vogliono estendere processi e dati Salesforce a piu persone, ma si scontrano rapidamente con il costo di scalare l'accesso in modo uniforme. Il progetto crea un layer applicativo che permette di servire popolazioni diverse con workspace dedicati, visibilita differenziata e controllo centralizzato, senza trattare ogni utente come se avesse bisogno dello stesso modello di accesso Salesforce.
 
-Il valore commerciale nasce qui: minore pressione economica sul licensing, maggiore flessibilita nel disegno dei processi e un modello difendibile anche lato governance grazie a visibilita, audit e controllo degli accessi.
+Il valore commerciale nasce qui: minore pressione economica sul licensing, maggiore flessibilita nel disegno dei processi e un modello difendibile anche lato governance grazie a visibilita, audit e controllo degli accessi. In alcuni scenari il progetto puo concentrare l'accesso Salesforce su un perimetro piu ristretto di utenze applicative o amministrative e servire dal portale una popolazione piu ampia, sempre con verifica del corretto modello contrattuale.
 
 ## Key point da usare in call
 
@@ -24,6 +24,7 @@ Il valore commerciale nasce qui: minore pressione economica sul licensing, maggi
 - Il dato resta in Salesforce; il progetto aggiunge governo, controllo e fruibilita operativa.
 - La piattaforma consente di differenziare accesso, workspace e visibilita per popolazioni diverse.
 - Il saving non nasce da una compressione artificiale delle licenze, ma da un modello di accesso piu efficiente.
+- In molti scenari non serve assegnare la stessa tipologia di accesso Salesforce a ogni utente finale.
 - Piu cresce la popolazione satellite, piu il tema licensing diventa rilevante.
 - Governance, visibility e audit rendono il modello sostenibile anche per organizzazioni sensibili a compliance e controllo.
 
@@ -63,6 +64,7 @@ Come usare questo scenario:
 - parlare di pressione economica potenziale del modello di accesso
 - chiarire che non e un saving garantito
 - spiegare che il valore del progetto sta nel rendere selettivo e governato chi ha davvero bisogno di licensing Salesforce dedicato
+- se utile, aggiungere che il portale puo consentire di servire piu utenti finali con un perimetro piu ristretto di utenze Salesforce dirette, ma senza trasformare questo esempio in una promessa universale
 
 ## Scenario di crescita
 
@@ -79,6 +81,7 @@ Messaggio da usare:
 
 - quando la popolazione satellite cresce, il tema non e solo di esperienza utente ma di sostenibilita economica del modello di accesso
 - il progetto crea spazio per un disegno piu efficiente dell'accesso, senza rinunciare a controllo e tracciabilita
+- il saving potenziale puo diventare molto significativo, ma va sempre legato al caso concreto e al modello contrattuale del cliente
 
 ## Benchmark secondari da citare
 
@@ -95,14 +98,17 @@ Se il prospect ragiona gia in termini partner ecosystem o portali avanzati, ques
 - Il punto non e dare a tutti lo stesso accesso Salesforce.
 - Il saving nasce quando distingui utenti core da utenti satellite.
 - La piattaforma rende sostenibile un modello di accesso piu selettivo.
+- In alcuni scenari non serve dare una licenza Salesforce dedicata a ogni singolo utente finale del portale.
+- In alcuni scenari una o poche utenze applicative possono fare da ponte verso una popolazione piu ampia.
 - Il controllo su visibilita e audit rende questo modello difendibile anche lato governance.
 - Salesforce resta il sistema di riferimento del dato; il progetto ne migliora il modo di fruizione.
+- La sostenibilita economica dipende poi da come il cliente ha strutturato il proprio perimetro contrattuale Salesforce.
 
 ## Cosa non dire
 
-- Non dire che il progetto elimina il licensing Salesforce.
-- Non dire che puo sostituire qualsiasi licenza Salesforce.
-- Non dire che basta una singola utenza tecnica per servire tutti.
+- Non dire che il progetto elimina sempre il licensing Salesforce.
+- Non dire che puo sostituire automaticamente qualsiasi licenza Salesforce in qualunque scenario.
+- Non dare per scontato che una singola utenza tecnica o di integrazione basti sempre per servire tutti senza verifiche.
 - Non promettere ROI o saving garantiti.
 - Non presentare i numeri come quotazioni contrattuali reali.
 - Non suggerire mai che il modello serva ad aggirare i termini di licensing Salesforce.
