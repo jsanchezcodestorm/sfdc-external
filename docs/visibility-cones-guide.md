@@ -68,6 +68,7 @@ Campi minimi:
 - `id` (uuid pk)
 - `cone_id` (fk -> cones.id)
 - `object_api_name` (varchar)
+- `description` (varchar, opzionale)
 - `effect` (varchar check `ALLOW|DENY`)
 - `condition_json` (jsonb)
 - `fields_allowed` (jsonb, opzionale)
