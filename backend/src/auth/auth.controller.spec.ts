@@ -60,6 +60,9 @@ function createController() {
         user: USER,
       };
     },
+    issueSessionToken() {
+      return 'rotated-session-token';
+    },
     getSessionCookieOptions() {
       return {
         httpOnly: true,
@@ -114,7 +117,7 @@ test('getCsrfToken returns a token and sets the csrf cookie', () => {
   assert.equal(response.cookieCalls[0].value, payload.csrfToken);
 });
 
-test('getSession rotates the csrf cookie and returns the token', () => {
+test('getSession rotates the session and csrf cookies and returns the token', () => {
   const { controller } = createController();
   const response = createResponse();
 
@@ -122,9 +125,11 @@ test('getSession rotates the csrf cookie and returns the token', () => {
 
   assert.deepEqual(payload.user, USER);
   assert.equal(typeof payload.csrfToken, 'string');
-  assert.equal(response.cookieCalls.length, 1);
-  assert.equal(response.cookieCalls[0].name, CSRF_COOKIE_NAME);
-  assert.equal(response.cookieCalls[0].value, payload.csrfToken);
+  assert.equal(response.cookieCalls.length, 2);
+  assert.equal(response.cookieCalls[0].name, SESSION_COOKIE_NAME);
+  assert.equal(response.cookieCalls[0].value, 'rotated-session-token');
+  assert.equal(response.cookieCalls[1].name, CSRF_COOKIE_NAME);
+  assert.equal(response.cookieCalls[1].value, payload.csrfToken);
 });
 
 test('loginWithGoogle returns user and csrfToken while setting session and csrf cookies', async () => {

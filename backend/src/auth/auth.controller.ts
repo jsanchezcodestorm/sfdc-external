@@ -76,6 +76,8 @@ export class AuthController {
     @CurrentUser() user: SessionUser,
     @Res({ passthrough: true }) response: Response
   ): AuthSessionResponse {
+    const token = this.authService.issueSessionToken(user);
+    response.cookie(SESSION_COOKIE_NAME, token, this.authService.getSessionCookieOptions());
     const csrfToken = this.csrfService.issueToken(response);
     return { user, csrfToken };
   }

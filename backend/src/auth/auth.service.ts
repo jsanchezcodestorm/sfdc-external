@@ -54,7 +54,7 @@ export class AuthService {
       throw new UnauthorizedException('Google token missing required claims');
     }
 
-    const token = this.signSessionToken(user);
+    const token = this.issueSessionToken(user);
     return { token, user };
   }
 
@@ -125,7 +125,7 @@ export class AuthService {
     }
   }
 
-  private signSessionToken(user: SessionUser): string {
+  issueSessionToken(user: SessionUser): string {
     return sign(
       {
         sub: user.sub,
