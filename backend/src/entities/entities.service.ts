@@ -18,7 +18,8 @@ import type {
   EntityListViewConfig,
   EntityPathStatusConfig,
   EntityQueryConfig,
-  EntityQueryWhere
+  EntityQueryWhere,
+  EntityQueryScalarValue
 } from './entities.types';
 import { EntityConfigRepository } from './services/entity-config.repository';
 
@@ -832,22 +833,8 @@ export class EntitiesService {
   }
 
   private compileWhereEntry(entry: EntityQueryWhere, context: Record<string, unknown>): string | null {
-    if (typeof entry === 'string') {
-      const raw = this.renderTemplate(entry, context).trim();
-      return raw.length > 0 ? raw : null;
-    }
-
-    if (entry.raw && entry.raw.trim().length > 0) {
-      const raw = this.renderTemplate(entry.raw, context).trim();
-      return raw.length > 0 ? raw : null;
-    }
-
-    if (!entry.field || entry.field.trim().length === 0) {
-      return null;
-    }
-
     const field = this.toSoqlIdentifier(entry.field);
-    const operator = (entry.operator ?? '=').trim().toUpperCase();
+    const operator = entry.operator;
     const resolvedValue = this.resolveQueryValue(entry.value, context);
 
     if (resolvedValue === null) {
@@ -858,11 +845,13 @@ export class EntitiesService {
       if (operator === '!=') {
         return `${field} IS NOT NULL`;
       }
+
+      throw new BadRequestException(`Operator ${operator} does not accept null`);
     }
 
     if (Array.isArray(resolvedValue)) {
-      if (resolvedValue.length === 0) {
-        return null;
+      if (operator !== 'IN' && operator !== 'NOT IN') {
+        throw new BadRequestException(`Operator ${operator} does not accept an array value`);
       }
 
       const serializedArray = resolvedValue.map((value) => this.serializeSoqlValue(value)).join(', ');
@@ -873,13 +862,9 @@ export class EntitiesService {
   }
 
   private resolveQueryValue(
-    value: string | number | boolean | null | Array<string | number | boolean | null> | undefined,
+    value: EntityQueryScalarValue | EntityQueryScalarValue[],
     context: Record<string, unknown>
-  ): string | number | boolean | null | Array<string | number | boolean | null> {
-    if (value === undefined) {
-      return '';
-    }
-
+  ): EntityQueryScalarValue | EntityQueryScalarValue[] {
     if (Array.isArray(value)) {
       return value.map((entry) => this.resolveScalarQueryValue(entry, context));
     }
@@ -888,9 +873,9 @@ export class EntitiesService {
   }
 
   private resolveScalarQueryValue(
-    value: string | number | boolean | null,
+    value: EntityQueryScalarValue,
     context: Record<string, unknown>
-  ): string | number | boolean | null {
+  ): EntityQueryScalarValue {
     if (typeof value !== 'string') {
       return value;
     }

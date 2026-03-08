@@ -49,6 +49,18 @@ type RuntimeAssignmentRow = {
   cone: RuntimeConeRow;
 };
 
+type ProcessedRuntimeRules = {
+  appliedRules: string[];
+  allowPredicates: string[];
+  denyPredicates: string[];
+  allowFieldSets: string[][];
+  deniedFields: string[];
+  invalidRule?: {
+    id: string;
+    message: string;
+  };
+};
+
 @Injectable()
 export class VisibilityService {
   private readonly logger = new Logger(VisibilityService.name);
@@ -120,11 +132,22 @@ export class VisibilityService {
     );
     const applicableCones = this.getApplicableCones(applicableAssignments);
     const appliedCones = applicableCones.map((cone) => cone.code);
-    const appliedRules: string[] = [];
-    const allowPredicates: string[] = [];
-    const denyPredicates: string[] = [];
-    const allowFieldSets: string[][] = [];
-    const deniedFieldsSet = new Set<string>();
+    const processedRules = this.processApplicableRules(applicableCones, objectApiName);
+
+    if (processedRules.invalidRule) {
+      return this.buildInvalidRuleEvaluation({
+        contactId,
+        recordType,
+        objectApiName,
+        policyVersion,
+        appliedCones,
+        appliedRules: processedRules.appliedRules,
+        matchedAssignments: applicableAssignments.map((assignment) => assignment.id),
+        permissionsHash,
+        cacheKey,
+        baseWhere: context.baseWhere,
+      });
+    }
 
     const cachedScope =
       context.skipCache === true
@@ -143,38 +166,14 @@ export class VisibilityService {
         : undefined;
 
     if (!compiledPredicate) {
-      for (const cone of applicableCones) {
-        for (const rule of cone.rules) {
-          try {
-            const normalizedRule = this.normalizeRuntimeRule(rule);
-            const compiledRule = compileVisibilityRuleNode(normalizedRule.condition);
-            appliedRules.push(rule.id);
-
-            if (normalizedRule.effect === VisibilityRuleEffect.ALLOW) {
-              allowPredicates.push(compiledRule);
-
-              if (normalizedRule.fieldsAllowed && normalizedRule.fieldsAllowed.length > 0) {
-                allowFieldSets.push(normalizedRule.fieldsAllowed);
-              }
-            } else {
-              denyPredicates.push(compiledRule);
-            }
-
-            for (const deniedField of normalizedRule.fieldsDenied ?? []) {
-              deniedFieldsSet.add(deniedField);
-            }
-          } catch (error) {
-            this.logger.warn(
-              `Dropping invalid visibility rule ${rule.id} for ${objectApiName}: ${
-                error instanceof Error ? error.message : 'unknown error'
-              }`,
-            );
-          }
-        }
-      }
-
-      compiledFields = this.resolveCompiledFields(allowFieldSets, [...deniedFieldsSet]);
-      compiledPredicate = this.composeCompiledPredicate(allowPredicates, denyPredicates);
+      compiledFields = this.resolveCompiledFields(
+        processedRules.allowFieldSets,
+        processedRules.deniedFields
+      );
+      compiledPredicate = this.composeCompiledPredicate(
+        processedRules.allowPredicates,
+        processedRules.denyPredicates
+      );
 
       if (context.skipCache !== true) {
         await this.prismaService.visibilityUserScopeCache.upsert({
@@ -203,30 +202,15 @@ export class VisibilityService {
         });
       }
     } else {
-      for (const cone of applicableCones) {
-        for (const rule of cone.rules) {
-          try {
-            const normalizedRule = this.normalizeRuntimeRule(rule);
-            appliedRules.push(rule.id);
-            if (normalizedRule.fieldsAllowed && normalizedRule.fieldsAllowed.length > 0) {
-              allowFieldSets.push(normalizedRule.fieldsAllowed);
-            }
-
-            for (const deniedField of normalizedRule.fieldsDenied ?? []) {
-              deniedFieldsSet.add(deniedField);
-            }
-          } catch {
-            // Ignore invalid rules while reading cached scope.
-          }
-        }
-      }
-
       if (!compiledFields) {
-        compiledFields = this.resolveCompiledFields(allowFieldSets, [...deniedFieldsSet]);
+        compiledFields = this.resolveCompiledFields(
+          processedRules.allowFieldSets,
+          processedRules.deniedFields
+        );
       }
     }
 
-    const deniedFields = [...deniedFieldsSet];
+    const deniedFields = processedRules.deniedFields;
     const hasAllow = compiledPredicate.length > 0;
     const decision = hasAllow ? 'ALLOW' : 'DENY';
     const reasonCode = hasAllow
@@ -245,13 +229,17 @@ export class VisibilityService {
       contactId,
       recordType,
       appliedCones,
-      appliedRules,
+      appliedRules: processedRules.appliedRules,
       matchedAssignments: applicableAssignments.map((assignment) => assignment.id),
       permissionsHash,
       compiledAllowPredicate:
-        allowPredicates.length > 0 ? this.composeOrPredicate(allowPredicates) : undefined,
+        processedRules.allowPredicates.length > 0
+          ? this.composeOrPredicate(processedRules.allowPredicates)
+          : undefined,
       compiledDenyPredicate:
-        denyPredicates.length > 0 ? this.composeOrPredicate(denyPredicates) : undefined,
+        processedRules.denyPredicates.length > 0
+          ? this.composeOrPredicate(processedRules.denyPredicates)
+          : undefined,
       compiledPredicate: compiledPredicate || undefined,
       compiledFields,
       deniedFields: deniedFields.length > 0 ? deniedFields : undefined,
@@ -341,6 +329,93 @@ export class VisibilityService {
         ? normalizeVisibilityFieldList(rule.fieldsDenied, 'fieldsDenied')
         : undefined,
       active: rule.active,
+    };
+  }
+
+  private processApplicableRules(
+    applicableCones: RuntimeConeRow[],
+    objectApiName: string,
+  ): ProcessedRuntimeRules {
+    const appliedRules: string[] = [];
+    const allowPredicates: string[] = [];
+    const denyPredicates: string[] = [];
+    const allowFieldSets: string[][] = [];
+    const deniedFieldsSet = new Set<string>();
+
+    for (const cone of applicableCones) {
+      for (const rule of cone.rules) {
+        try {
+          const normalizedRule = this.normalizeRuntimeRule(rule);
+          const compiledRule = compileVisibilityRuleNode(normalizedRule.condition);
+          appliedRules.push(rule.id);
+
+          if (normalizedRule.effect === VisibilityRuleEffect.ALLOW) {
+            allowPredicates.push(compiledRule);
+
+            if (normalizedRule.fieldsAllowed && normalizedRule.fieldsAllowed.length > 0) {
+              allowFieldSets.push(normalizedRule.fieldsAllowed);
+            }
+          } else {
+            denyPredicates.push(compiledRule);
+          }
+
+          for (const deniedField of normalizedRule.fieldsDenied ?? []) {
+            deniedFieldsSet.add(deniedField);
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'unknown error';
+          this.logger.warn(`Invalid visibility rule ${rule.id} for ${objectApiName}: ${message}`);
+
+          return {
+            appliedRules,
+            allowPredicates,
+            denyPredicates,
+            allowFieldSets,
+            deniedFields: [...deniedFieldsSet],
+            invalidRule: {
+              id: rule.id,
+              message,
+            },
+          };
+        }
+      }
+    }
+
+    return {
+      appliedRules,
+      allowPredicates,
+      denyPredicates,
+      allowFieldSets,
+      deniedFields: [...deniedFieldsSet],
+    };
+  }
+
+  private buildInvalidRuleEvaluation(params: {
+    contactId: string;
+    recordType: string | undefined;
+    objectApiName: string;
+    policyVersion: number;
+    appliedCones: string[];
+    appliedRules: string[];
+    matchedAssignments: string[];
+    permissionsHash: string;
+    cacheKey: string;
+    baseWhere?: string;
+  }): VisibilityEvaluation {
+    return {
+      decision: 'DENY',
+      reasonCode: 'INVALID_RULE_DROPPED',
+      policyVersion: params.policyVersion,
+      objectApiName: params.objectApiName,
+      contactId: params.contactId,
+      recordType: params.recordType,
+      appliedCones: params.appliedCones,
+      appliedRules: params.appliedRules,
+      matchedAssignments: params.matchedAssignments,
+      permissionsHash: params.permissionsHash,
+      cacheKey: params.cacheKey,
+      baseWhere: params.baseWhere,
+      finalWhere: this.composeFinalWhere(params.baseWhere, ''),
     };
   }
 
