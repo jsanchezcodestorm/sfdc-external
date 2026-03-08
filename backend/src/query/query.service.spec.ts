@@ -63,6 +63,7 @@ function createHarness(resultOrError: unknown) {
     decision: 'ALLOW',
     reasonCode: 'ALLOW_MATCH',
     policyVersion: 7,
+    objectPolicyVersion: 3,
     compiledPredicate: "OwnerId = '005000000000001'",
     compiledFields: ['Id', 'Name'],
     deniedFields: [],

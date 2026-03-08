@@ -1,20 +1,46 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import { VisibilityPolicyDefinitionCacheStatus } from '@prisma/client';
+
 import { VisibilityService } from './visibility.service';
 
 const CONTACT_ID = '003000000000001AAA';
+const OBJECT_API_NAME = 'Account';
+
+function createCompiledDefinition() {
+  return [
+    {
+      id: 'cone-1',
+      code: 'SALES',
+      priority: 10,
+      rules: [
+        {
+          id: 'rule-1',
+          effect: 'ALLOW',
+          compiledPredicate: "OwnerId = '005000000000001AAA'",
+          fieldsAllowed: ['Id', 'Name'],
+          fieldsDenied: [],
+        },
+      ],
+    },
+  ];
+}
 
 function createVisibilityService(options?: {
-  conditionJson?: unknown;
-  cachedScope?: {
-    compiledPredicate: string;
-    compiledFields?: unknown;
-    expiresAt: Date;
-  } | null;
+  cachedDefinitionRow?: Record<string, unknown> | null;
+  cachedScope?: Record<string, unknown> | null;
+  liveRules?: unknown[];
+  objectPolicyVersion?: bigint;
+  onAssignmentsFindMany?: (input: Record<string, unknown>) => void;
 }) {
-  const upsertCalls: Array<Record<string, unknown>> = [];
-  const findUniqueCalls: Array<Record<string, unknown>> = [];
+  const policyDefinitionFindUniqueCalls: Array<Record<string, unknown>> = [];
+  const policyDefinitionCreateCalls: Array<Record<string, unknown>> = [];
+  const policyDefinitionUpdateCalls: Array<Record<string, unknown>> = [];
+  const userScopeFindUniqueCalls: Array<Record<string, unknown>> = [];
+  const userScopeUpsertCalls: Array<Record<string, unknown>> = [];
+  const assignmentFindManyCalls: Array<Record<string, unknown>> = [];
+  const coneFindManyCalls: Array<Record<string, unknown>> = [];
 
   const service = new VisibilityService(
     {
@@ -28,54 +54,69 @@ function createVisibilityService(options?: {
       },
     } as never,
     {
-      visibilityAssignment: {
-        async findMany() {
-          return [
-            {
-              id: 'assignment-1',
-              coneId: 'cone-1',
-              contactId: CONTACT_ID,
-              permissionCode: 'PORTAL_ADMIN',
-              recordType: null,
-              validFrom: null,
-              validTo: null,
-              cone: {
-                id: 'cone-1',
-                code: 'SALES',
-                priority: 10,
-                active: true,
-                rules: [
-                  {
-                    id: 'rule-1',
-                    objectApiName: 'Account',
-                    effect: 'ALLOW',
-                    conditionJson: options?.conditionJson ?? {
-                      field: 'OwnerId',
-                      op: '=',
-                      value: '005000000000001AAA',
-                    },
-                    fieldsAllowed: ['Id', 'Name'],
-                    fieldsDenied: [],
-                    active: true,
-                  },
-                ],
-              },
-            },
-          ];
+      visibilityPolicyMeta: {
+        async findUnique() {
+          return { policyVersion: 5n };
+        },
+      },
+      visibilityObjectPolicyVersion: {
+        async findUnique() {
+          return { policyVersion: options?.objectPolicyVersion ?? 3n };
+        },
+      },
+      visibilityPolicyDefinitionCache: {
+        async findUnique(input: Record<string, unknown>) {
+          policyDefinitionFindUniqueCalls.push(input);
+          return options?.cachedDefinitionRow ?? null;
+        },
+        async create(input: Record<string, unknown>) {
+          policyDefinitionCreateCalls.push(input);
+        },
+        async update(input: Record<string, unknown>) {
+          policyDefinitionUpdateCalls.push(input);
         },
       },
       visibilityUserScopeCache: {
         async findUnique(input: Record<string, unknown>) {
-          findUniqueCalls.push(input);
+          userScopeFindUniqueCalls.push(input);
           return options?.cachedScope ?? null;
         },
         async upsert(input: Record<string, unknown>) {
-          upsertCalls.push(input);
+          userScopeUpsertCalls.push(input);
         },
       },
-      visibilityPolicyMeta: {
-        async findUnique() {
-          return { policyVersion: 5n };
+      visibilityAssignment: {
+        async findMany(input: Record<string, unknown>) {
+          assignmentFindManyCalls.push(input);
+          options?.onAssignmentsFindMany?.(input);
+          return [{ id: 'assignment-1', coneId: 'cone-1' }];
+        },
+      },
+      visibilityCone: {
+        async findMany(input: Record<string, unknown>) {
+          coneFindManyCalls.push(input);
+          return options?.liveRules ?? [
+            {
+              id: 'cone-1',
+              code: 'SALES',
+              priority: 10,
+              rules: [
+                {
+                  id: 'rule-1',
+                  objectApiName: OBJECT_API_NAME,
+                  effect: 'ALLOW',
+                  conditionJson: {
+                    field: 'OwnerId',
+                    op: '=',
+                    value: '005000000000001AAA',
+                  },
+                  fieldsAllowed: ['Id', 'Name'],
+                  fieldsDenied: [],
+                  active: true,
+                },
+              ],
+            },
+          ];
         },
       },
     } as never,
@@ -87,39 +128,36 @@ function createVisibilityService(options?: {
   return {
     service,
     calls: {
-      upsertCalls,
-      findUniqueCalls,
+      assignmentFindManyCalls,
+      coneFindManyCalls,
+      policyDefinitionCreateCalls,
+      policyDefinitionFindUniqueCalls,
+      policyDefinitionUpdateCalls,
+      userScopeFindUniqueCalls,
+      userScopeUpsertCalls,
     },
   };
 }
 
-test('evaluate denies with INVALID_RULE_DROPPED when an active rule cannot be normalized', async () => {
+test('evaluate returns a user-scope cache hit without reading assignments', async () => {
   const { service, calls } = createVisibilityService({
-    conditionJson: {},
-  });
-
-  const evaluation = await service.evaluate({
-    contactId: CONTACT_ID,
-    permissions: ['PORTAL_ADMIN'],
-    objectApiName: 'Account',
-    baseWhere: "Status__c = 'Active'",
-  });
-
-  assert.equal(evaluation.decision, 'DENY');
-  assert.equal(evaluation.reasonCode, 'INVALID_RULE_DROPPED');
-  assert.deepEqual(evaluation.appliedCones, ['SALES']);
-  assert.deepEqual(evaluation.appliedRules, []);
-  assert.equal(evaluation.finalWhere, "Status__c = 'Active'");
-  assert.equal(calls.findUniqueCalls.length, 0);
-  assert.equal(calls.upsertCalls.length, 0);
-});
-
-test('evaluate denies with INVALID_RULE_DROPPED even when a cached scope exists', async () => {
-  const { service, calls } = createVisibilityService({
-    conditionJson: {},
+    cachedDefinitionRow: {
+      objectApiName: OBJECT_API_NAME,
+      objectPolicyVersion: 3n,
+      status: VisibilityPolicyDefinitionCacheStatus.READY,
+      compiledDefinition: createCompiledDefinition(),
+      invalidRuleId: null,
+      invalidRuleMessage: null,
+    },
     cachedScope: {
+      compiledAllowPredicate: "OwnerId = '005000000000001AAA'",
+      compiledDenyPredicate: null,
       compiledPredicate: "OwnerId = '005000000000001AAA'",
       compiledFields: ['Id', 'Name'],
+      deniedFields: [],
+      appliedCones: ['SALES'],
+      appliedRules: ['rule-1'],
+      matchedAssignments: ['assignment-1'],
       expiresAt: new Date(Date.now() + 60_000),
     },
   });
@@ -127,11 +165,157 @@ test('evaluate denies with INVALID_RULE_DROPPED even when a cached scope exists'
   const evaluation = await service.evaluate({
     contactId: CONTACT_ID,
     permissions: ['PORTAL_ADMIN'],
-    objectApiName: 'Account',
+    objectApiName: OBJECT_API_NAME,
+  });
+
+  assert.equal(evaluation.decision, 'ALLOW');
+  assert.equal(evaluation.policyVersion, 5);
+  assert.equal(evaluation.objectPolicyVersion, 3);
+  assert.deepEqual(evaluation.appliedCones, ['SALES']);
+  assert.deepEqual(evaluation.appliedRules, ['rule-1']);
+  assert.deepEqual(evaluation.matchedAssignments, ['assignment-1']);
+  assert.equal(calls.assignmentFindManyCalls.length, 0);
+  assert.equal(calls.coneFindManyCalls.length, 0);
+  assert.equal(calls.userScopeUpsertCalls.length, 0);
+});
+
+test('evaluate uses definition cache on user-scope miss and persists full scope metadata', async () => {
+  const assignmentWhereInputs: Array<Record<string, unknown>> = [];
+  const { service, calls } = createVisibilityService({
+    cachedDefinitionRow: {
+      objectApiName: OBJECT_API_NAME,
+      objectPolicyVersion: 3n,
+      status: VisibilityPolicyDefinitionCacheStatus.READY,
+      compiledDefinition: createCompiledDefinition(),
+      invalidRuleId: null,
+      invalidRuleMessage: null,
+    },
+    cachedScope: null,
+    onAssignmentsFindMany(input) {
+      assignmentWhereInputs.push(input);
+    },
+  });
+
+  const evaluation = await service.evaluate({
+    contactId: CONTACT_ID,
+    permissions: ['portal_admin', 'PORTAL_ADMIN'],
+    objectApiName: OBJECT_API_NAME,
+    recordType: undefined,
+  } as never);
+
+  assert.equal(evaluation.decision, 'ALLOW');
+  assert.equal(calls.coneFindManyCalls.length, 0);
+  assert.equal(calls.assignmentFindManyCalls.length, 1);
+  assert.equal(calls.userScopeUpsertCalls.length, 1);
+  assert.deepEqual(evaluation.appliedCones, ['SALES']);
+  assert.deepEqual(evaluation.appliedRules, ['rule-1']);
+  assert.deepEqual(evaluation.matchedAssignments, ['assignment-1']);
+  assert.equal(
+    (calls.userScopeUpsertCalls[0].create as Record<string, unknown>).compiledAllowPredicate,
+    "OwnerId = '005000000000001AAA'",
+  );
+  assert.deepEqual(
+    (calls.userScopeUpsertCalls[0].create as Record<string, unknown>).matchedAssignments,
+    ['assignment-1'],
+  );
+
+  const where = assignmentWhereInputs[0].where as Record<string, unknown>;
+  assert.deepEqual((where.coneId as Record<string, unknown>).in, ['cone-1']);
+  const filters = where.AND as Array<Record<string, unknown>>;
+  assert.equal(filters.length, 6);
+  assert.ok(Array.isArray((filters[0].OR as unknown[]) ?? []));
+  assert.deepEqual(filters[5], {
+    recordType: null,
+  });
+});
+
+test('evaluate lazily builds a policy definition cache when missing', async () => {
+  const { service, calls } = createVisibilityService({
+    cachedDefinitionRow: null,
+    cachedScope: null,
+  });
+
+  const evaluation = await service.evaluate({
+    contactId: CONTACT_ID,
+    permissions: ['PORTAL_ADMIN'],
+    objectApiName: OBJECT_API_NAME,
+  });
+
+  assert.equal(evaluation.decision, 'ALLOW');
+  assert.equal(calls.coneFindManyCalls.length, 1);
+  assert.equal(calls.policyDefinitionCreateCalls.length, 1);
+  assert.equal(
+    (calls.policyDefinitionCreateCalls[0].data as Record<string, unknown>).status,
+    VisibilityPolicyDefinitionCacheStatus.READY,
+  );
+});
+
+test('evaluate denies immediately when the cached policy definition is invalid', async () => {
+  const { service, calls } = createVisibilityService({
+    cachedDefinitionRow: {
+      objectApiName: OBJECT_API_NAME,
+      objectPolicyVersion: 3n,
+      status: VisibilityPolicyDefinitionCacheStatus.INVALID,
+      compiledDefinition: null,
+      invalidRuleId: 'rule-1',
+      invalidRuleMessage: 'invalid rule',
+    },
+    cachedScope: {
+      compiledAllowPredicate: "OwnerId = '005000000000001AAA'",
+      compiledPredicate: "OwnerId = '005000000000001AAA'",
+      compiledFields: ['Id', 'Name'],
+      deniedFields: [],
+      appliedCones: ['SALES'],
+      appliedRules: ['rule-1'],
+      matchedAssignments: ['assignment-1'],
+      expiresAt: new Date(Date.now() + 60_000),
+    },
+  });
+
+  const evaluation = await service.evaluate({
+    contactId: CONTACT_ID,
+    permissions: ['PORTAL_ADMIN'],
+    objectApiName: OBJECT_API_NAME,
   });
 
   assert.equal(evaluation.decision, 'DENY');
   assert.equal(evaluation.reasonCode, 'INVALID_RULE_DROPPED');
-  assert.equal(calls.findUniqueCalls.length, 0);
-  assert.equal(calls.upsertCalls.length, 0);
+  assert.equal(calls.userScopeFindUniqueCalls.length, 0);
+  assert.equal(calls.assignmentFindManyCalls.length, 0);
+});
+
+test('evaluate with skipCache bypasses both caches and uses the live policy path', async () => {
+  const { service, calls } = createVisibilityService({
+    cachedDefinitionRow: {
+      objectApiName: OBJECT_API_NAME,
+      objectPolicyVersion: 3n,
+      status: VisibilityPolicyDefinitionCacheStatus.READY,
+      compiledDefinition: createCompiledDefinition(),
+      invalidRuleId: null,
+      invalidRuleMessage: null,
+    },
+    cachedScope: {
+      compiledAllowPredicate: "OwnerId = '005000000000001AAA'",
+      compiledPredicate: "OwnerId = '005000000000001AAA'",
+      compiledFields: ['Id', 'Name'],
+      deniedFields: [],
+      appliedCones: ['SALES'],
+      appliedRules: ['rule-1'],
+      matchedAssignments: ['assignment-1'],
+      expiresAt: new Date(Date.now() + 60_000),
+    },
+  });
+
+  const evaluation = await service.evaluate({
+    contactId: CONTACT_ID,
+    permissions: ['PORTAL_ADMIN'],
+    objectApiName: OBJECT_API_NAME,
+    skipCache: true,
+  });
+
+  assert.equal(evaluation.decision, 'ALLOW');
+  assert.equal(calls.policyDefinitionFindUniqueCalls.length, 0);
+  assert.equal(calls.userScopeFindUniqueCalls.length, 0);
+  assert.equal(calls.coneFindManyCalls.length, 1);
+  assert.equal(calls.assignmentFindManyCalls.length, 1);
 });

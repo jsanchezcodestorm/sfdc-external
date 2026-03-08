@@ -2,7 +2,11 @@ import { createHash } from 'node:crypto';
 
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Prisma, VisibilityRuleEffect } from '@prisma/client';
+import {
+  Prisma,
+  VisibilityPolicyDefinitionCacheStatus,
+  VisibilityRuleEffect,
+} from '@prisma/client';
 
 import { AuditWriteService } from '../audit/audit-write.service';
 import type { SessionUser } from '../auth/session-user.interface';
@@ -34,31 +38,76 @@ type RuntimeConeRow = {
   id: string;
   code: string;
   priority: number;
-  active: boolean;
   rules: RuntimeRuleRow[];
 };
 
-type RuntimeAssignmentRow = {
-  id: string;
-  coneId: string;
-  contactId: string | null;
-  permissionCode: string | null;
-  recordType: string | null;
-  validFrom: Date | null;
-  validTo: Date | null;
-  cone: RuntimeConeRow;
+type NormalizedContext = {
+  baseWhere?: string;
+  contactId: string;
+  objectApiName: string;
+  permissions: string[];
+  permissionsHash: string;
+  recordType?: string;
+  skipCache: boolean;
 };
 
-type ProcessedRuntimeRules = {
-  appliedRules: string[];
-  allowPredicates: string[];
-  denyPredicates: string[];
+type CompiledRuleEntry = {
+  id: string;
+  effect: VisibilityRuleEffect;
+  compiledPredicate: string;
+  fieldsAllowed?: string[];
+  fieldsDenied?: string[];
+};
+
+type CompiledConeEntry = {
+  id: string;
+  code: string;
+  priority: number;
+  rules: CompiledRuleEntry[];
+};
+
+type PolicyDefinitionState =
+  | {
+      status: 'READY';
+      compiledCones: CompiledConeEntry[];
+    }
+  | {
+      status: 'INVALID';
+      invalidRule: {
+        id: string;
+        message: string;
+      };
+    };
+
+type SelectiveAssignmentRow = {
+  id: string;
+  coneId: string;
+};
+
+type ResolvedScope = {
   allowFieldSets: string[][];
+  allowPredicates: string[];
+  appliedCones: string[];
+  appliedRules: string[];
   deniedFields: string[];
-  invalidRule?: {
-    id: string;
-    message: string;
-  };
+  denyPredicates: string[];
+  matchedAssignments: string[];
+};
+
+type DecisionState = {
+  decision: 'ALLOW' | 'DENY';
+  reasonCode: string;
+};
+
+type CachedUserScope = {
+  appliedCones: string[];
+  appliedRules: string[];
+  compiledAllowPredicate?: string;
+  compiledDenyPredicate?: string;
+  compiledFields?: string[];
+  compiledPredicate: string;
+  deniedFields?: string[];
+  matchedAssignments: string[];
 };
 
 @Injectable()
@@ -70,196 +119,95 @@ export class VisibilityService {
   constructor(
     private readonly configService: ConfigService,
     private readonly prismaService: PrismaService,
-    private readonly auditWriteService: AuditWriteService
+    private readonly auditWriteService: AuditWriteService,
   ) {
     this.cacheTtlSeconds = this.readPositiveIntConfig('VISIBILITY_CACHE_TTL_SECONDS', 300);
     this.auditEnabled = this.configService.get<string>('VISIBILITY_AUDIT_ENABLED', 'true') !== 'false';
   }
 
   async evaluate(context: VisibilityContext): Promise<VisibilityEvaluation> {
-    const contactId = context.contactId ?? context.user?.sub;
-    const permissions = context.permissions ?? context.user?.permissions ?? [];
-    const recordType =
-      context.contactRecordTypeDeveloperName ??
-      context.user?.contactRecordTypeDeveloperName;
-
-    if (!contactId) {
-      throw new Error('Visibility context requires contactId');
-    }
-
-    const objectApiName = context.objectApiName.trim();
-    const policyVersion = await this.getPolicyVersion();
-    const permissionsHash = this.hashPermissions(permissions);
+    const normalized = this.normalizeContext(context);
+    const [policyVersion, objectPolicyVersion] = await Promise.all([
+      this.getGlobalPolicyVersion(),
+      this.getObjectPolicyVersion(normalized.objectApiName),
+    ]);
     const cacheKey = this.buildCacheKey(
-      contactId,
-      permissionsHash,
-      recordType,
-      objectApiName,
-      policyVersion,
+      normalized.contactId,
+      normalized.permissionsHash,
+      normalized.recordType,
+      normalized.objectApiName,
+      objectPolicyVersion,
     );
 
-    const matchedAssignments = await this.prismaService.visibilityAssignment.findMany({
-      where: {
-        cone: {
-          active: true,
-          rules: {
-            some: {
-              objectApiName,
-              active: true,
-            },
-          },
-        },
-      },
-      include: {
-        cone: {
-          include: {
-            rules: {
-              where: {
-                objectApiName,
-                active: true,
-              },
-              orderBy: {
-                updatedAt: 'asc',
-              },
-            },
-          },
-        },
-      },
-    });
+    const definition = normalized.skipCache
+      ? await this.buildLivePolicyDefinition(normalized.objectApiName)
+      : await this.getOrBuildPolicyDefinition(normalized.objectApiName, objectPolicyVersion);
 
-    const applicableAssignments = matchedAssignments.filter((assignment) =>
-      this.matchesAssignment(assignment, contactId, permissions, recordType),
-    );
-    const applicableCones = this.getApplicableCones(applicableAssignments);
-    const appliedCones = applicableCones.map((cone) => cone.code);
-    const processedRules = this.processApplicableRules(applicableCones, objectApiName);
-
-    if (processedRules.invalidRule) {
+    if (definition.status === 'INVALID') {
       return this.buildInvalidRuleEvaluation({
-        contactId,
-        recordType,
-        objectApiName,
-        policyVersion,
-        appliedCones,
-        appliedRules: processedRules.appliedRules,
-        matchedAssignments: applicableAssignments.map((assignment) => assignment.id),
-        permissionsHash,
+        baseWhere: normalized.baseWhere,
         cacheKey,
-        baseWhere: context.baseWhere,
+        contactId: normalized.contactId,
+        objectApiName: normalized.objectApiName,
+        objectPolicyVersion,
+        permissionsHash: normalized.permissionsHash,
+        policyVersion,
+        recordType: normalized.recordType,
       });
     }
 
-    const cachedScope =
-      context.skipCache === true
-        ? null
-        : await this.prismaService.visibilityUserScopeCache.findUnique({
-            where: { cacheKey },
-          });
+    if (!normalized.skipCache) {
+      const cachedScope = await this.getCachedUserScope(cacheKey);
 
-    let compiledPredicate =
-      cachedScope && cachedScope.expiresAt.getTime() > Date.now()
-        ? cachedScope.compiledPredicate
-        : '';
-    let compiledFields =
-      cachedScope && cachedScope.expiresAt.getTime() > Date.now()
-        ? this.parseCompiledFields(cachedScope.compiledFields)
-        : undefined;
-
-    if (!compiledPredicate) {
-      compiledFields = this.resolveCompiledFields(
-        processedRules.allowFieldSets,
-        processedRules.deniedFields
-      );
-      compiledPredicate = this.composeCompiledPredicate(
-        processedRules.allowPredicates,
-        processedRules.denyPredicates
-      );
-
-      if (context.skipCache !== true) {
-        await this.prismaService.visibilityUserScopeCache.upsert({
-          where: { cacheKey },
-          create: {
-            cacheKey,
-            objectApiName,
-            policyVersion: BigInt(policyVersion),
-            compiledPredicate,
-            compiledFields:
-              compiledFields && compiledFields.length > 0
-                ? (compiledFields as unknown as Prisma.InputJsonValue)
-                : Prisma.JsonNull,
-            expiresAt: new Date(Date.now() + this.cacheTtlSeconds * 1000),
-          },
-          update: {
-            objectApiName,
-            policyVersion: BigInt(policyVersion),
-            compiledPredicate,
-            compiledFields:
-              compiledFields && compiledFields.length > 0
-                ? (compiledFields as unknown as Prisma.InputJsonValue)
-                : Prisma.JsonNull,
-            expiresAt: new Date(Date.now() + this.cacheTtlSeconds * 1000),
-          },
+      if (cachedScope) {
+        return this.buildEvaluationFromCachedScope({
+          baseWhere: normalized.baseWhere,
+          cacheKey,
+          cachedScope,
+          contactId: normalized.contactId,
+          objectApiName: normalized.objectApiName,
+          objectPolicyVersion,
+          permissionsHash: normalized.permissionsHash,
+          policyVersion,
+          recordType: normalized.recordType,
         });
-      }
-    } else {
-      if (!compiledFields) {
-        compiledFields = this.resolveCompiledFields(
-          processedRules.allowFieldSets,
-          processedRules.deniedFields
-        );
       }
     }
 
-    const deniedFields = processedRules.deniedFields;
-    const hasAllow = compiledPredicate.length > 0;
-    const decision = hasAllow ? 'ALLOW' : 'DENY';
-    const reasonCode = hasAllow
-      ? compiledFields && compiledFields.length === 0
-        ? 'FIELDSET_EMPTY'
-        : 'ALLOW_MATCH'
-      : 'NO_ALLOW_RULE';
-
-    const finalWhere = this.composeFinalWhere(context.baseWhere, compiledPredicate);
-    return {
-      decision:
-        reasonCode === 'FIELDSET_EMPTY' ? 'DENY' : decision,
-      reasonCode,
-      policyVersion,
-      objectApiName,
-      contactId,
-      recordType,
-      appliedCones,
-      appliedRules: processedRules.appliedRules,
-      matchedAssignments: applicableAssignments.map((assignment) => assignment.id),
-      permissionsHash,
-      compiledAllowPredicate:
-        processedRules.allowPredicates.length > 0
-          ? this.composeOrPredicate(processedRules.allowPredicates)
-          : undefined,
-      compiledDenyPredicate:
-        processedRules.denyPredicates.length > 0
-          ? this.composeOrPredicate(processedRules.denyPredicates)
-          : undefined,
-      compiledPredicate: compiledPredicate || undefined,
-      compiledFields,
-      deniedFields: deniedFields.length > 0 ? deniedFields : undefined,
+    const matchedAssignments = await this.findApplicableAssignments({
+      coneIds: definition.compiledCones.map((entry) => entry.id),
+      contactId: normalized.contactId,
+      permissions: normalized.permissions,
+      recordType: normalized.recordType,
+    });
+    const resolvedScope = this.resolveScope(definition.compiledCones, matchedAssignments);
+    const evaluation = this.buildEvaluationFromResolvedScope({
+      baseWhere: normalized.baseWhere,
       cacheKey,
-      baseWhere: context.baseWhere,
-      finalWhere,
-    };
+      contactId: normalized.contactId,
+      objectApiName: normalized.objectApiName,
+      objectPolicyVersion,
+      permissionsHash: normalized.permissionsHash,
+      policyVersion,
+      recordType: normalized.recordType,
+      resolvedScope,
+    });
+
+    if (!normalized.skipCache) {
+      await this.upsertUserScopeCache(cacheKey, normalized.objectApiName, objectPolicyVersion, evaluation);
+    }
+
+    return evaluation;
   }
 
   async evaluateForObject(user: SessionUser, objectApiName: string): Promise<VisibilityEvaluation> {
     return this.evaluate({
       user,
-      objectApiName
+      objectApiName,
     });
   }
 
-  applyFieldVisibility(
-    requestedFields: string[],
-    evaluation: VisibilityEvaluation,
-  ): string[] {
+  applyFieldVisibility(requestedFields: string[], evaluation: VisibilityEvaluation): string[] {
     const uniqueFields = [...new Set(requestedFields.map((field) => field.trim()).filter(Boolean))];
     let filtered = uniqueFields;
 
@@ -271,8 +219,7 @@ export class VisibilityService {
 
     if (evaluation.deniedFields && evaluation.deniedFields.length > 0) {
       filtered = filtered.filter(
-        (field) =>
-          !evaluation.deniedFields?.some((entry) => matchesVisibilityFieldPath(field, entry)),
+        (field) => !evaluation.deniedFields?.some((entry) => matchesVisibilityFieldPath(field, entry)),
       );
     }
 
@@ -299,20 +246,253 @@ export class VisibilityService {
       baseWhere,
       finalWhere,
       rowCount,
-      durationMs
+      durationMs,
     });
   }
 
-  private async getPolicyVersion(): Promise<number> {
+  private normalizeContext(context: VisibilityContext): NormalizedContext {
+    const contactId = context.contactId ?? context.user?.sub;
+    const objectApiName = context.objectApiName.trim();
+    const permissions = this.normalizePermissions(context.permissions ?? context.user?.permissions ?? []);
+    const recordType =
+      context.contactRecordTypeDeveloperName ?? context.user?.contactRecordTypeDeveloperName;
+
+    if (!contactId) {
+      throw new Error('Visibility context requires contactId');
+    }
+
+    return {
+      baseWhere: context.baseWhere,
+      contactId,
+      objectApiName,
+      permissions,
+      permissionsHash: this.hashPermissions(permissions),
+      recordType,
+      skipCache: context.skipCache === true,
+    };
+  }
+
+  private normalizePermissions(permissions: string[]): string[] {
+    return [...new Set(permissions.map((entry) => entry.trim().toUpperCase()).filter(Boolean))].sort();
+  }
+
+  private async getGlobalPolicyVersion(): Promise<number> {
     try {
       const meta = await this.prismaService.visibilityPolicyMeta.findUnique({
-        where: { id: 1 }
+        where: { id: 1 },
+        select: { policyVersion: true },
       });
 
       return Number(meta?.policyVersion ?? 1n);
     } catch {
       return 1;
     }
+  }
+
+  private async getObjectPolicyVersion(objectApiName: string): Promise<number> {
+    try {
+      const row = await this.prismaService.visibilityObjectPolicyVersion.findUnique({
+        where: { objectApiName },
+        select: { policyVersion: true },
+      });
+
+      return Number(row?.policyVersion ?? 1n);
+    } catch {
+      return 1;
+    }
+  }
+
+  private async getOrBuildPolicyDefinition(
+    objectApiName: string,
+    objectPolicyVersion: number,
+  ): Promise<PolicyDefinitionState> {
+    const key = {
+      objectApiName,
+      objectPolicyVersion: BigInt(objectPolicyVersion),
+    };
+    const cached = await this.prismaService.visibilityPolicyDefinitionCache.findUnique({
+      where: {
+        objectApiName_objectPolicyVersion: key,
+      },
+    });
+
+    if (cached) {
+      const parsed = this.parseCachedPolicyDefinition(cached);
+
+      if (parsed) {
+        return parsed;
+      }
+
+      this.logger.warn(
+        `Malformed policy definition cache for ${objectApiName}@${objectPolicyVersion}, rebuilding`,
+      );
+      const rebuilt = await this.buildLivePolicyDefinition(objectApiName);
+      await this.persistPolicyDefinition(objectApiName, objectPolicyVersion, rebuilt, 'update');
+      return rebuilt;
+    }
+
+    const built = await this.buildLivePolicyDefinition(objectApiName);
+
+    try {
+      await this.persistPolicyDefinition(objectApiName, objectPolicyVersion, built, 'create');
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        const reread = await this.prismaService.visibilityPolicyDefinitionCache.findUnique({
+          where: {
+            objectApiName_objectPolicyVersion: key,
+          },
+        });
+        const parsed = reread ? this.parseCachedPolicyDefinition(reread) : null;
+
+        if (parsed) {
+          return parsed;
+        }
+      }
+
+      throw error;
+    }
+
+    return built;
+  }
+
+  private async persistPolicyDefinition(
+    objectApiName: string,
+    objectPolicyVersion: number,
+    definition: PolicyDefinitionState,
+    mode: 'create' | 'update',
+  ): Promise<void> {
+    const data =
+      definition.status === 'READY'
+        ? {
+            status: VisibilityPolicyDefinitionCacheStatus.READY,
+            compiledDefinition: this.serializeJson(definition.compiledCones),
+            invalidRuleId: null,
+            invalidRuleMessage: null,
+          }
+        : {
+            status: VisibilityPolicyDefinitionCacheStatus.INVALID,
+            compiledDefinition: Prisma.JsonNull,
+            invalidRuleId: definition.invalidRule.id,
+            invalidRuleMessage: definition.invalidRule.message,
+          };
+
+    if (mode === 'create') {
+      await this.prismaService.visibilityPolicyDefinitionCache.create({
+        data: {
+          objectApiName,
+          objectPolicyVersion: BigInt(objectPolicyVersion),
+          ...data,
+        },
+      });
+      return;
+    }
+
+    await this.prismaService.visibilityPolicyDefinitionCache.update({
+      where: {
+        objectApiName_objectPolicyVersion: {
+          objectApiName,
+          objectPolicyVersion: BigInt(objectPolicyVersion),
+        },
+      },
+      data,
+    });
+  }
+
+  private parseCachedPolicyDefinition(
+    row: {
+      compiledDefinition: unknown;
+      invalidRuleId: string | null;
+      invalidRuleMessage: string | null;
+      status: VisibilityPolicyDefinitionCacheStatus;
+    },
+  ): PolicyDefinitionState | null {
+    if (row.status === VisibilityPolicyDefinitionCacheStatus.INVALID) {
+      return {
+        status: 'INVALID',
+        invalidRule: {
+          id: row.invalidRuleId ?? 'unknown',
+          message: row.invalidRuleMessage ?? 'invalid visibility policy definition cache',
+        },
+      };
+    }
+
+    const compiledCones = this.parseCompiledCones(row.compiledDefinition);
+    if (!compiledCones) {
+      return null;
+    }
+
+    return {
+      status: 'READY',
+      compiledCones,
+    };
+  }
+
+  private async buildLivePolicyDefinition(objectApiName: string): Promise<PolicyDefinitionState> {
+    const cones = await this.prismaService.visibilityCone.findMany({
+      where: {
+        active: true,
+        rules: {
+          some: {
+            objectApiName,
+            active: true,
+          },
+        },
+      },
+      orderBy: [{ priority: 'desc' }, { code: 'asc' }],
+      include: {
+        rules: {
+          where: {
+            objectApiName,
+            active: true,
+          },
+          orderBy: {
+            updatedAt: 'asc',
+          },
+        },
+      },
+    });
+
+    const compiledCones: CompiledConeEntry[] = [];
+
+    for (const cone of cones) {
+      const compiledRules: CompiledRuleEntry[] = [];
+
+      for (const rule of cone.rules) {
+        try {
+          const normalizedRule = this.normalizeRuntimeRule(rule);
+          compiledRules.push({
+            id: rule.id,
+            effect: normalizedRule.effect,
+            compiledPredicate: compileVisibilityRuleNode(normalizedRule.condition),
+            fieldsAllowed: normalizedRule.fieldsAllowed,
+            fieldsDenied: normalizedRule.fieldsDenied,
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'unknown error';
+          this.logger.warn(`Invalid visibility rule ${rule.id} for ${objectApiName}: ${message}`);
+
+          return {
+            status: 'INVALID',
+            invalidRule: {
+              id: rule.id,
+              message,
+            },
+          };
+        }
+      }
+
+      compiledCones.push({
+        id: cone.id,
+        code: cone.code,
+        priority: cone.priority,
+        rules: compiledRules,
+      });
+    }
+
+    return {
+      status: 'READY',
+      compiledCones,
+    };
   }
 
   private normalizeRuntimeRule(rule: RuntimeRuleRow): VisibilityRuleDefinition {
@@ -332,86 +512,373 @@ export class VisibilityService {
     };
   }
 
-  private processApplicableRules(
-    applicableCones: RuntimeConeRow[],
+  private parseCompiledCones(value: unknown): CompiledConeEntry[] | null {
+    if (!Array.isArray(value)) {
+      return null;
+    }
+
+    const compiledCones: CompiledConeEntry[] = [];
+
+    for (const entry of value) {
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+        return null;
+      }
+
+      const record = entry as Record<string, unknown>;
+      if (
+        typeof record.id !== 'string' ||
+        typeof record.code !== 'string' ||
+        typeof record.priority !== 'number' ||
+        !Array.isArray(record.rules)
+      ) {
+        return null;
+      }
+
+      const rules: CompiledRuleEntry[] = [];
+      for (const ruleEntry of record.rules) {
+        if (!ruleEntry || typeof ruleEntry !== 'object' || Array.isArray(ruleEntry)) {
+          return null;
+        }
+
+        const ruleRecord = ruleEntry as Record<string, unknown>;
+        const effect = ruleRecord.effect;
+        if (
+          typeof ruleRecord.id !== 'string' ||
+          (effect !== VisibilityRuleEffect.ALLOW && effect !== VisibilityRuleEffect.DENY) ||
+          typeof ruleRecord.compiledPredicate !== 'string'
+        ) {
+          return null;
+        }
+
+        rules.push({
+          id: ruleRecord.id,
+          effect,
+          compiledPredicate: ruleRecord.compiledPredicate,
+          fieldsAllowed: this.parseStringArray(ruleRecord.fieldsAllowed),
+          fieldsDenied: this.parseStringArray(ruleRecord.fieldsDenied),
+        });
+      }
+
+      compiledCones.push({
+        id: record.id,
+        code: record.code,
+        priority: record.priority,
+        rules,
+      });
+    }
+
+    return compiledCones;
+  }
+
+  private async getCachedUserScope(cacheKey: string): Promise<CachedUserScope | null> {
+    const row = await this.prismaService.visibilityUserScopeCache.findUnique({
+      where: { cacheKey },
+    });
+
+    if (!row || row.expiresAt.getTime() <= Date.now()) {
+      return null;
+    }
+
+    return {
+      appliedCones: this.parseStringArray(row.appliedCones) ?? [],
+      appliedRules: this.parseStringArray(row.appliedRules) ?? [],
+      compiledAllowPredicate:
+        typeof row.compiledAllowPredicate === 'string' && row.compiledAllowPredicate.trim()
+          ? row.compiledAllowPredicate
+          : undefined,
+      compiledDenyPredicate:
+        typeof row.compiledDenyPredicate === 'string' && row.compiledDenyPredicate.trim()
+          ? row.compiledDenyPredicate
+          : undefined,
+      compiledFields: this.parseStringArray(row.compiledFields),
+      compiledPredicate: row.compiledPredicate,
+      deniedFields: this.parseStringArray(row.deniedFields),
+      matchedAssignments: this.parseStringArray(row.matchedAssignments) ?? [],
+    };
+  }
+
+  private async upsertUserScopeCache(
+    cacheKey: string,
     objectApiName: string,
-  ): ProcessedRuntimeRules {
-    const appliedRules: string[] = [];
+    objectPolicyVersion: number,
+    evaluation: VisibilityEvaluation,
+  ): Promise<void> {
+    await this.prismaService.visibilityUserScopeCache.upsert({
+      where: { cacheKey },
+      create: {
+        cacheKey,
+        objectApiName,
+        objectPolicyVersion: BigInt(objectPolicyVersion),
+        compiledAllowPredicate: evaluation.compiledAllowPredicate ?? null,
+        compiledDenyPredicate: evaluation.compiledDenyPredicate ?? null,
+        compiledPredicate: evaluation.compiledPredicate ?? '',
+        compiledFields:
+          evaluation.compiledFields && evaluation.compiledFields.length > 0
+            ? this.serializeJson(evaluation.compiledFields)
+            : Prisma.JsonNull,
+        deniedFields:
+          evaluation.deniedFields && evaluation.deniedFields.length > 0
+            ? this.serializeJson(evaluation.deniedFields)
+            : Prisma.JsonNull,
+        appliedCones: this.serializeJson(evaluation.appliedCones),
+        appliedRules: this.serializeJson(evaluation.appliedRules),
+        matchedAssignments: this.serializeJson(evaluation.matchedAssignments ?? []),
+        expiresAt: new Date(Date.now() + this.cacheTtlSeconds * 1000),
+      },
+      update: {
+        objectApiName,
+        objectPolicyVersion: BigInt(objectPolicyVersion),
+        compiledAllowPredicate: evaluation.compiledAllowPredicate ?? null,
+        compiledDenyPredicate: evaluation.compiledDenyPredicate ?? null,
+        compiledPredicate: evaluation.compiledPredicate ?? '',
+        compiledFields:
+          evaluation.compiledFields && evaluation.compiledFields.length > 0
+            ? this.serializeJson(evaluation.compiledFields)
+            : Prisma.JsonNull,
+        deniedFields:
+          evaluation.deniedFields && evaluation.deniedFields.length > 0
+            ? this.serializeJson(evaluation.deniedFields)
+            : Prisma.JsonNull,
+        appliedCones: this.serializeJson(evaluation.appliedCones),
+        appliedRules: this.serializeJson(evaluation.appliedRules),
+        matchedAssignments: this.serializeJson(evaluation.matchedAssignments ?? []),
+        expiresAt: new Date(Date.now() + this.cacheTtlSeconds * 1000),
+      },
+    });
+  }
+
+  private async findApplicableAssignments(params: {
+    coneIds: string[];
+    contactId: string;
+    permissions: string[];
+    recordType?: string;
+  }): Promise<SelectiveAssignmentRow[]> {
+    if (params.coneIds.length === 0) {
+      return [];
+    }
+
+    const now = new Date();
+    const selectorOr: Prisma.VisibilityAssignmentWhereInput[] = [{ contactId: params.contactId }];
+
+    if (params.permissions.length > 0) {
+      selectorOr.push({
+        permissionCode: {
+          in: params.permissions,
+        },
+      });
+    }
+
+    if (params.recordType) {
+      selectorOr.push({
+        recordType: params.recordType,
+      });
+    }
+
+    return this.prismaService.visibilityAssignment.findMany({
+      where: {
+        coneId: {
+          in: params.coneIds,
+        },
+        AND: [
+          {
+            OR: [{ validFrom: null }, { validFrom: { lte: now } }],
+          },
+          {
+            OR: [{ validTo: null }, { validTo: { gte: now } }],
+          },
+          {
+            OR: selectorOr,
+          },
+          {
+            OR: [{ contactId: null }, { contactId: params.contactId }],
+          },
+          params.permissions.length > 0
+            ? {
+                OR: [{ permissionCode: null }, { permissionCode: { in: params.permissions } }],
+              }
+            : {
+                permissionCode: null,
+              },
+          params.recordType
+            ? {
+                OR: [{ recordType: null }, { recordType: params.recordType }],
+              }
+            : {
+                recordType: null,
+              },
+        ],
+      },
+      select: {
+        id: true,
+        coneId: true,
+      },
+    });
+  }
+
+  private resolveScope(
+    compiledCones: CompiledConeEntry[],
+    assignments: SelectiveAssignmentRow[],
+  ): ResolvedScope {
+    const matchedConeIds = new Set(assignments.map((entry) => entry.coneId));
+    const applicableCones = compiledCones.filter((entry) => matchedConeIds.has(entry.id));
     const allowPredicates: string[] = [];
     const denyPredicates: string[] = [];
     const allowFieldSets: string[][] = [];
     const deniedFieldsSet = new Set<string>();
+    const appliedRules: string[] = [];
 
     for (const cone of applicableCones) {
       for (const rule of cone.rules) {
-        try {
-          const normalizedRule = this.normalizeRuntimeRule(rule);
-          const compiledRule = compileVisibilityRuleNode(normalizedRule.condition);
-          appliedRules.push(rule.id);
+        appliedRules.push(rule.id);
 
-          if (normalizedRule.effect === VisibilityRuleEffect.ALLOW) {
-            allowPredicates.push(compiledRule);
+        if (rule.effect === VisibilityRuleEffect.ALLOW) {
+          allowPredicates.push(rule.compiledPredicate);
 
-            if (normalizedRule.fieldsAllowed && normalizedRule.fieldsAllowed.length > 0) {
-              allowFieldSets.push(normalizedRule.fieldsAllowed);
-            }
-          } else {
-            denyPredicates.push(compiledRule);
+          if (rule.fieldsAllowed && rule.fieldsAllowed.length > 0) {
+            allowFieldSets.push(rule.fieldsAllowed);
           }
+        } else {
+          denyPredicates.push(rule.compiledPredicate);
+        }
 
-          for (const deniedField of normalizedRule.fieldsDenied ?? []) {
-            deniedFieldsSet.add(deniedField);
-          }
-        } catch (error) {
-          const message = error instanceof Error ? error.message : 'unknown error';
-          this.logger.warn(`Invalid visibility rule ${rule.id} for ${objectApiName}: ${message}`);
-
-          return {
-            appliedRules,
-            allowPredicates,
-            denyPredicates,
-            allowFieldSets,
-            deniedFields: [...deniedFieldsSet],
-            invalidRule: {
-              id: rule.id,
-              message,
-            },
-          };
+        for (const deniedField of rule.fieldsDenied ?? []) {
+          deniedFieldsSet.add(deniedField);
         }
       }
     }
 
     return {
-      appliedRules,
-      allowPredicates,
-      denyPredicates,
       allowFieldSets,
+      allowPredicates,
+      appliedCones: applicableCones.map((entry) => entry.code),
+      appliedRules,
       deniedFields: [...deniedFieldsSet],
+      denyPredicates,
+      matchedAssignments: assignments.map((entry) => entry.id),
+    };
+  }
+
+  private buildEvaluationFromCachedScope(params: {
+    baseWhere?: string;
+    cacheKey: string;
+    cachedScope: CachedUserScope;
+    contactId: string;
+    objectApiName: string;
+    objectPolicyVersion: number;
+    permissionsHash: string;
+    policyVersion: number;
+    recordType?: string;
+  }): VisibilityEvaluation {
+    const decisionState = this.buildDecisionState(
+      params.cachedScope.compiledPredicate,
+      params.cachedScope.compiledFields,
+    );
+    const finalWhere = this.composeFinalWhere(
+      params.baseWhere,
+      params.cachedScope.compiledPredicate,
+    );
+
+    return {
+      decision: decisionState.decision,
+      reasonCode: decisionState.reasonCode,
+      policyVersion: params.policyVersion,
+      objectPolicyVersion: params.objectPolicyVersion,
+      objectApiName: params.objectApiName,
+      contactId: params.contactId,
+      recordType: params.recordType,
+      appliedCones: params.cachedScope.appliedCones,
+      appliedRules: params.cachedScope.appliedRules,
+      matchedAssignments: params.cachedScope.matchedAssignments,
+      permissionsHash: params.permissionsHash,
+      compiledAllowPredicate: params.cachedScope.compiledAllowPredicate,
+      compiledDenyPredicate: params.cachedScope.compiledDenyPredicate,
+      compiledPredicate: params.cachedScope.compiledPredicate || undefined,
+      compiledFields: params.cachedScope.compiledFields,
+      deniedFields:
+        params.cachedScope.deniedFields && params.cachedScope.deniedFields.length > 0
+          ? params.cachedScope.deniedFields
+          : undefined,
+      cacheKey: params.cacheKey,
+      baseWhere: params.baseWhere,
+      finalWhere,
+    };
+  }
+
+  private buildEvaluationFromResolvedScope(params: {
+    baseWhere?: string;
+    cacheKey: string;
+    contactId: string;
+    objectApiName: string;
+    objectPolicyVersion: number;
+    permissionsHash: string;
+    policyVersion: number;
+    recordType?: string;
+    resolvedScope: ResolvedScope;
+  }): VisibilityEvaluation {
+    const compiledAllowPredicate =
+      params.resolvedScope.allowPredicates.length > 0
+        ? this.composeOrPredicate(params.resolvedScope.allowPredicates)
+        : undefined;
+    const compiledDenyPredicate =
+      params.resolvedScope.denyPredicates.length > 0
+        ? this.composeOrPredicate(params.resolvedScope.denyPredicates)
+        : undefined;
+    const compiledFields = this.resolveCompiledFields(
+      params.resolvedScope.allowFieldSets,
+      params.resolvedScope.deniedFields,
+    );
+    const compiledPredicate = this.composeCompiledPredicate(
+      params.resolvedScope.allowPredicates,
+      params.resolvedScope.denyPredicates,
+    );
+    const decisionState = this.buildDecisionState(compiledPredicate, compiledFields);
+    const finalWhere = this.composeFinalWhere(params.baseWhere, compiledPredicate);
+
+    return {
+      decision: decisionState.decision,
+      reasonCode: decisionState.reasonCode,
+      policyVersion: params.policyVersion,
+      objectPolicyVersion: params.objectPolicyVersion,
+      objectApiName: params.objectApiName,
+      contactId: params.contactId,
+      recordType: params.recordType,
+      appliedCones: params.resolvedScope.appliedCones,
+      appliedRules: params.resolvedScope.appliedRules,
+      matchedAssignments: params.resolvedScope.matchedAssignments,
+      permissionsHash: params.permissionsHash,
+      compiledAllowPredicate,
+      compiledDenyPredicate,
+      compiledPredicate: compiledPredicate || undefined,
+      compiledFields,
+      deniedFields:
+        params.resolvedScope.deniedFields.length > 0 ? params.resolvedScope.deniedFields : undefined,
+      cacheKey: params.cacheKey,
+      baseWhere: params.baseWhere,
+      finalWhere,
     };
   }
 
   private buildInvalidRuleEvaluation(params: {
-    contactId: string;
-    recordType: string | undefined;
-    objectApiName: string;
-    policyVersion: number;
-    appliedCones: string[];
-    appliedRules: string[];
-    matchedAssignments: string[];
-    permissionsHash: string;
-    cacheKey: string;
     baseWhere?: string;
+    cacheKey: string;
+    contactId: string;
+    objectApiName: string;
+    objectPolicyVersion: number;
+    permissionsHash: string;
+    policyVersion: number;
+    recordType?: string;
   }): VisibilityEvaluation {
     return {
       decision: 'DENY',
       reasonCode: 'INVALID_RULE_DROPPED',
       policyVersion: params.policyVersion,
+      objectPolicyVersion: params.objectPolicyVersion,
       objectApiName: params.objectApiName,
       contactId: params.contactId,
       recordType: params.recordType,
-      appliedCones: params.appliedCones,
-      appliedRules: params.appliedRules,
-      matchedAssignments: params.matchedAssignments,
+      appliedCones: [],
+      appliedRules: [],
+      matchedAssignments: [],
       permissionsHash: params.permissionsHash,
       cacheKey: params.cacheKey,
       baseWhere: params.baseWhere,
@@ -419,69 +886,31 @@ export class VisibilityService {
     };
   }
 
-  private matchesAssignment(
-    assignment: RuntimeAssignmentRow,
-    contactId: string,
-    permissions: string[],
-    recordType: string | undefined,
-  ): boolean {
-    const nowMs = Date.now();
-    if (assignment.validFrom && assignment.validFrom.getTime() > nowMs) {
-      return false;
+  private buildDecisionState(
+    compiledPredicate: string,
+    compiledFields: string[] | undefined,
+  ): DecisionState {
+    if (!compiledPredicate) {
+      return {
+        decision: 'DENY',
+        reasonCode: 'NO_ALLOW_RULE',
+      };
     }
 
-    if (assignment.validTo && assignment.validTo.getTime() < nowMs) {
-      return false;
+    if (compiledFields && compiledFields.length === 0) {
+      return {
+        decision: 'DENY',
+        reasonCode: 'FIELDSET_EMPTY',
+      };
     }
 
-    const hasSelector =
-      Boolean(assignment.contactId) ||
-      Boolean(assignment.permissionCode) ||
-      Boolean(assignment.recordType);
-    if (!hasSelector) {
-      return false;
-    }
-
-    if (assignment.contactId && assignment.contactId !== contactId) {
-      return false;
-    }
-
-    if (
-      assignment.permissionCode &&
-      !permissions.some((entry) => entry.trim().toUpperCase() === assignment.permissionCode)
-    ) {
-      return false;
-    }
-
-    if (assignment.recordType && assignment.recordType !== recordType) {
-      return false;
-    }
-
-    return true;
+    return {
+      decision: 'ALLOW',
+      reasonCode: 'ALLOW_MATCH',
+    };
   }
 
-  private getApplicableCones(assignments: RuntimeAssignmentRow[]): RuntimeConeRow[] {
-    const coneMap = new Map<string, RuntimeConeRow>();
-
-    for (const assignment of assignments) {
-      if (!coneMap.has(assignment.coneId)) {
-        coneMap.set(assignment.coneId, assignment.cone);
-      }
-    }
-
-    return [...coneMap.values()].sort((left, right) => {
-      if (left.priority !== right.priority) {
-        return right.priority - left.priority;
-      }
-
-      return left.code.localeCompare(right.code);
-    });
-  }
-
-  private resolveCompiledFields(
-    allowFieldSets: string[][],
-    deniedFields: string[],
-  ): string[] | undefined {
+  private resolveCompiledFields(allowFieldSets: string[][], deniedFields: string[]): string[] | undefined {
     const deniedSet = new Set(deniedFields);
     let allowed: string[] | undefined;
 
@@ -541,7 +970,7 @@ export class VisibilityService {
     return `(${normalizedBase}) AND (${normalizedPredicate})`;
   }
 
-  private parseCompiledFields(value: unknown): string[] | undefined {
+  private parseStringArray(value: unknown): string[] | undefined {
     if (!Array.isArray(value)) {
       return undefined;
     }
@@ -552,24 +981,26 @@ export class VisibilityService {
       .filter(Boolean);
   }
 
+  private serializeJson(value: unknown): Prisma.InputJsonValue {
+    return value as Prisma.InputJsonValue;
+  }
+
   private buildCacheKey(
     contactId: string,
     permissionsHash: string,
     recordType: string | undefined,
     objectApiName: string,
-    policyVersion: number,
+    objectPolicyVersion: number,
   ): string {
     return this.hashText(
-      [contactId, permissionsHash, recordType ?? '', objectApiName, String(policyVersion)].join('|'),
+      [contactId, permissionsHash, recordType ?? '', objectApiName, String(objectPolicyVersion)].join(
+        '|',
+      ),
     );
   }
 
   private hashPermissions(permissions: string[]): string {
-    return this.hashText(
-      [...new Set(permissions.map((entry) => entry.trim().toUpperCase()).filter(Boolean))]
-        .sort()
-        .join('|'),
-    );
+    return this.hashText(permissions.join('|'));
   }
 
   private hashText(value: string): string {

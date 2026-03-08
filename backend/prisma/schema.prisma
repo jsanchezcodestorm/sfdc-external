@@ -17,6 +17,11 @@ enum VisibilityDecision {
   DENY
 }
 
+enum VisibilityPolicyDefinitionCacheStatus {
+  READY
+  INVALID
+}
+
 enum ApplicationAuditStatus {
   PENDING
   SUCCESS
@@ -36,6 +41,14 @@ model VisibilityPolicyMeta {
   updatedAt     DateTime @updatedAt
 
   @@map("policy_meta")
+}
+
+model VisibilityObjectPolicyVersion {
+  objectApiName String   @id @db.VarChar(128)
+  policyVersion BigInt   @default(1)
+  updatedAt     DateTime @updatedAt
+
+  @@map("object_policy_version")
 }
 
 model VisibilityCone {
@@ -82,16 +95,35 @@ model VisibilityAssignment {
   @@map("assignments")
 }
 
+model VisibilityPolicyDefinitionCache {
+  objectApiName        String                              @db.VarChar(128)
+  objectPolicyVersion  BigInt
+  status               VisibilityPolicyDefinitionCacheStatus
+  compiledDefinition   Json?
+  invalidRuleId        String?                             @db.Uuid
+  invalidRuleMessage   String?                             @db.VarChar(512)
+  updatedAt            DateTime                            @updatedAt
+
+  @@id([objectApiName, objectPolicyVersion])
+  @@map("policy_definition_cache")
+}
+
 model VisibilityUserScopeCache {
   cacheKey          String   @id @db.VarChar(255)
   objectApiName     String   @db.VarChar(128)
-  policyVersion     BigInt
+  objectPolicyVersion BigInt
+  compiledAllowPredicate String? @db.Text
+  compiledDenyPredicate  String? @db.Text
   compiledPredicate String   @db.Text
   compiledFields    Json?
+  deniedFields      Json?
+  appliedCones      Json
+  appliedRules      Json
+  matchedAssignments Json
   expiresAt         DateTime
   updatedAt         DateTime @updatedAt
 
-  @@index([objectApiName, policyVersion])
+  @@index([objectApiName, objectPolicyVersion])
   @@index([expiresAt])
   @@map("user_scope_cache")
 }
@@ -114,6 +146,7 @@ model VisibilityAuditLog {
   rowCount           Int
   durationMs         Int
   policyVersion      BigInt
+  objectPolicyVersion BigInt
 
   @@index([createdAt])
   @@index([contactId, createdAt])

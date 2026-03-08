@@ -8,6 +8,7 @@ export interface VisibilityEvaluation {
   decision: VisibilityDecision;
   reasonCode: string;
   policyVersion: number;
+  objectPolicyVersion: number;
   objectApiName: string;
   contactId: string;
   recordType?: string;
