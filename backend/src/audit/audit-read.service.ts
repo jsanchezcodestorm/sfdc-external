@@ -195,6 +195,7 @@ export class AuditReadService {
       reasonCode: row.decisionReasonCode,
       rowCount: row.rowCount,
       policyVersion: row.policyVersion.toString(),
+      objectPolicyVersion: row.objectPolicyVersion.toString(),
     };
   }
 

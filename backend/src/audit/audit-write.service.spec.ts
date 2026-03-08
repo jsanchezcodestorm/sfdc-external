@@ -169,6 +169,36 @@ test('createApplicationIntentOrThrow falls back to request context contact id', 
   assert.equal(calls.applicationCreateCalls[0].status, 'PENDING');
 });
 
+test('recordVisibilityEventOrThrow stores global and object policy versions', async () => {
+  const { auditWriteService, requestContextService, calls } = createAuditWriteService();
+  const { req, res } = createHttpContext('req-viz');
+
+  await new Promise<void>((resolve, reject) => {
+    requestContextService.run(req as never, res as never, () => {
+      void auditWriteService
+        .recordVisibilityEventOrThrow({
+          queryKind: 'ENTITY_LIST',
+          rowCount: 2,
+          evaluation: {
+            decision: 'ALLOW',
+            reasonCode: 'ALLOW_MATCH',
+            policyVersion: 8,
+            objectPolicyVersion: 3,
+            objectApiName: 'Account',
+            contactId: '003000000000004',
+            appliedCones: ['SALES'],
+            appliedRules: ['rule-1'],
+          },
+        })
+        .then(resolve, reject);
+    });
+  });
+
+  assert.equal(calls.visibilityCreateCalls.length, 1);
+  assert.equal(calls.visibilityCreateCalls[0].policyVersion, 8n);
+  assert.equal(calls.visibilityCreateCalls[0].objectPolicyVersion, 3n);
+});
+
 test('completeApplicationAuditOrThrow updates status and result payload', async () => {
   const { auditWriteService, calls } = createAuditWriteService();
 

@@ -35,6 +35,29 @@ function createQueryAuditRow(id: bigint, createdAt: Date) {
   };
 }
 
+function createVisibilityAuditRow(id: bigint, createdAt: Date) {
+  return {
+    id,
+    requestId: `viz-${id.toString()}`,
+    createdAt,
+    contactId: '003000000000001',
+    permissionsHash: 'perm-hash',
+    recordType: 'administration',
+    objectApiName: 'Account',
+    queryKind: 'ENTITY_LIST',
+    baseWhereHash: 'base-hash',
+    finalWhereHash: 'final-hash',
+    appliedCones: ['SALES'],
+    appliedRules: ['rule-1'],
+    decision: 'ALLOW' as const,
+    decisionReasonCode: 'ALLOW_MATCH',
+    rowCount: 2,
+    durationMs: 13,
+    policyVersion: 9n,
+    objectPolicyVersion: 4n,
+  };
+}
+
 test('listQueryAudit applies filters and returns a pagination cursor', async () => {
   const findManyCalls: Array<Record<string, unknown>> = [];
   const firstRow = createQueryAuditRow(12n, new Date('2026-03-07T11:00:00.000Z'));
@@ -108,4 +131,22 @@ test('getQueryAudit maps the full detail payload', async () => {
     entityId: 'account',
     page: 2,
   });
+});
+
+test('listVisibilityAudit maps objectPolicyVersion in the summary payload', async () => {
+  const row = createVisibilityAuditRow(77n, new Date('2026-03-07T14:00:00.000Z'));
+  const prismaService = {
+    visibilityAuditLog: {
+      async findMany() {
+        return [row];
+      },
+    },
+  };
+
+  const service = new AuditReadService(prismaService as never);
+  const page = await service.listVisibilityAudit({});
+
+  assert.equal(page.items.length, 1);
+  assert.equal(page.items[0].policyVersion, '9');
+  assert.equal(page.items[0].objectPolicyVersion, '4');
 });

@@ -98,6 +98,7 @@ export class AuditWriteService {
           rowCount: input.rowCount,
           durationMs: Math.max(0, input.durationMs ?? 0),
           policyVersion: BigInt(input.evaluation.policyVersion),
+          objectPolicyVersion: BigInt(input.evaluation.objectPolicyVersion),
         },
       });
     } catch (error) {

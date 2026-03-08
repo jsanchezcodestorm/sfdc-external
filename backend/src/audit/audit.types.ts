@@ -117,6 +117,7 @@ export interface VisibilityAuditSummary {
   reasonCode: string;
   rowCount: number;
   policyVersion: string;
+  objectPolicyVersion: string;
 }
 
 export interface VisibilityAuditDetail extends VisibilityAuditSummary {
