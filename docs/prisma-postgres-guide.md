@@ -267,13 +267,15 @@ Indicazione operativa:
 Per rispettare invalidazione cache + versione policy atomica:
 - applicare modifiche policy dentro singola transazione DB
 - aggiornare `policy_meta.policyVersion` nella stessa transazione
+- aggiornare `object_policy_version.policyVersion` per gli oggetti impattati nella stessa transazione
 - invalidare cache target nella stessa transazione
 
 Pseudoflusso atomico:
 1. update/insert su `cones/rules/assignments`
 2. increment `policy_meta.policyVersion`
-3. delete cache entries coinvolte (`user_scope_cache`)
-4. commit
+3. increment `object_policy_version.policyVersion` sugli `object_api_name` impattati
+4. delete cache entries coinvolte (`user_scope_cache`, `policy_definition_cache`)
+5. commit
 
 Fallback:
 - se transazione fallisce -> nessun aggiornamento policy visibile
@@ -283,6 +285,7 @@ Indici minimi richiesti:
 - `rules(object_api_name, active)`
 - `assignments(contact_id, permission_code, record_type, valid_from, valid_to)`
 - `user_scope_cache(expires_at)`
+- `user_scope_cache(object_api_name, object_policy_version)`
 - `audit_log(created_at)`
 
 Consigli addizionali:

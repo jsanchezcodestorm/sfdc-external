@@ -240,8 +240,13 @@ Nota:
 
 ## 13) Cache policy: chiavi, invalidazione, SLA
 ### 13.1 Chiavi cache minime
-- `policy_definition`: `object_api_name|policy_version`
-- `user_scope`: `contact_id|permissions_hash|record_type|object_api_name|policy_version`
+- `policy_definition`: `object_api_name|object_policy_version`
+- `user_scope`: `contact_id|permissions_hash|record_type|object_api_name|object_policy_version`
+
+Versioning:
+- `policy_version` globale resta il riferimento per audit/debug e per tracciare ogni modifica policy
+- `object_policy_version` e specifica per `object_api_name` e guida la validita reale delle cache read-path
+- change su oggetti non correlati non devono raffreddare le cache di un altro oggetto
 
 ### 13.2 Regole di invalidazione
 Ogni modifica a:
@@ -251,8 +256,14 @@ Ogni modifica a:
 
 deve:
 1. incrementare `policy_version`
-2. invalidare cache correlate all `object_api_name` coinvolto
-3. garantire atomicita tra modifica policy, update versione e invalidazione
+2. incrementare `object_policy_version` per ogni `object_api_name` coinvolto
+3. invalidare cache correlate all `object_api_name` coinvolto
+4. garantire atomicita tra modifica policy, update versione e invalidazione
+
+Semantica runtime:
+- il read path normale consulta prima `policy_definition`, poi `user_scope`
+- `policy_definition = INVALID` implica `DENY` fail-closed prima di qualsiasi cache utente
+- `skipCache=true` sui path admin/debug bypassa entrambe le cache e usa il path live
 
 Requisito operativo:
 - endpoint di purge completa in emergenza
@@ -280,6 +291,7 @@ Campi obbligatori evento audit:
 - `row_count`
 - `duration_ms`
 - `policy_version`
+- `object_policy_version`
 
 Retention minima:
 - dettaglio: `180 giorni`

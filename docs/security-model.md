@@ -269,9 +269,11 @@ Regole:
 
 ## 17) Cache security e propagation SLA
 Regole:
-- cache keyed by utente/perms/recordType/oggetto/versione policy
+- cache keyed by utente/perms/recordType/oggetto/object policy version
+- `policy_version` globale resta visibile in audit/debug, ma la validita del read-path e guidata da `object_policy_version`
+- `policy_definition` cache lazy per oggetto/versione e `user_scope` cache per utente devono essere consultate prima di qualunque query globale su `assignments/rules`
 - invalidazione obbligatoria su ogni modifica `visibility.cones`, `visibility.rules`, `visibility.assignments`
-- aggiornamento versione policy atomico con la modifica
+- aggiornamento atomico di `policy_version`, `object_policy_version` impattate e invalidazione cache correlate
 
 SLA:
 - target propagazione policy: P95 <= 30s
