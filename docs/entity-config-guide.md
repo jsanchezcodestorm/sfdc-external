@@ -95,6 +95,7 @@ Comportamento backend:
 
 Nota:
 - `pageSize` e clampato lato API nel range `1..2000`.
+- gli endpoint runtime list usano cursor pagination backend (`cursor` request, `nextCursor` response); `page`/`OFFSET` non fanno parte del contratto runtime.
 
 ## 6) Contratto `detail`
 ### 6.1 Manifest `detail` (`entity_detail_configs`)
@@ -116,6 +117,10 @@ Campi principali:
 - `description`, `actions`, `rowActions`, `emptyState`, `pageSize` (optional)
 
 Per la query related list, usare tipicamente `{{id}}` come filtro record padre.
+
+Nota operativa:
+- le related list runtime usano lo stesso contratto cursor-based delle list principali.
+- il backend mantiene stato cursore tecnico su PostgreSQL con TTL; cursor scaduti o non coerenti con utente/config/visibility vengono rifiutati fail-closed con `400`.
 
 ### 6.4 `pathStatus`
 Contratto:

@@ -246,6 +246,11 @@ Cache backend locale:
 - script emergenza (se presente): `./invalidate-backend-cache.sh`
 - alternativa generica: endpoint/admin command di purge cache documentato per l ambiente
 
+Cache PostgreSQL tecniche:
+- includono anche `entity_query_cursor_cache` per la paginazione cursor-based delle entities
+- TTL controllato da `ENTITY_QUERY_CURSOR_TTL_SECONDS` (default `900`)
+- cursor scaduti devono essere purgati con la stessa disciplina operativa usata per le altre cache tecniche middleware
+
 Uso:
 - solo in scenari controllati (degrado cache o dati obsoleti)
 - dopo invalidazione, monitorare latenza e rebuild cache
