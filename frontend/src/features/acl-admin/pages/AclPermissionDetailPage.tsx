@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
+import { useAppDialog } from '../../../components/app-dialog'
 import { deleteAclPermission, fetchAclPermission } from '../acl-admin-api'
 import type { AclAdminPermissionResponse, AclAdminResourceSummary } from '../acl-admin-types'
 
@@ -9,6 +10,7 @@ type RouteParams = {
 }
 
 export function AclPermissionDetailPage() {
+  const { confirm } = useAppDialog()
   const navigate = useNavigate()
   const params = useParams<RouteParams>()
   const permissionCode = params.permissionCode ? decodeURIComponent(params.permissionCode) : null
@@ -57,7 +59,18 @@ export function AclPermissionDetailPage() {
   }, [permissionCode])
 
   const removePermission = async () => {
-    if (!permissionCode || !window.confirm(`Eliminare il permesso ${permissionCode}?`)) {
+    if (!permissionCode) {
+      return
+    }
+
+    const confirmed = await confirm({
+      title: 'Elimina permesso',
+      description: `Eliminare il permesso ${permissionCode}?`,
+      confirmLabel: 'Elimina',
+      cancelLabel: 'Annulla',
+      tone: 'danger',
+    })
+    if (!confirmed) {
       return
     }
 

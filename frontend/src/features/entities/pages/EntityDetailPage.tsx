@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
+import { useAppDialog } from '../../../components/app-dialog'
 import {
   deleteEntityRecord,
   fetchEntityConfig,
@@ -32,6 +33,7 @@ import { EntityRelatedListCard } from '../components/EntityRelatedListCard'
 import { EntityStatePanel } from '../components/EntityStatePanel'
 
 export function EntityDetailPage() {
+  const { confirm } = useAppDialog()
   const navigate = useNavigate()
   const { entityId = '', recordId = '' } = useParams()
   const [config, setConfig] = useState<EntityConfigEnvelope | null>(null)
@@ -143,7 +145,13 @@ export function EntityDetailPage() {
             baseEntityPath={baseEntityPath}
             deleting={deleting}
             onDelete={async () => {
-              const confirmDelete = window.confirm('Confermi eliminazione del record?')
+              const confirmDelete = await confirm({
+                title: 'Elimina record',
+                description: 'Confermi eliminazione del record?',
+                confirmLabel: 'Elimina',
+                cancelLabel: 'Annulla',
+                tone: 'danger',
+              })
               if (!confirmDelete) {
                 return
               }

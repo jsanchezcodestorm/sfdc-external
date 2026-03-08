@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
+import { useAppDialog } from '../../../components/app-dialog'
 import {
   deleteVisibilityCone,
   fetchVisibilityAssignments,
@@ -29,6 +30,7 @@ type RouteParams = {
 }
 
 export function VisibilityConeDetailPage() {
+  const { confirm } = useAppDialog()
   const navigate = useNavigate()
   const params = useParams<RouteParams>()
   const coneId = params.coneId ? decodeURIComponent(params.coneId) : null
@@ -96,7 +98,18 @@ export function VisibilityConeDetailPage() {
   )
 
   const removeCone = async () => {
-    if (!coneId || !window.confirm(`Eliminare il cone ${coneId}?`)) {
+    if (!coneId) {
+      return
+    }
+
+    const confirmed = await confirm({
+      title: 'Elimina cone',
+      description: `Eliminare il cone ${coneId}?`,
+      confirmLabel: 'Elimina',
+      cancelLabel: 'Annulla',
+      tone: 'danger',
+    })
+    if (!confirmed) {
       return
     }
 

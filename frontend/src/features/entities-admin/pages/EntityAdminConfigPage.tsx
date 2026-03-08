@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { matchPath, useBeforeUnload, useBlocker, useLocation, useNavigate, useParams } from 'react-router-dom'
 
+import { useAppDialog } from '../../../components/app-dialog'
 import type { EntityConfig } from '../../entities/entity-types'
 import {
   createEntityAdminConfig,
@@ -65,9 +66,11 @@ type EntityAdminLocationState = {
 }
 
 export function EntityAdminConfigPage() {
+  const { confirm } = useAppDialog()
   const location = useLocation()
   const navigate = useNavigate()
   const params = useParams<RouteParams>()
+  const blockedNavigationKeyRef = useRef<string | null>(null)
 
   const isCreateRoute = location.pathname === buildEntityCreatePath()
   const selectedEntityId =
@@ -343,17 +346,43 @@ export function EntityAdminConfigPage() {
 
   useEffect(() => {
     if (navigationBlocker.state !== 'blocked') {
+      blockedNavigationKeyRef.current = null
       return
     }
 
-    const shouldLeave = window.confirm('Hai modifiche non salvate. Vuoi uscire e perderle?')
-    if (shouldLeave) {
-      navigationBlocker.proceed()
+    const blockedNavigationKey = [
+      navigationBlocker.location.pathname,
+      navigationBlocker.location.search,
+      navigationBlocker.location.hash,
+    ].join('')
+
+    if (blockedNavigationKeyRef.current === blockedNavigationKey) {
       return
     }
 
-    navigationBlocker.reset()
-  }, [navigationBlocker])
+    blockedNavigationKeyRef.current = blockedNavigationKey
+
+    void confirm({
+      title: 'Modifiche non salvate',
+      description: 'Hai modifiche non salvate. Vuoi uscire e perderle?',
+      confirmLabel: 'Esci senza salvare',
+      cancelLabel: 'Resta nella pagina',
+      tone: 'danger',
+    }).then((shouldLeave) => {
+      if (blockedNavigationKeyRef.current !== blockedNavigationKey) {
+        return
+      }
+
+      blockedNavigationKeyRef.current = null
+
+      if (shouldLeave) {
+        navigationBlocker.proceed()
+        return
+      }
+
+      navigationBlocker.reset()
+    })
+  }, [confirm, navigationBlocker])
 
   useBeforeUnload(
     useCallback(
@@ -771,7 +800,18 @@ export function EntityAdminConfigPage() {
   }
 
   const removeSelectedEntityConfig = async () => {
-    if (!selectedEntityId || !window.confirm(`Eliminare la entity ${selectedEntityId}?`)) {
+    if (!selectedEntityId) {
+      return
+    }
+
+    const confirmed = await confirm({
+      title: 'Elimina entity',
+      description: `Eliminare la entity ${selectedEntityId}?`,
+      confirmLabel: 'Elimina',
+      cancelLabel: 'Annulla',
+      tone: 'danger',
+    })
+    if (!confirmed) {
       return
     }
 

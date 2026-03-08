@@ -1,3 +1,5 @@
+import { useState } from 'react'
+
 type RowActionsJsonArrayEditorProps = {
   value: string
   onChange: (value: string) => void
@@ -29,32 +31,34 @@ export function RowActionsJsonArrayEditor({
   addLabel = 'Aggiungi Action',
   emptyMessage = 'Nessuna row action configurata.',
 }: RowActionsJsonArrayEditorProps) {
-  const { rows, error } = parseRowActions(value)
+  return (
+    <RowActionsJsonArrayEditorBody
+      key={value}
+      value={value}
+      onChange={onChange}
+      legend={legend}
+      description={description}
+      addLabel={addLabel}
+      emptyMessage={emptyMessage}
+    />
+  )
+}
+
+function RowActionsJsonArrayEditorBody({
+  value,
+  onChange,
+  legend = 'Row Actions',
+  description = 'Azioni riga strutturate (`type`, `label`, `target`, `entityId`).',
+  addLabel = 'Aggiungi Action',
+  emptyMessage = 'Nessuna row action configurata.',
+}: RowActionsJsonArrayEditorProps) {
+  const [rows, setRows] = useState<RowActionDraft[]>(() => parseRowActions(value).rows)
+  const { error } = parseRowActions(value)
 
   const emitRows = (nextRows: RowActionDraft[]) => {
-    const payload = nextRows
-      .map((row) => {
-        const type = normalizeActionType(row.type)
-        const label = row.label.trim()
-        const target = row.target.trim()
-        const entityId = row.entityId.trim()
-        const hasAnyValue =
-          type.length > 0 || label.length > 0 || target.length > 0 || entityId.length > 0
-
-        if (!hasAnyValue) {
-          return null
-        }
-
-        return {
-          ...(type ? { type } : {}),
-          ...(label ? { label } : {}),
-          ...(target ? { target } : {}),
-          ...(entityId ? { entityId } : {}),
-        }
-      })
-      .filter((entry) => entry !== null)
-
-    onChange(payload.length > 0 ? JSON.stringify(payload, null, 2) : '')
+    const serialized = serializeRowActions(nextRows)
+    setRows(nextRows)
+    onChange(serialized)
   }
 
   const addRow = () => {
@@ -200,6 +204,32 @@ function parseRowActions(value: string): ParseResult {
     .filter((entry): entry is RowActionDraft => entry !== null)
 
   return { rows, error: null }
+}
+
+function serializeRowActions(rows: RowActionDraft[]): string {
+  const payload = rows
+    .map((row) => {
+      const type = normalizeActionType(row.type)
+      const label = row.label.trim()
+      const target = row.target.trim()
+      const entityId = row.entityId.trim()
+      const hasAnyValue =
+        type.length > 0 || label.length > 0 || target.length > 0 || entityId.length > 0
+
+      if (!hasAnyValue) {
+        return null
+      }
+
+      return {
+        ...(type ? { type } : {}),
+        ...(label ? { label } : {}),
+        ...(target ? { target } : {}),
+        ...(entityId ? { entityId } : {}),
+      }
+    })
+    .filter((entry) => entry !== null)
+
+  return payload.length > 0 ? JSON.stringify(payload, null, 2) : ''
 }
 
 function mapRowActionEntry(entry: unknown): RowActionDraft | null {

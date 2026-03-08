@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
+import { useAppDialog } from '../../../components/app-dialog'
 import {
   deleteVisibilityAssignment,
   fetchVisibilityAssignment,
@@ -25,6 +26,7 @@ type RouteParams = {
 }
 
 export function VisibilityAssignmentDetailPage() {
+  const { confirm } = useAppDialog()
   const navigate = useNavigate()
   const params = useParams<RouteParams>()
   const assignmentId = params.assignmentId ? decodeURIComponent(params.assignmentId) : null
@@ -93,7 +95,18 @@ export function VisibilityAssignmentDetailPage() {
   )
 
   const removeAssignment = async () => {
-    if (!assignmentId || !window.confirm(`Eliminare l'assignment ${assignmentId}?`)) {
+    if (!assignmentId) {
+      return
+    }
+
+    const confirmed = await confirm({
+      title: 'Elimina assignment',
+      description: `Eliminare l'assignment ${assignmentId}?`,
+      confirmLabel: 'Elimina',
+      cancelLabel: 'Annulla',
+      tone: 'danger',
+    })
+    if (!confirmed) {
       return
     }
 

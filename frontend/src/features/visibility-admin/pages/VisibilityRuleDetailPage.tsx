@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 
+import { useAppDialog } from '../../../components/app-dialog'
 import {
   deleteVisibilityRule,
   fetchVisibilityCones,
@@ -20,6 +21,7 @@ type RouteParams = {
 }
 
 export function VisibilityRuleDetailPage() {
+  const { confirm } = useAppDialog()
   const navigate = useNavigate()
   const params = useParams<RouteParams>()
   const ruleId = params.ruleId ? decodeURIComponent(params.ruleId) : null
@@ -76,7 +78,18 @@ export function VisibilityRuleDetailPage() {
   )
 
   const removeRule = async () => {
-    if (!ruleId || !window.confirm(`Eliminare la rule ${ruleId}?`)) {
+    if (!ruleId) {
+      return
+    }
+
+    const confirmed = await confirm({
+      title: 'Elimina rule',
+      description: `Eliminare la rule ${ruleId}?`,
+      confirmLabel: 'Elimina',
+      cancelLabel: 'Annulla',
+      tone: 'danger',
+    })
+    if (!confirmed) {
       return
     }
 

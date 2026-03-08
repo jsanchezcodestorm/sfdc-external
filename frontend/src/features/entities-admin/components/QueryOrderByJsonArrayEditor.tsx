@@ -1,4 +1,4 @@
-import { useId } from 'react'
+import { useId, useState } from 'react'
 
 type QueryOrderByJsonArrayEditorProps = {
   value: string
@@ -21,28 +21,32 @@ export function QueryOrderByJsonArrayEditor({
   onChange,
   availableFields,
 }: QueryOrderByJsonArrayEditorProps) {
+  return (
+    <QueryOrderByJsonArrayEditorBody
+      key={value}
+      value={value}
+      onChange={onChange}
+      availableFields={availableFields}
+    />
+  )
+}
+
+function QueryOrderByJsonArrayEditorBody({
+  value,
+  onChange,
+  availableFields,
+}: QueryOrderByJsonArrayEditorProps) {
   const fieldListId = useId()
+  const [rows, setRows] = useState<OrderByRow[]>(() => parseOrderByRows(value).rows)
   const fieldOptions = availableFields
     .map((field) => field.trim())
     .filter((field) => field.length > 0)
-  const { rows, error } = parseOrderByRows(value)
+  const { error } = parseOrderByRows(value)
 
   const emitRows = (nextRows: OrderByRow[]) => {
-    const payload = nextRows
-      .map((row) => {
-        const field = row.field.trim()
-        if (field.length === 0) {
-          return null
-        }
-
-        return {
-          field,
-          direction: row.direction,
-        }
-      })
-      .filter((entry): entry is { field: string; direction: 'ASC' | 'DESC' } => entry !== null)
-
-    onChange(payload.length > 0 ? JSON.stringify(payload, null, 2) : '')
+    const serialized = serializeOrderByRows(nextRows)
+    setRows(nextRows)
+    onChange(serialized)
   }
 
   const addRow = () => {
@@ -171,6 +175,24 @@ function parseOrderByRows(value: string): ParseResult {
     .filter((entry): entry is OrderByRow => entry !== null)
 
   return { rows, error: null }
+}
+
+function serializeOrderByRows(rows: OrderByRow[]): string {
+  const payload = rows
+    .map((row) => {
+      const field = row.field.trim()
+      if (field.length === 0) {
+        return null
+      }
+
+      return {
+        field,
+        direction: row.direction,
+      }
+    })
+    .filter((entry): entry is { field: string; direction: 'ASC' | 'DESC' } => entry !== null)
+
+  return payload.length > 0 ? JSON.stringify(payload, null, 2) : ''
 }
 
 function mapOrderByEntry(entry: unknown): OrderByRow | null {

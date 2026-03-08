@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
+import { useAppDialog } from '../../../components/app-dialog'
 import { deleteAclResource, fetchAclResource } from '../acl-admin-api'
 import type { AclAdminResourceResponse } from '../acl-admin-types'
 
@@ -9,6 +10,7 @@ type RouteParams = {
 }
 
 export function AclResourceDetailPage() {
+  const { confirm } = useAppDialog()
   const navigate = useNavigate()
   const params = useParams<RouteParams>()
   const resourceId = params.resourceId ? decodeURIComponent(params.resourceId) : null
@@ -57,7 +59,18 @@ export function AclResourceDetailPage() {
   }, [resourceId])
 
   const removeResource = async () => {
-    if (!resourceId || !window.confirm(`Eliminare la risorsa ${resourceId}?`)) {
+    if (!resourceId) {
+      return
+    }
+
+    const confirmed = await confirm({
+      title: 'Elimina risorsa',
+      description: `Eliminare la risorsa ${resourceId}?`,
+      confirmLabel: 'Elimina',
+      cancelLabel: 'Annulla',
+      tone: 'danger',
+    })
+    if (!confirmed) {
       return
     }
 

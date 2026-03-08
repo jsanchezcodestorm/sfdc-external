@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
+import { useAppDialog } from '../../../components/app-dialog'
 import {
   deleteAclContactPermission,
   fetchAclContactPermission,
@@ -31,6 +32,7 @@ type RouteParams = {
 export function AclContactPermissionEditorPage({
   mode,
 }: AclContactPermissionEditorPageProps) {
+  const { confirm } = useAppDialog()
   const navigate = useNavigate()
   const params = useParams<RouteParams>()
   const previousContactId = params.contactId ? decodeURIComponent(params.contactId) : null
@@ -176,9 +178,13 @@ export function AclContactPermissionEditorPage({
       return
     }
 
-    const confirmed = window.confirm(
-      `Rimuovere tutte le assegnazioni ACL esplicite per il contact ${contactId}?`,
-    )
+    const confirmed = await confirm({
+      title: 'Rimuovi assegnazioni ACL',
+      description: `Rimuovere tutte le assegnazioni ACL esplicite per il contact ${contactId}?`,
+      confirmLabel: 'Rimuovi',
+      cancelLabel: 'Annulla',
+      tone: 'danger',
+    })
     if (!confirmed) {
       return
     }

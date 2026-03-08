@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
+import { useAppDialog } from '../../../components/app-dialog'
 import {
   deleteQueryTemplateAdmin,
   fetchQueryTemplateAdmin,
@@ -16,6 +17,7 @@ type RouteParams = {
 }
 
 export function QueryTemplateDetailPage() {
+  const { confirm } = useAppDialog()
   const navigate = useNavigate()
   const params = useParams<RouteParams>()
   const templateId = params.templateId ? decodeURIComponent(params.templateId) : null
@@ -70,7 +72,18 @@ export function QueryTemplateDetailPage() {
   )
 
   const removeTemplate = async () => {
-    if (!templateId || !window.confirm(`Eliminare il template ${templateId}?`)) {
+    if (!templateId) {
+      return
+    }
+
+    const confirmed = await confirm({
+      title: 'Elimina template',
+      description: `Eliminare il template ${templateId}?`,
+      confirmLabel: 'Elimina',
+      cancelLabel: 'Annulla',
+      tone: 'danger',
+    })
+    if (!confirmed) {
       return
     }
 

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
+import { useAppDialog } from '../../../components/app-dialog'
 import {
   deleteAclContactPermission,
   fetchAclContactPermissions,
@@ -9,6 +10,7 @@ import type { AclAdminContactPermissionSummary } from '../acl-admin-types'
 import { formatAclDateTime } from '../acl-admin-utils'
 
 export function AclContactPermissionsPage() {
+  const { confirm } = useAppDialog()
   const navigate = useNavigate()
   const [items, setItems] = useState<AclAdminContactPermissionSummary[]>([])
   const [query, setQuery] = useState('')
@@ -66,9 +68,13 @@ export function AclContactPermissionsPage() {
   }, [items, query])
 
   const removeContactPermissions = async (contactId: string) => {
-    const confirmed = window.confirm(
-      `Rimuovere tutte le assegnazioni ACL esplicite per il contact ${contactId}?`,
-    )
+    const confirmed = await confirm({
+      title: 'Rimuovi assegnazioni ACL',
+      description: `Rimuovere tutte le assegnazioni ACL esplicite per il contact ${contactId}?`,
+      confirmLabel: 'Rimuovi',
+      cancelLabel: 'Annulla',
+      tone: 'danger',
+    })
     if (!confirmed) {
       return
     }

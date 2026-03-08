@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
+import { useAppDialog } from '../../../components/app-dialog'
 import { fetchAclPermissions } from '../../acl-admin/acl-admin-api'
 import type { AclAdminPermissionSummary } from '../../acl-admin/acl-admin-types'
 import { fetchEntityAdminConfigList } from '../../entities-admin/entity-admin-api'
@@ -20,6 +21,7 @@ type RouteParams = {
 }
 
 export function AppsAdminDetailPage() {
+  const { confirm } = useAppDialog()
   const navigate = useNavigate()
   const params = useParams<RouteParams>()
   const appId = params.appId ? decodeURIComponent(params.appId) : null
@@ -86,7 +88,18 @@ export function AppsAdminDetailPage() {
   }, [app?.permissionCodes, permissions])
 
   const removeApp = async () => {
-    if (!appId || !window.confirm(`Eliminare l'app ${appId}?`)) {
+    if (!appId) {
+      return
+    }
+
+    const confirmed = await confirm({
+      title: 'Elimina app',
+      description: `Eliminare l'app ${appId}?`,
+      confirmLabel: 'Elimina',
+      cancelLabel: 'Annulla',
+      tone: 'danger',
+    })
+    if (!confirmed) {
       return
     }
 
