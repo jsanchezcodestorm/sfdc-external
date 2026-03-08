@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 
 import { useAppWorkspace } from '../../apps/useAppWorkspace'
 import {
   deleteEntityRecord,
   fetchEntityConfig,
   fetchEntityRelatedList,
+  isInvalidEntityCursorError,
 } from '../entity-api'
 import {
   getRecordsFromCollection,
@@ -21,17 +22,43 @@ import type {
   RelatedListConfig,
 } from '../entity-types'
 import { resolveRelatedListNavigationTarget } from '../related-list-navigation'
+import { EntityCursorPaginationControls } from '../components/EntityCursorPaginationControls'
 import { EntityPageFrame } from '../components/EntityPageFrame'
 import { EntityRecordTable } from '../components/EntityRecordTable'
 import { EntityStatePanel } from '../components/EntityStatePanel'
 
 export function EntityRelatedListPage() {
   const { entityId = '', recordId = '', relatedListId = '' } = useParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { selectedEntities } = useAppWorkspace()
   const [config, setConfig] = useState<EntityConfigEnvelope | null>(null)
   const [relatedPayload, setRelatedPayload] = useState<EntityRelatedListResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [cursorHistory, setCursorHistory] = useState<string[]>([])
+  const recoveryKeyRef = useRef<string | null>(null)
+
+  const requestedCursor = useMemo(() => {
+    const raw = searchParams.get('cursor')?.trim()
+    return raw && raw.length > 0 ? raw : undefined
+  }, [searchParams])
+
+  const updateCursorState = useCallback(
+    (cursor?: string | null) => {
+      const nextParams = new URLSearchParams()
+      const normalizedCursor = cursor?.trim()
+      if (normalizedCursor) {
+        nextParams.set('cursor', normalizedCursor)
+      }
+      setSearchParams(nextParams)
+    },
+    [setSearchParams],
+  )
+
+  useEffect(() => {
+    setCursorHistory([])
+    recoveryKeyRef.current = null
+  }, [entityId, recordId, relatedListId])
 
   const loadRelatedList = useCallback(async () => {
     if (!entityId || !recordId || !relatedListId) {
@@ -43,13 +70,25 @@ export function EntityRelatedListPage() {
 
       const [entityConfig, relatedResponse] = await Promise.all([
         fetchEntityConfig(entityId),
-        fetchEntityRelatedList(entityId, recordId, relatedListId),
+        fetchEntityRelatedList(entityId, recordId, relatedListId, {
+          cursor: requestedCursor,
+        }),
       ])
 
       setConfig(entityConfig)
       setRelatedPayload(relatedResponse)
       setError(null)
     } catch (loadError) {
+      if (requestedCursor && isInvalidEntityCursorError(loadError)) {
+        const recoveryKey = `${entityId}::${recordId}::${relatedListId}::${requestedCursor}`
+        if (recoveryKeyRef.current !== recoveryKey) {
+          recoveryKeyRef.current = recoveryKey
+          setCursorHistory([])
+          updateCursorState(null)
+          return
+        }
+      }
+
       const message =
         loadError instanceof Error
           ? loadError.message
@@ -60,7 +99,7 @@ export function EntityRelatedListPage() {
     } finally {
       setLoading(false)
     }
-  }, [entityId, recordId, relatedListId])
+  }, [entityId, recordId, relatedListId, requestedCursor, updateCursorState])
 
   useEffect(() => {
     void loadRelatedList()
@@ -86,6 +125,8 @@ export function EntityRelatedListPage() {
   const rowActions = relatedPayload?.rowActions ?? relatedList?.rowActions
   const actions = relatedPayload?.actions ?? relatedList?.actions ?? []
   const emptyMessage = relatedPayload?.emptyState ?? relatedList?.emptyState ?? 'Nessun record collegato'
+  const canGoPrevious = cursorHistory.length > 0
+  const hasNextPage = Boolean(relatedPayload?.nextCursor)
 
   if (!entityId || !recordId || !relatedListId) {
     return (
@@ -151,10 +192,36 @@ export function EntityRelatedListPage() {
                   }
 
                   await deleteEntityRecord(relatedEntityId, rowId)
-                  await loadRelatedList()
+                  setCursorHistory([])
+                  updateCursorState(null)
                 }
               : undefined
           }
+        />
+      )}
+      {!loading && !error && (
+        <EntityCursorPaginationControls
+          canGoPrevious={canGoPrevious}
+          hasNextPage={hasNextPage}
+          total={relatedPayload?.total}
+          onPrevious={() => {
+            const previousCursor = cursorHistory.at(-1)
+            if (previousCursor === undefined) {
+              return
+            }
+
+            setCursorHistory((current) => current.slice(0, -1))
+            updateCursorState(previousCursor || null)
+          }}
+          onNext={() => {
+            const nextCursor = relatedPayload?.nextCursor
+            if (!nextCursor) {
+              return
+            }
+
+            setCursorHistory((current) => [...current, requestedCursor ?? ''])
+            updateCursorState(nextCursor)
+          }}
         />
       )}
     </EntityPageFrame>

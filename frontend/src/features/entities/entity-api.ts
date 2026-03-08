@@ -1,4 +1,4 @@
-import { apiFetch } from '../../lib/api'
+import { ApiError, apiFetch } from '../../lib/api'
 import type {
   EntityConfigEnvelope,
   EntityDetailResponse,
@@ -10,13 +10,13 @@ import type {
 
 type ListQueryOptions = {
   viewId?: string
-  page?: number
+  cursor?: string
   pageSize?: number
   search?: string
 }
 
 type RelatedQueryOptions = {
-  page?: number
+  cursor?: string
   pageSize?: number
 }
 
@@ -30,7 +30,7 @@ export async function fetchEntityList(
 ): Promise<EntityListResponse> {
   const query = buildQueryString({
     viewId: options.viewId,
-    page: options.page,
+    cursor: options.cursor,
     pageSize: options.pageSize,
     search: options.search,
   })
@@ -68,10 +68,22 @@ export async function fetchEntityRelatedList(
   relatedListId: string,
   options: RelatedQueryOptions = {},
 ): Promise<EntityRelatedListResponse> {
-  const query = buildQueryString({ page: options.page, pageSize: options.pageSize, recordId })
+  const query = buildQueryString({
+    cursor: options.cursor,
+    pageSize: options.pageSize,
+    recordId,
+  })
 
   return apiFetch<EntityRelatedListResponse>(
     `/entities/${encodeURIComponent(entityId)}/related/${encodeURIComponent(relatedListId)}${query}`,
+  )
+}
+
+export function isInvalidEntityCursorError(error: unknown): boolean {
+  return (
+    error instanceof ApiError &&
+    error.status === 400 &&
+    error.message.includes('Invalid or expired entity cursor')
   )
 }
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 
@@ -6,6 +6,7 @@ import {
   deleteEntityRecord,
   fetchEntityConfig,
   fetchEntityList,
+  isInvalidEntityCursorError,
 } from '../entity-api'
 import {
   getRecordsFromCollection,
@@ -20,6 +21,7 @@ import type {
   EntityListResponse,
   EntityRecord,
 } from '../entity-types'
+import { EntityCursorPaginationControls } from '../components/EntityCursorPaginationControls'
 import { EntityPageFrame } from '../components/EntityPageFrame'
 import { EntityRecordTable } from '../components/EntityRecordTable'
 import { EntityStatePanel } from '../components/EntityStatePanel'
@@ -33,28 +35,76 @@ export function EntityListPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
+  const [cursorHistory, setCursorHistory] = useState<string[]>([])
+  const recoveryKeyRef = useRef<string | null>(null)
 
   const requestedViewId = useMemo(() => {
     const raw = searchParams.get('viewId')?.trim()
     return raw && raw.length > 0 ? raw : undefined
   }, [searchParams])
 
+  const requestedSearch = useMemo(() => {
+    const raw = searchParams.get('search')?.trim()
+    return raw && raw.length > 0 ? raw : ''
+  }, [searchParams])
+
+  const requestedCursor = useMemo(() => {
+    const raw = searchParams.get('cursor')?.trim()
+    return raw && raw.length > 0 ? raw : undefined
+  }, [searchParams])
+
+  const filterSignature = useMemo(
+    () => `${entityId}::${requestedViewId ?? ''}::${requestedSearch}`,
+    [entityId, requestedSearch, requestedViewId],
+  )
+
+  const updateSearchState = useCallback(
+    (next: { cursor?: string | null; search?: string; viewId?: string }) => {
+      const nextParams = new URLSearchParams()
+      const normalizedViewId = next.viewId?.trim()
+      const normalizedSearch = next.search?.trim()
+      const normalizedCursor = next.cursor?.trim()
+
+      if (normalizedViewId) {
+        nextParams.set('viewId', normalizedViewId)
+      }
+
+      if (normalizedSearch) {
+        nextParams.set('search', normalizedSearch)
+      }
+
+      if (normalizedCursor) {
+        nextParams.set('cursor', normalizedCursor)
+      }
+
+      setSearchParams(nextParams)
+    },
+    [setSearchParams],
+  )
+
+  useEffect(() => {
+    setSearchTerm(requestedSearch)
+  }, [requestedSearch])
+
+  useEffect(() => {
+    setCursorHistory([])
+    recoveryKeyRef.current = null
+  }, [filterSignature])
+
   const loadList = useCallback(
-    async (options: { search?: string; viewId?: string } = {}) => {
+    async () => {
       if (!entityId) {
         return
       }
-
-      const effectiveSearch = options.search ?? ''
-      const effectiveViewId = options.viewId ?? requestedViewId
 
       try {
         setLoading(true)
         const [entityConfig, listPayload] = await Promise.all([
           fetchEntityConfig(entityId),
           fetchEntityList(entityId, {
-            viewId: effectiveViewId,
-            search: effectiveSearch.length > 0 ? effectiveSearch : undefined,
+            viewId: requestedViewId,
+            cursor: requestedCursor,
+            search: requestedSearch.length > 0 ? requestedSearch : undefined,
           }),
         ])
 
@@ -62,6 +112,20 @@ export function EntityListPage() {
         setListResponse(listPayload)
         setError(null)
       } catch (loadError) {
+        if (requestedCursor && isInvalidEntityCursorError(loadError)) {
+          const recoveryKey = `${filterSignature}::${requestedCursor}`
+          if (recoveryKeyRef.current !== recoveryKey) {
+            recoveryKeyRef.current = recoveryKey
+            setCursorHistory([])
+            updateSearchState({
+              viewId: requestedViewId,
+              search: requestedSearch,
+              cursor: null,
+            })
+            return
+          }
+        }
+
         const message =
           loadError instanceof Error
             ? loadError.message
@@ -73,7 +137,7 @@ export function EntityListPage() {
         setLoading(false)
       }
     },
-    [entityId, requestedViewId],
+    [entityId, filterSignature, requestedCursor, requestedSearch, requestedViewId, updateSearchState],
   )
 
   useEffect(() => {
@@ -99,6 +163,8 @@ export function EntityListPage() {
     selectedView?.primaryAction ??
     config?.entity.list?.primaryAction
   const searchEnabled = Boolean(selectedView?.search)
+  const canGoPrevious = cursorHistory.length > 0
+  const hasNextPage = Boolean(listResponse?.nextCursor)
 
   const handleDelete = useCallback(
     async (record: EntityRecord) => {
@@ -108,9 +174,14 @@ export function EntityListPage() {
       }
 
       await deleteEntityRecord(entityId, recordId)
-      await loadList({ search: searchTerm })
+      setCursorHistory([])
+      updateSearchState({
+        viewId: requestedViewId,
+        search: requestedSearch,
+        cursor: null,
+      })
     },
-    [entityId, loadList, searchTerm],
+    [entityId, requestedSearch, requestedViewId, updateSearchState],
   )
 
   if (!entityId) {
@@ -148,16 +219,12 @@ export function EntityListPage() {
               value={selectedView?.id ?? ''}
               onChange={(event) => {
                 const nextViewId = event.target.value
-                const nextParams = new URLSearchParams(searchParams)
-
-                if (nextViewId.length > 0) {
-                  nextParams.set('viewId', nextViewId)
-                } else {
-                  nextParams.delete('viewId')
-                }
-
-                setSearchParams(nextParams)
-                void loadList({ search: searchTerm, viewId: nextViewId || undefined })
+                setCursorHistory([])
+                updateSearchState({
+                  viewId: nextViewId || undefined,
+                  search: requestedSearch,
+                  cursor: null,
+                })
               }}
             >
               {views.map((view) => (
@@ -176,7 +243,12 @@ export function EntityListPage() {
             className="flex flex-col gap-3 sm:flex-row"
             onSubmit={(event: FormEvent<HTMLFormElement>) => {
               event.preventDefault()
-              void loadList({ search: searchTerm })
+              setCursorHistory([])
+              updateSearchState({
+                viewId: requestedViewId,
+                search: searchTerm,
+                cursor: null,
+              })
             }}
           >
             <input
@@ -207,6 +279,39 @@ export function EntityListPage() {
           baseEntityPath={baseEntityPath}
           actions={rowActions}
           onDelete={handleDelete}
+        />
+      )}
+      {!loading && !error && (
+        <EntityCursorPaginationControls
+          canGoPrevious={canGoPrevious}
+          hasNextPage={hasNextPage}
+          total={listResponse?.total}
+          onPrevious={() => {
+            const previousCursor = cursorHistory.at(-1)
+            if (previousCursor === undefined) {
+              return
+            }
+
+            setCursorHistory((current) => current.slice(0, -1))
+            updateSearchState({
+              viewId: requestedViewId,
+              search: requestedSearch,
+              cursor: previousCursor || null,
+            })
+          }}
+          onNext={() => {
+            const nextCursor = listResponse?.nextCursor
+            if (!nextCursor) {
+              return
+            }
+
+            setCursorHistory((current) => [...current, requestedCursor ?? ''])
+            updateSearchState({
+              viewId: requestedViewId,
+              search: requestedSearch,
+              cursor: nextCursor,
+            })
+          }}
         />
       )}
     </EntityPageFrame>

@@ -186,8 +186,8 @@ export type EntityListResponse = {
   items?: EntityRecord[]
   data?: EntityRecord[]
   total?: number
-  page?: number
   pageSize?: number
+  nextCursor?: string | null
   viewId?: string
   primaryAction?: EntityAction
   rowActions?: EntityAction[]
@@ -213,8 +213,8 @@ export type EntityRelatedListResponse = {
   items?: EntityRecord[]
   data?: EntityRecord[]
   total?: number
-  page?: number
   pageSize?: number
+  nextCursor?: string | null
   actions?: EntityAction[]
   rowActions?: EntityAction[]
   emptyState?: string
