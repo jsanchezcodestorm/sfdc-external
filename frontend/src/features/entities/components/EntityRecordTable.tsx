@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 
+import { useAppDialog } from '../../../components/app-dialog'
 import {
   buildRowActions,
   formatFieldValue,
@@ -64,7 +65,9 @@ export function EntityRecordTable({
                   {normalizedColumns.map((column) => {
                     const displayValue = resolveDisplayFieldValue(record, column.field)
                     const formattedValue = formatFieldValue(displayValue)
+                    const hasBaseEntityPath = baseEntityPath.trim().length > 0
                     const canLinkToDetail =
+                      hasBaseEntityPath &&
                       column.field === 'Name' &&
                       rowId.length > 0 &&
                       displayValue !== null &&
@@ -124,6 +127,8 @@ type EntityRowActionProps = {
 }
 
 function EntityRowAction({ action, rowId, baseEntityPath, record, onDelete }: EntityRowActionProps) {
+  const { confirm } = useAppDialog()
+
   if (action.type === 'edit') {
     if (!rowId) {
       return null
@@ -131,10 +136,13 @@ function EntityRowAction({ action, rowId, baseEntityPath, record, onDelete }: En
 
     const target = resolveActionTarget(action, {
       baseEntityPath,
-      fallbackPath: `${baseEntityPath}/${rowId}/edit`,
+      fallbackPath: baseEntityPath ? `${baseEntityPath}/${rowId}/edit` : '',
       record,
       rowId,
     })
+    if (!target) {
+      return null
+    }
 
     return (
       <Link
@@ -151,21 +159,31 @@ function EntityRowAction({ action, rowId, baseEntityPath, record, onDelete }: En
       return null
     }
 
+    const handleDeleteClick = async () => {
+      if (!onDelete) {
+        return
+      }
+
+      const confirmDelete = await confirm({
+        title: 'Elimina record',
+        description: 'Confermi eliminazione del record?',
+        confirmLabel: 'Elimina',
+        cancelLabel: 'Annulla',
+        tone: 'danger',
+      })
+      if (!confirmDelete) {
+        return
+      }
+
+      void onDelete(record)
+    }
+
     return (
       <button
         type="button"
         className="rounded-md border border-rose-200 px-2.5 py-1 text-xs font-medium text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
         onClick={() => {
-          if (!onDelete) {
-            return
-          }
-
-          const confirmDelete = window.confirm('Confermi eliminazione del record?')
-          if (!confirmDelete) {
-            return
-          }
-
-          void onDelete(record)
+          void handleDeleteClick()
         }}
         disabled={!onDelete}
       >
@@ -176,10 +194,13 @@ function EntityRowAction({ action, rowId, baseEntityPath, record, onDelete }: En
 
   const target = resolveActionTarget(action, {
     baseEntityPath,
-    fallbackPath: rowId ? `${baseEntityPath}/${rowId}` : baseEntityPath,
+    fallbackPath: rowId && baseEntityPath ? `${baseEntityPath}/${rowId}` : baseEntityPath,
     record,
     rowId,
   })
+  if (!target) {
+    return null
+  }
 
   return (
     <Link

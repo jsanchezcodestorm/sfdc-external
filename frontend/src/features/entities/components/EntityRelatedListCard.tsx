@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 
+import { useAppWorkspace } from '../../apps/useAppWorkspace'
 import { deleteEntityRecord, fetchEntityRelatedList } from '../entity-api'
 import { getRecordsFromCollection, resolveActionTarget } from '../entity-helpers'
+import { resolveRelatedListNavigationTarget } from '../related-list-navigation'
 import type {
   EntityAction,
   EntityRelatedListResponse,
@@ -25,11 +27,10 @@ export function EntityRelatedListCard({
   baseEntityPath,
   relatedList,
 }: EntityRelatedListCardProps) {
+  const { selectedEntities } = useAppWorkspace()
   const [payload, setPayload] = useState<EntityRelatedListResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
-
-  const relatedEntityId = relatedList.entityId ?? entityId
 
   const loadRelatedList = useCallback(async () => {
     try {
@@ -51,7 +52,10 @@ export function EntityRelatedListCard({
   }, [loadRelatedList])
 
   const records = getRecordsFromCollection(payload ?? {})
-  const columns = payload?.columns ?? relatedList.columns ?? []
+  const effectiveRelatedList = payload?.relatedList ?? relatedList
+  const navigationTarget = resolveRelatedListNavigationTarget(effectiveRelatedList, selectedEntities)
+  const relatedEntityId = navigationTarget.entityId
+  const columns = payload?.columns ?? effectiveRelatedList.columns ?? []
   const rowActions = payload?.rowActions ?? relatedList.rowActions
   const actions = payload?.actions ?? relatedList.actions ?? []
   const emptyMessage = payload?.emptyState ?? relatedList.emptyState ?? 'Nessun record collegato'
@@ -77,7 +81,7 @@ export function EntityRelatedListCard({
             <RelatedListActionButton
               key={`${action.type}-${action.label ?? action.target ?? index}`}
               action={action}
-              baseEntityPath={`/s/${relatedEntityId}`}
+              baseEntityPath={navigationTarget.baseEntityPath}
               recordId={recordId}
             />
           ))}
@@ -86,22 +90,29 @@ export function EntityRelatedListCard({
 
       {loading && <EntityStatePanel title="Caricamento related list in corso..." />}
       {!loading && error && <EntityStatePanel tone="error" title="Related list non disponibile" description={error} />}
+      {!loading && !error && navigationTarget.warning && (
+        <EntityStatePanel tone="error" title="Navigazione related list non risolta" description={navigationTarget.warning} />
+      )}
       {!loading && !error && (
         <EntityRecordTable
           columns={columns}
           records={records}
           emptyMessage={emptyMessage}
-          baseEntityPath={`/s/${relatedEntityId}`}
+          baseEntityPath={navigationTarget.baseEntityPath}
           actions={rowActions}
-          onDelete={async (record: EntityRecord) => {
-            const rowId = String(record.Id ?? record.id ?? '')
-            if (!rowId) {
-              return
-            }
+          onDelete={
+            relatedEntityId
+              ? async (record: EntityRecord) => {
+                  const rowId = String(record.Id ?? record.id ?? '')
+                  if (!rowId) {
+                    return
+                  }
 
-            await deleteEntityRecord(relatedEntityId, rowId)
-            await loadRelatedList()
-          }}
+                  await deleteEntityRecord(relatedEntityId, rowId)
+                  await loadRelatedList()
+                }
+              : undefined
+          }
         />
       )}
     </section>
@@ -124,6 +135,9 @@ function RelatedListActionButton({ action, baseEntityPath, recordId }: RelatedLi
     fallbackPath: baseEntityPath,
     rowId: recordId,
   })
+  if (!target) {
+    return null
+  }
 
   return (
     <Link

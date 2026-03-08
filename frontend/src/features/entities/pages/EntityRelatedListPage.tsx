@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 
+import { useAppWorkspace } from '../../apps/useAppWorkspace'
 import {
   deleteEntityRecord,
   fetchEntityConfig,
@@ -19,12 +20,14 @@ import type {
   EntityRecord,
   RelatedListConfig,
 } from '../entity-types'
+import { resolveRelatedListNavigationTarget } from '../related-list-navigation'
 import { EntityPageFrame } from '../components/EntityPageFrame'
 import { EntityRecordTable } from '../components/EntityRecordTable'
 import { EntityStatePanel } from '../components/EntityStatePanel'
 
 export function EntityRelatedListPage() {
   const { entityId = '', recordId = '', relatedListId = '' } = useParams()
+  const { selectedEntities } = useAppWorkspace()
   const [config, setConfig] = useState<EntityConfigEnvelope | null>(null)
   const [relatedPayload, setRelatedPayload] = useState<EntityRelatedListResponse | null>(null)
   const [loading, setLoading] = useState(true)
@@ -69,7 +72,8 @@ export function EntityRelatedListPage() {
   )
 
   const relatedList = relatedPayload?.relatedList ?? configRelatedList
-  const relatedEntityId = relatedList?.entityId ?? entityId
+  const navigationTarget = resolveRelatedListNavigationTarget(relatedList, selectedEntities)
+  const relatedEntityId = navigationTarget.entityId
   const entityLabel = config?.entity.label ?? toTitleCase(entityId)
   const baseEntityPath = normalizeEntityBasePath(entityId, config?.entity.navigation?.basePath)
   const title =
@@ -117,7 +121,7 @@ export function EntityRelatedListPage() {
                 key={`${action.type}-${action.label ?? action.target ?? index}`}
                 action={action}
                 recordId={recordId}
-                baseEntityPath={`/s/${relatedEntityId}`}
+                baseEntityPath={navigationTarget.baseEntityPath}
               />
             ))}
           </div>
@@ -128,22 +132,29 @@ export function EntityRelatedListPage() {
       {!loading && error && (
         <EntityStatePanel tone="error" title="Related list non disponibile" description={error} />
       )}
+      {!loading && !error && navigationTarget.warning && (
+        <EntityStatePanel tone="error" title="Navigazione related list non risolta" description={navigationTarget.warning} />
+      )}
       {!loading && !error && (
         <EntityRecordTable
           columns={columns}
           records={records}
           emptyMessage={emptyMessage}
-          baseEntityPath={`/s/${relatedEntityId}`}
+          baseEntityPath={navigationTarget.baseEntityPath}
           actions={rowActions}
-          onDelete={async (record: EntityRecord) => {
-            const rowId = String(record.Id ?? record.id ?? '')
-            if (!rowId) {
-              return
-            }
+          onDelete={
+            relatedEntityId
+              ? async (record: EntityRecord) => {
+                  const rowId = String(record.Id ?? record.id ?? '')
+                  if (!rowId) {
+                    return
+                  }
 
-            await deleteEntityRecord(relatedEntityId, rowId)
-            await loadRelatedList()
-          }}
+                  await deleteEntityRecord(relatedEntityId, rowId)
+                  await loadRelatedList()
+                }
+              : undefined
+          }
         />
       )}
     </EntityPageFrame>
@@ -166,6 +177,9 @@ function RelatedPageActionButton({ action, baseEntityPath, recordId }: RelatedPa
     fallbackPath: baseEntityPath,
     rowId: recordId,
   })
+  if (!target) {
+    return null
+  }
 
   return (
     <Link

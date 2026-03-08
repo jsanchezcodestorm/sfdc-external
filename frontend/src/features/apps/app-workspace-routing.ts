@@ -5,6 +5,11 @@ export function getAppEntityBasePath(entity: AvailableAppEntity): string {
   return normalizeEntityBasePath(entity.id, entity.basePath)
 }
 
+export function isSalesforceRecordId(value: string | null | undefined): boolean {
+  const normalizedValue = value?.trim() ?? ''
+  return /^[A-Za-z0-9]{15}(?:[A-Za-z0-9]{3})?$/.test(normalizedValue)
+}
+
 export function extractRuntimeEntityId(pathname: string): string | null {
   const match = /^\/s\/([^/]+)/.exec(pathname)
   if (!match) {
@@ -12,18 +17,62 @@ export function extractRuntimeEntityId(pathname: string): string | null {
   }
 
   const entityId = decodeURIComponent(match[1] ?? '').trim()
-  return entityId.length > 0 ? entityId : null
+  if (entityId.length === 0 || isSalesforceRecordId(entityId)) {
+    return null
+  }
+
+  return entityId
+}
+
+export function findEntityInScope(
+  entities: AvailableAppEntity[] | null | undefined,
+  entityId: string | null | undefined,
+): AvailableAppEntity | null {
+  if (!entities || !entityId) {
+    return null
+  }
+
+  return entities.find((entity) => entity.id === entityId) ?? null
+}
+
+export function findEntitiesInScopeByObjectApiName(
+  entities: AvailableAppEntity[] | null | undefined,
+  objectApiName: string | null | undefined,
+): AvailableAppEntity[] {
+  const normalizedObjectApiName = objectApiName?.trim().toLowerCase() ?? ''
+  if (!entities || !normalizedObjectApiName) {
+    return []
+  }
+
+  return entities.filter((entity) => entity.objectApiName.trim().toLowerCase() === normalizedObjectApiName)
+}
+
+export function findEntitiesInScopeByRecordId(
+  entities: AvailableAppEntity[] | null | undefined,
+  recordId: string | null | undefined,
+): AvailableAppEntity[] {
+  const normalizedRecordId = recordId?.trim() ?? ''
+  if (!entities || !isSalesforceRecordId(normalizedRecordId)) {
+    return []
+  }
+
+  const keyPrefix = normalizedRecordId.slice(0, 3).toLowerCase()
+  return entities.filter((entity) => (entity.keyPrefix?.trim().toLowerCase() ?? '') === keyPrefix)
+}
+
+export function resolveScopedEntityBasePath(
+  entityId: string,
+  entities: AvailableAppEntity[] | null | undefined,
+): string {
+  const scopedEntity = findEntityInScope(entities, entityId)
+  return scopedEntity ? getAppEntityBasePath(scopedEntity) : normalizeEntityBasePath(entityId)
 }
 
 export function findEntityInApp(
   app: AvailableApp | null | undefined,
   entityId: string | null | undefined,
 ): AvailableAppEntity | null {
-  if (!app || !entityId) {
-    return null
-  }
-
-  return app.entities.find((entity) => entity.id === entityId) ?? null
+  return findEntityInScope(app?.entities, entityId)
 }
 
 export function isEntityInApp(

@@ -216,15 +216,15 @@ export function selectListView(
 export function resolveActionTarget(
   action: EntityAction,
   options: {
-    baseEntityPath: string
-    fallbackPath: string
+    baseEntityPath?: string | null
+    fallbackPath?: string | null
     record?: EntityRecord
     rowId?: string
   },
 ): string {
   const actionBasePath = action.entityId
     ? normalizeEntityBasePath(action.entityId)
-    : options.baseEntityPath
+    : normalizeActionBasePath(options.baseEntityPath)
 
   const fallbackPath = toActionPath(options.fallbackPath, actionBasePath)
   const rawTarget = action.target?.trim()
@@ -243,7 +243,7 @@ export function resolveActionTarget(
     return renderedTarget
   }
 
-  return toActionPath(renderedTarget, actionBasePath)
+  return toActionPath(renderedTarget, actionBasePath) || fallbackPath
 }
 
 export function buildRowActions(actions: EntityAction[] | undefined): EntityAction[] {
@@ -254,20 +254,32 @@ export function buildRowActions(actions: EntityAction[] | undefined): EntityActi
   return actions.filter((action) => ACTION_TYPES.has(action.type))
 }
 
-function toActionPath(target: string, baseEntityPath: string): string {
-  const normalizedTarget = target.trim()
+function toActionPath(target: string | null | undefined, baseEntityPath: string): string {
+  const normalizedTarget = target?.trim() ?? ''
+  if (!normalizedTarget) {
+    return baseEntityPath
+  }
+
   if (normalizedTarget.startsWith('/')) {
     return normalizedTarget
   }
 
-  const normalizedBase = baseEntityPath.replace(/\/+$/, '')
+  const normalizedBase = normalizeActionBasePath(baseEntityPath)
   const normalizedRelative = normalizedTarget.replace(/^\/+/, '')
+  if (!normalizedBase) {
+    return ''
+  }
 
   if (!normalizedRelative) {
     return normalizedBase
   }
 
   return `${normalizedBase}/${normalizedRelative}`
+}
+
+function normalizeActionBasePath(value: string | null | undefined): string {
+  const normalizedValue = value?.trim() ?? ''
+  return normalizedValue.replace(/\/+$/, '')
 }
 
 function buildTemplateRecord(record: EntityRecord | undefined, rowId: string | undefined): EntityRecord {

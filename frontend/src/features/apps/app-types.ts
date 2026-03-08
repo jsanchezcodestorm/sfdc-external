@@ -4,6 +4,7 @@ export type AvailableAppEntity = {
   description?: string
   basePath?: string
   objectApiName: string
+  keyPrefix?: string
 }
 
 export type AvailableApp = {

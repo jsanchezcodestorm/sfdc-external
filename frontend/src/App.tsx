@@ -21,8 +21,8 @@ import { AppsAdminListPage } from './features/apps-admin/pages/AppsAdminListPage
 
 import { EntityDetailPage } from './features/entities/pages/EntityDetailPage'
 import { EntityFormPage } from './features/entities/pages/EntityFormPage'
-import { EntityListPage } from './features/entities/pages/EntityListPage'
 import { EntityRelatedListPage } from './features/entities/pages/EntityRelatedListPage'
+import { EntityRuntimePage } from './features/entities/pages/EntityRuntimePage'
 import { EntityRouteFallbackPage } from './features/entities/pages/EntityRouteFallbackPage'
 import { EntityAdminConfigPage } from './features/entities-admin/pages/EntityAdminConfigPage'
 import { QueryTemplateAdminLayout } from './features/query-template-admin/pages/QueryTemplateAdminLayout'
@@ -52,7 +52,7 @@ const router = createHashRouter(
         <Route path="/" element={<HomePage />} />
 
         <Route element={<RequireAuth />}>
-          <Route path="/s/:entityId" element={<EntityListPage />} />
+          <Route path="/s/:entityId" element={<EntityRuntimePage />} />
           <Route path="/s/:entityId/new" element={<EntityFormPage />} />
           <Route path="/s/:entityId/:recordId" element={<EntityDetailPage />} />
           <Route path="/s/:entityId/:recordId/edit" element={<EntityFormPage />} />
