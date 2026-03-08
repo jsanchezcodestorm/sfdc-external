@@ -195,10 +195,14 @@ export function VisibilityDebugResultModal({
                   </div>
                 </div>
 
-                <div className="grid gap-3 sm:grid-cols-2 xl:min-w-[30rem] xl:grid-cols-4">
+                <div className="grid gap-3 sm:grid-cols-2 xl:min-w-[30rem] xl:grid-cols-5">
                   <DetailMetric label="Decision" value={activeResult.decision} />
                   <DetailMetric label="Reason Code" value={activeResult.reasonCode} />
                   <DetailMetric label="Policy Version" value={String(activeResult.policyVersion)} />
+                  <DetailMetric
+                    label="Object Policy Version"
+                    value={String(activeResult.objectPolicyVersion)}
+                  />
                   <DetailMetric
                     label="Assignments"
                     value={String(activeResult.matchedAssignments?.length ?? 0)}

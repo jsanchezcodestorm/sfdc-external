@@ -34,6 +34,7 @@ export type VisibilityAuditSummary = {
   reasonCode: string
   rowCount: number
   policyVersion: string
+  objectPolicyVersion: string
 }
 
 export type VisibilityAuditDetail = VisibilityAuditSummary & {
