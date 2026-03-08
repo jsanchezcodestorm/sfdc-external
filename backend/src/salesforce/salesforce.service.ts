@@ -50,8 +50,17 @@ interface SalesforceConnectionContext {
   apiVersion: string;
 }
 
+export interface SalesforceReadOnlyQueryResult {
+  done: boolean;
+  totalSize: number;
+  records: Array<Record<string, unknown>>;
+  nextRecordsUrl?: string;
+}
+
 const DEFAULT_DESCRIBE_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const SALESFORCE_ID_QUERY_PATTERN = /^[A-Za-z0-9]{15}(?:[A-Za-z0-9]{3})?$/;
+const SALESFORCE_QUERY_BATCH_SIZE_MIN = 200;
+const SALESFORCE_QUERY_BATCH_SIZE_MAX = 2000;
 
 @Injectable()
 export class SalesforceService {
@@ -237,6 +246,53 @@ export class SalesforceService {
       }
       throw error;
     }
+  }
+
+  async executeReadOnlyQueryPage(soql: string, pageSize: number): Promise<SalesforceReadOnlyQueryResult> {
+    this.assertReadOnlySoql(soql);
+    const connection = await this.getConnection();
+
+    try {
+      const batchSize = this.resolveQueryBatchSize(pageSize);
+      const result = (await connection.query(soql, {
+        autoFetch: false,
+        headers: {
+          'Sforce-Query-Options': `batchSize=${batchSize}`
+        }
+      })) as SalesforceReadOnlyQueryResult;
+
+      return this.normalizeReadOnlyQueryResult(result);
+    } catch (error) {
+      try {
+        await this.tryInvalidateDescribeCacheForInvalidField(connection, soql, error);
+      } catch (invalidateError) {
+        this.logger.warn(
+          `Failed to invalidate Salesforce describe cache after query error: ${this.normalizeErrorMessage(invalidateError)}`
+        );
+      }
+      throw error;
+    }
+  }
+
+  async executeReadOnlyQueryMore(locator: string, pageSize: number): Promise<SalesforceReadOnlyQueryResult> {
+    const normalizedLocator = locator.trim();
+    if (!normalizedLocator) {
+      throw new BadRequestException('Salesforce query locator is required');
+    }
+
+    const connection = await this.getConnection();
+    const batchSize = this.resolveQueryBatchSize(pageSize);
+    const result = (await connection.queryMore(normalizedLocator, {
+      autoFetch: false,
+      headers: {
+        'Sforce-Query-Options': `batchSize=${batchSize}`
+      },
+      maxFetch: SALESFORCE_QUERY_BATCH_SIZE_MAX,
+      responseTarget: 'QueryResult',
+      scanAll: false
+    })) as SalesforceReadOnlyQueryResult;
+
+    return this.normalizeReadOnlyQueryResult(result);
   }
 
   async executeRawQuery(soql: string): Promise<unknown> {
@@ -686,6 +742,39 @@ export class SalesforceService {
 
   private escapeSoqlLikeLiteral(value: string): string {
     return this.escapeSoqlLiteral(value).replace(/%/g, '\\%').replace(/_/g, '\\_');
+  }
+
+  private resolveQueryBatchSize(pageSize: number): number {
+    if (!Number.isInteger(pageSize) || pageSize < 1) {
+      throw new BadRequestException('pageSize must be a positive integer');
+    }
+
+    return Math.max(
+      SALESFORCE_QUERY_BATCH_SIZE_MIN,
+      Math.min(SALESFORCE_QUERY_BATCH_SIZE_MAX, pageSize)
+    );
+  }
+
+  private normalizeReadOnlyQueryResult(result: unknown): SalesforceReadOnlyQueryResult {
+    if (!this.isObjectRecord(result)) {
+      throw new ServiceUnavailableException('Salesforce query failed: invalid response shape');
+    }
+
+    const rawRecords = Array.isArray(result.records) ? result.records : [];
+    const records = rawRecords.filter((entry): entry is Record<string, unknown> => this.isObjectRecord(entry));
+    const totalSize = typeof result.totalSize === 'number' ? result.totalSize : records.length;
+    const done = typeof result.done === 'boolean' ? result.done : true;
+    const nextRecordsUrl =
+      typeof result.nextRecordsUrl === 'string' && result.nextRecordsUrl.trim().length > 0
+        ? result.nextRecordsUrl.trim()
+        : undefined;
+
+    return {
+      done,
+      totalSize,
+      records,
+      nextRecordsUrl
+    };
   }
 
   private isObjectRecord(value: unknown): value is Record<string, unknown> {

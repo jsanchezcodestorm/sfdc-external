@@ -253,6 +253,32 @@ model SalesforceSObjectDescribeCache {
   @@map("salesforce_sobject_describe_cache")
 }
 
+model EntityQueryCursorCache {
+  tokenHash          String   @id @db.VarChar(128)
+  cursorKind         String   @db.VarChar(32)
+  contactId          String   @db.VarChar(18)
+  entityId           String   @db.VarChar(64)
+  viewId             String?  @db.VarChar(64)
+  relatedListId      String?  @db.VarChar(64)
+  recordId           String?  @db.VarChar(18)
+  searchTerm         String?  @db.VarChar(512)
+  objectApiName      String   @db.VarChar(128)
+  pageSize           Int
+  totalSize          Int
+  resolvedSoql       String   @db.Text
+  baseWhere          String   @db.Text
+  finalWhere         String   @db.Text
+  queryFingerprint   String   @db.VarChar(128)
+  sourceLocator      String?  @db.Text
+  sourceRecordsJson  Json
+  expiresAt          DateTime
+  updatedAt          DateTime @updatedAt
+
+  @@index([contactId, entityId, cursorKind])
+  @@index([expiresAt])
+  @@map("entity_query_cursor_cache")
+}
+
 model EntityConfigRecord {
   id             String                    @id @db.VarChar(64)
   objectApiName  String                    @db.VarChar(128)

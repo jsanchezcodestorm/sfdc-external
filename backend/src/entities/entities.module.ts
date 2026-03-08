@@ -11,6 +11,7 @@ import { EntitiesService } from './entities.service';
 import { EntityAdminConfigRepository } from './services/entity-admin-config.repository';
 import { EntityAdminConfigService } from './services/entity-admin-config.service';
 import { EntityConfigRepository } from './services/entity-config.repository';
+import { EntityQueryCursorService } from './services/entity-query-cursor.service';
 
 @Module({
   imports: [AuthModule, AclModule, VisibilityModule, SalesforceModule],
@@ -18,6 +19,7 @@ import { EntityConfigRepository } from './services/entity-config.repository';
   providers: [
     EntitiesService,
     EntityConfigRepository,
+    EntityQueryCursorService,
     EntityAdminConfigRepository,
     EntityAdminConfigService,
     ResourceAccessService

@@ -1,16 +1,21 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 
 import { QueryAuditService } from '../audit/query-audit.service';
 
 import { EntitiesService } from './entities.service';
 
-function createHarness(rawResult: Record<string, unknown>) {
+function createHarness(rawResult: Record<string, unknown>, queryMoreResults: Record<string, unknown>[] = []) {
   const createCalls: Array<Record<string, unknown>> = [];
   const completeCalls: Array<Record<string, unknown>> = [];
   const visibilityAuditCalls: Array<Record<string, unknown>> = [];
+  const pageQueryCalls: Array<Record<string, unknown>> = [];
+  const queryMoreCalls: Array<Record<string, unknown>> = [];
+  const cursorCreateCalls: Array<Record<string, unknown>> = [];
+  const cursorReadCalls: string[] = [];
+  let cursorIndex = 0;
 
   const auditWriteService = {
     async createQueryAuditIntentOrThrow(input: Record<string, unknown>) {
@@ -28,6 +33,14 @@ function createHarness(rawResult: Record<string, unknown>) {
   const salesforceService = {
     async executeReadOnlyQuery() {
       return rawResult;
+    },
+    async executeReadOnlyQueryPage(soql: string, pageSize: number) {
+      pageQueryCalls.push({ soql, pageSize });
+      return rawResult;
+    },
+    async executeReadOnlyQueryMore(locator: string, pageSize: number) {
+      queryMoreCalls.push({ locator, pageSize });
+      return queryMoreResults.shift() ?? { totalSize: 0, done: true, records: [] };
     },
   };
 
@@ -76,6 +89,21 @@ function createHarness(rawResult: Record<string, unknown>) {
         return {};
       },
     } as never,
+    {
+      async createCursor(scope: Record<string, unknown>, sourceState: Record<string, unknown>) {
+        cursorCreateCalls.push({ scope, sourceState });
+        cursorIndex += 1;
+        return `cursor-${cursorIndex}`;
+      },
+      async readCursor(token: string) {
+        cursorReadCalls.push(token);
+        throw new Error('readCursor not stubbed');
+      },
+      async deleteExpiredCursors() {},
+      hashFingerprint(parts: unknown[]) {
+        return JSON.stringify(parts);
+      },
+    } as never,
     salesforceService as never,
     visibilityService as never,
   );
@@ -85,6 +113,10 @@ function createHarness(rawResult: Record<string, unknown>) {
     createCalls,
     completeCalls,
     visibilityAuditCalls,
+    pageQueryCalls,
+    queryMoreCalls,
+    cursorCreateCalls,
+    cursorReadCalls,
   };
 }
 
@@ -136,27 +168,331 @@ test('getEntityList records query audit metadata and counters', async () => {
   });
 
   const response = await harness.service.getEntityList(user as never, 'account', {
-    page: 2,
     pageSize: 10,
     search: 'Acme',
   } as never);
 
   assert.equal(response.records.length, 2);
+  assert.equal(response.nextCursor, null);
   assert.equal(harness.createCalls.length, 1);
   assert.equal(harness.createCalls[0].queryKind, 'ENTITY_LIST');
   assert.equal(harness.createCalls[0].targetId, 'account');
   assert.deepEqual(harness.createCalls[0].metadata, {
     entityId: 'account',
     viewId: 'pipeline',
-    page: 2,
     pageSize: 10,
     search: 'Acme',
     selectedFields: ['Id', 'Name'],
+    paginationMode: 'cursor',
+    cursorPhase: 'initial',
   });
   assert.equal(harness.completeCalls[0].status, 'SUCCESS');
   assert.equal(harness.completeCalls[0].rowCount, 2);
   assert.ok(Number(harness.completeCalls[0].durationMs) >= 0);
   assert.equal(harness.visibilityAuditCalls[0].rowCount, 2);
+});
+
+test('getEntityList builds paginated SOQL without OFFSET and returns a nextCursor', async () => {
+  const harness = createHarness({
+    totalSize: 3,
+    done: false,
+    nextRecordsUrl: '/services/data/v1/query/next',
+    records: [
+      { Id: '001', Name: 'Acme' },
+      { Id: '002', Name: 'Beta' },
+      { Id: '003', Name: 'Gamma' },
+    ],
+  });
+  const listView = {
+    id: 'pipeline',
+    pageSize: 2,
+    columns: ['Name'],
+    query: {
+      object: 'Account',
+      fields: ['Name'],
+      orderBy: [{ field: 'Name', direction: 'ASC' }],
+      limit: 25,
+    },
+  };
+
+  patchServiceMethods(harness.service, {
+    loadEntityConfig: async () => ({
+      id: 'account',
+      objectApiName: 'Account',
+      label: 'Accounts',
+      list: {
+        title: 'Accounts',
+        views: [listView],
+      },
+    }),
+    resolveLookupProjectionFields: async () => [],
+    visibilityService: {
+      applyFieldVisibility: (fields: string[]) => fields,
+      async recordAudit(input: Record<string, unknown>) {
+        harness.visibilityAuditCalls.push(input);
+      },
+    },
+  });
+
+  const response = await harness.service.getEntityList(user as never, 'account', {
+    pageSize: 2,
+  } as never);
+
+  assert.deepEqual(
+    response.records.map((record) => String(record.Id)),
+    ['001', '002'],
+  );
+  assert.equal(response.nextCursor, 'cursor-1');
+  assert.ok(!String(harness.pageQueryCalls[0].soql).includes('OFFSET'));
+  assert.ok(!String(harness.pageQueryCalls[0].soql).includes('LIMIT'));
+  assert.equal(harness.cursorCreateCalls.length, 1);
+  assert.equal(
+    String((harness.cursorCreateCalls[0].sourceState as { sourceLocator?: string }).sourceLocator),
+    '/services/data/v1/query/next',
+  );
+  assert.equal(
+    ((harness.cursorCreateCalls[0].sourceState as { sourceRecords: unknown[] }).sourceRecords ?? [])
+      .length,
+    1,
+  );
+});
+
+test('getEntityList serves a cursor page from buffered records without queryMore', async () => {
+  const harness = createHarness({
+    totalSize: 0,
+    done: true,
+    records: [],
+  });
+  const listView = {
+    id: 'pipeline',
+    pageSize: 2,
+    columns: ['Name'],
+    query: { object: 'Account' },
+  };
+
+  patchServiceMethods(harness.service, {
+    buildEntityQueryFingerprint: () => 'fingerprint-1',
+    buildSoqlFromQueryConfig: async () => ({
+      soql: 'SELECT Id, Name FROM Account',
+      baseWhere: undefined,
+      finalWhere: undefined,
+      selectFields: ['Id', 'Name'],
+    }),
+    loadEntityConfig: async () => ({
+      id: 'account',
+      objectApiName: 'Account',
+      label: 'Accounts',
+      list: {
+        title: 'Accounts',
+        views: [listView],
+      },
+    }),
+    filterVisibleColumns: () => ['Name'],
+    extractColumnFieldPaths: () => ['Name'],
+    ensureVisibleFields() {},
+    resolveLookupProjectionFields: async () => [],
+    visibilityService: {
+      applyFieldVisibility: (fields: string[]) => fields,
+      async recordAudit(input: Record<string, unknown>) {
+        harness.visibilityAuditCalls.push(input);
+      },
+    },
+  });
+  (harness.service as unknown as {
+    entityQueryCursorService: { readCursor: (token: string) => Promise<unknown> };
+  }).entityQueryCursorService.readCursor = async (token: string) => {
+    harness.cursorReadCalls.push(token);
+    return {
+      token,
+      cursorKind: 'list',
+      contactId: user.sub,
+      entityId: 'account',
+      viewId: 'pipeline',
+      objectApiName: 'Account',
+      pageSize: 2,
+      totalSize: 4,
+      resolvedSoql: 'SELECT Id, Name FROM Account',
+      baseWhere: '',
+      finalWhere: '',
+      queryFingerprint: 'fingerprint-1',
+      sourceRecords: [{ Id: '001' }, { Id: '002' }],
+      expiresAt: new Date(Date.now() + 60_000),
+    };
+  };
+
+  const response = await harness.service.getEntityList(user as never, 'account', {
+    cursor: 'cursor-buffered',
+    pageSize: 2,
+  } as never);
+
+  assert.deepEqual(
+    response.records.map((record) => String(record.Id)),
+    ['001', '002'],
+  );
+  assert.equal(response.nextCursor, null);
+  assert.equal(harness.queryMoreCalls.length, 0);
+});
+
+test('getEntityList continues a cursor page with queryMore when the buffer is short', async () => {
+  const harness = createHarness(
+    {
+      totalSize: 0,
+      done: true,
+      records: [],
+    },
+    [
+      {
+        totalSize: 4,
+        done: true,
+        records: [{ Id: '002' }, { Id: '003' }],
+      },
+    ],
+  );
+  const listView = {
+    id: 'pipeline',
+    pageSize: 2,
+    columns: ['Name'],
+    query: { object: 'Account' },
+  };
+
+  patchServiceMethods(harness.service, {
+    buildEntityQueryFingerprint: () => 'fingerprint-2',
+    buildSoqlFromQueryConfig: async () => ({
+      soql: 'SELECT Id, Name FROM Account',
+      baseWhere: undefined,
+      finalWhere: undefined,
+      selectFields: ['Id', 'Name'],
+    }),
+    loadEntityConfig: async () => ({
+      id: 'account',
+      objectApiName: 'Account',
+      label: 'Accounts',
+      list: {
+        title: 'Accounts',
+        views: [listView],
+      },
+    }),
+    filterVisibleColumns: () => ['Name'],
+    extractColumnFieldPaths: () => ['Name'],
+    ensureVisibleFields() {},
+    resolveLookupProjectionFields: async () => [],
+    visibilityService: {
+      applyFieldVisibility: (fields: string[]) => fields,
+      async recordAudit(input: Record<string, unknown>) {
+        harness.visibilityAuditCalls.push(input);
+      },
+    },
+  });
+  (harness.service as unknown as {
+    entityQueryCursorService: { readCursor: (token: string) => Promise<unknown> };
+  }).entityQueryCursorService.readCursor = async (token: string) => {
+    harness.cursorReadCalls.push(token);
+    return {
+      token,
+      cursorKind: 'list',
+      contactId: user.sub,
+      entityId: 'account',
+      viewId: 'pipeline',
+      objectApiName: 'Account',
+      pageSize: 2,
+      totalSize: 4,
+      resolvedSoql: 'SELECT Id, Name FROM Account',
+      baseWhere: '',
+      finalWhere: '',
+      queryFingerprint: 'fingerprint-2',
+      sourceLocator: '/services/data/v1/query/next',
+      sourceRecords: [{ Id: '001' }],
+      expiresAt: new Date(Date.now() + 60_000),
+    };
+  };
+
+  const response = await harness.service.getEntityList(user as never, 'account', {
+    cursor: 'cursor-query-more',
+    pageSize: 2,
+  } as never);
+
+  assert.deepEqual(
+    response.records.map((record) => String(record.Id)),
+    ['001', '002'],
+  );
+  assert.equal(response.nextCursor, 'cursor-1');
+  assert.equal(harness.queryMoreCalls.length, 1);
+  assert.equal(
+    (harness.createCalls[0].metadata as { cursorPhase?: string }).cursorPhase,
+    'continue',
+  );
+});
+
+test('getEntityList rejects a cursor when the fingerprint does not match', async () => {
+  const harness = createHarness({
+    totalSize: 0,
+    done: true,
+    records: [],
+  });
+  const listView = {
+    id: 'pipeline',
+    pageSize: 2,
+    columns: ['Name'],
+    query: { object: 'Account' },
+  };
+
+  patchServiceMethods(harness.service, {
+    buildEntityQueryFingerprint: () => 'fingerprint-fresh',
+    buildSoqlFromQueryConfig: async () => ({
+      soql: 'SELECT Id, Name FROM Account',
+      baseWhere: undefined,
+      finalWhere: undefined,
+      selectFields: ['Id', 'Name'],
+    }),
+    loadEntityConfig: async () => ({
+      id: 'account',
+      objectApiName: 'Account',
+      label: 'Accounts',
+      list: {
+        title: 'Accounts',
+        views: [listView],
+      },
+    }),
+    filterVisibleColumns: () => ['Name'],
+    extractColumnFieldPaths: () => ['Name'],
+    ensureVisibleFields() {},
+    resolveLookupProjectionFields: async () => [],
+    visibilityService: {
+      applyFieldVisibility: (fields: string[]) => fields,
+      async recordAudit(input: Record<string, unknown>) {
+        harness.visibilityAuditCalls.push(input);
+      },
+    },
+  });
+  (harness.service as unknown as {
+    entityQueryCursorService: { readCursor: (token: string) => Promise<unknown> };
+  }).entityQueryCursorService.readCursor = async (token: string) => ({
+    token,
+    cursorKind: 'list',
+    contactId: user.sub,
+    entityId: 'account',
+    viewId: 'pipeline',
+    objectApiName: 'Account',
+    pageSize: 2,
+    totalSize: 4,
+    resolvedSoql: 'SELECT Id, Name FROM Account',
+    baseWhere: '',
+    finalWhere: '',
+    queryFingerprint: 'fingerprint-stale',
+    sourceRecords: [{ Id: '001' }, { Id: '002' }],
+    expiresAt: new Date(Date.now() + 60_000),
+  });
+
+  await assert.rejects(
+    () =>
+      harness.service.getEntityList(user as never, 'account', {
+        cursor: 'cursor-stale',
+        pageSize: 2,
+      } as never),
+    (error: unknown) =>
+      error instanceof BadRequestException &&
+      error.message === 'Invalid or expired entity cursor',
+  );
 });
 
 test('getEntityRecord records query audit metadata and counters', async () => {
@@ -300,20 +636,21 @@ test('getEntityRelatedList records query audit metadata and counters', async () 
     'contacts',
     {
       recordId,
-      page: 3,
       pageSize: 20,
     },
   );
 
   assert.equal(response.records.length, 2);
+  assert.equal(response.nextCursor, null);
   assert.equal(harness.createCalls[0].queryKind, 'ENTITY_RELATED_LIST');
   assert.deepEqual(harness.createCalls[0].metadata, {
     entityId: 'account',
     relatedListId: 'contacts',
     recordId,
-    page: 3,
     pageSize: 20,
     selectedFields: ['Id', 'Name'],
+    paginationMode: 'cursor',
+    cursorPhase: 'initial',
   });
   assert.equal(harness.completeCalls[0].rowCount, 2);
   assert.equal(harness.visibilityAuditCalls[0].rowCount, 2);
@@ -436,6 +773,18 @@ function createWriteHarness(options?: {
     {
       async getEntityConfig() {
         return {};
+      },
+    } as never,
+    {
+      async createCursor() {
+        return 'cursor-1';
+      },
+      async readCursor() {
+        throw new Error('cursor read not implemented in write harness');
+      },
+      async deleteExpiredCursors() {},
+      hashFingerprint(parts: unknown[]) {
+        return JSON.stringify(parts);
       },
     } as never,
     salesforceService as never,

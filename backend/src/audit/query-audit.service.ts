@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
-import { SalesforceService } from '../salesforce/salesforce.service';
+import { SalesforceService, type SalesforceReadOnlyQueryResult } from '../salesforce/salesforce.service';
 import { VisibilityService } from '../visibility/visibility.service';
 import type { VisibilityEvaluation } from '../visibility/visibility.types';
 
@@ -28,6 +28,29 @@ export class QueryAuditService {
   ) {}
 
   async executeReadOnlyQueryWithAudit(input: ExecuteAuditedQueryInput): Promise<unknown> {
+    return this.executeWithAudit(input, () => this.salesforceService.executeReadOnlyQuery(input.resolvedSoql));
+  }
+
+  async executeReadOnlyQueryPageWithAudit(
+    input: ExecuteAuditedQueryInput & { pageSize: number }
+  ): Promise<SalesforceReadOnlyQueryResult> {
+    return this.executeWithAudit(input, () =>
+      this.salesforceService.executeReadOnlyQueryPage(input.resolvedSoql, input.pageSize)
+    );
+  }
+
+  async executeReadOnlyQueryMoreWithAudit(
+    input: ExecuteAuditedQueryInput & { locator: string; pageSize: number }
+  ): Promise<SalesforceReadOnlyQueryResult> {
+    return this.executeWithAudit(input, () =>
+      this.salesforceService.executeReadOnlyQueryMore(input.locator, input.pageSize)
+    );
+  }
+
+  private async executeWithAudit<TResult>(
+    input: ExecuteAuditedQueryInput,
+    execute: () => Promise<TResult>
+  ): Promise<TResult> {
     const auditId = await this.auditWriteService.createQueryAuditIntentOrThrow({
       contactId: input.contactId,
       queryKind: input.queryKind,
@@ -43,7 +66,7 @@ export class QueryAuditService {
     const startedAt = Date.now();
 
     try {
-      const result = await this.salesforceService.executeReadOnlyQuery(input.resolvedSoql);
+      const result = await execute();
       const durationMs = Date.now() - startedAt;
       const resultSummary = this.buildResultSummary(result);
       await this.auditWriteService.completeQueryAuditOrThrow({

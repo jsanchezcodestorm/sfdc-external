@@ -9,6 +9,7 @@ import { VisibilityService } from '../visibility/visibility.service';
 import type { VisibilityEvaluation } from '../visibility/visibility.types';
 
 import type { GetEntityListDto } from './dto/get-entity-list.dto';
+import type { GetEntityRelatedListDto } from './dto/get-entity-related-list.dto';
 import type {
   EntityActionConfig,
   EntityColumnConfig,
@@ -22,6 +23,7 @@ import type {
   EntityQueryScalarValue
 } from './entities.types';
 import { EntityConfigRepository } from './services/entity-config.repository';
+import { EntityQueryCursorService } from './services/entity-query-cursor.service';
 
 const MAX_PAGE_SIZE = 2000;
 const DEFAULT_PAGE_SIZE = 50;
@@ -80,9 +82,8 @@ interface EntityFieldDefinition {
 
 interface SoqlBuildOptions {
   context?: Record<string, unknown>;
-  page?: number;
-  pageSize?: number;
   forcedLimit?: number;
+  ignoreConfiguredLimit?: boolean;
   search?: string;
   searchConfig?: EntityListSearchConfig;
   extraFields?: string[];
@@ -97,8 +98,8 @@ interface EntityListResponse {
   rowActions?: EntityActionConfig[];
   records: Array<Record<string, unknown>>;
   total: number;
-  page: number;
   pageSize: number;
+  nextCursor: string | null;
   viewId?: string;
   visibility: VisibilityEvaluation;
 }
@@ -147,9 +148,35 @@ interface EntityRelatedListResponse {
   emptyState?: string;
   records: Array<Record<string, unknown>>;
   total: number;
-  page: number;
   pageSize: number;
+  nextCursor: string | null;
   visibility: VisibilityEvaluation;
+}
+
+interface EntityCursorExecutionInput {
+  user: SessionUser;
+  cursor?: string;
+  cursorKind: 'list' | 'related-list';
+  queryKind: 'ENTITY_LIST' | 'ENTITY_RELATED_LIST';
+  entityId: string;
+  objectApiName: string;
+  pageSize: number;
+  resolvedSoql: string;
+  baseWhere: string;
+  finalWhere: string;
+  visibility: VisibilityEvaluation;
+  metadata: Record<string, unknown>;
+  recordId?: string;
+  viewId?: string;
+  relatedListId?: string;
+  search?: string;
+  selectedFields: string[];
+}
+
+interface EntityCursorExecutionResult {
+  records: Array<Record<string, unknown>>;
+  totalSize: number;
+  nextCursor: string | null;
 }
 
 @Injectable()
@@ -159,6 +186,7 @@ export class EntitiesService {
     private readonly queryAuditService: QueryAuditService,
     private readonly resourceAccessService: ResourceAccessService,
     private readonly entityConfigRepository: EntityConfigRepository,
+    private readonly entityQueryCursorService: EntityQueryCursorService,
     private readonly salesforceService: SalesforceService,
     private readonly visibilityService: VisibilityService
   ) {}
@@ -190,6 +218,7 @@ export class EntitiesService {
   }
 
   async getEntityList(user: SessionUser, entityId: string, query: GetEntityListDto): Promise<EntityListResponse> {
+    await this.entityQueryCursorService.deleteExpiredCursors();
     const entityConfig = await this.loadEntityConfig(entityId);
     const listConfig = entityConfig.list;
 
@@ -206,7 +235,6 @@ export class EntitiesService {
         queryKind: 'ENTITY_LIST'
       }
     );
-    const page = this.clamp(query.page ?? 1, 1, Number.MAX_SAFE_INTEGER);
     const configuredPageSize = this.clamp(selectedView.pageSize ?? DEFAULT_PAGE_SIZE, 1, MAX_PAGE_SIZE);
     const pageSize = this.clamp(query.pageSize ?? configuredPageSize, 1, MAX_PAGE_SIZE);
     const search = this.normalizeSearchQuery(query.search);
@@ -219,32 +247,35 @@ export class EntitiesService {
     );
 
     const scopedQuery = await this.buildSoqlFromQueryConfig(selectedView.query, {
-      page,
-      pageSize,
+      ignoreConfiguredLimit: true,
       search,
       searchConfig: selectedView.search,
       extraFields: lookupProjectionFields,
       visibility
     });
-    const rawQueryResult = await this.queryAuditService.executeReadOnlyQueryWithAudit({
-      contactId: user.sub,
+    const paginationResult = await this.executeCursorPaginatedQuery({
+      user,
+      cursor: query.cursor,
+      cursorKind: 'list',
       queryKind: 'ENTITY_LIST',
-      targetId: entityId,
+      entityId,
       objectApiName: selectedView.query.object,
+      pageSize,
       resolvedSoql: scopedQuery.soql,
+      baseWhere: scopedQuery.baseWhere ?? '',
+      finalWhere: scopedQuery.finalWhere ?? '',
       visibility,
-      baseWhere: scopedQuery.baseWhere,
-      finalWhere: scopedQuery.finalWhere,
+      viewId: selectedView.id,
+      search,
+      selectedFields: scopedQuery.selectFields,
       metadata: {
         entityId,
         viewId: selectedView.id,
-        page,
         pageSize,
         search,
         selectedFields: scopedQuery.selectFields,
       }
     });
-    const { records, totalSize } = this.extractRecords(rawQueryResult);
 
     return {
       title: listConfig.title,
@@ -252,10 +283,10 @@ export class EntitiesService {
       columns: visibleColumns,
       primaryAction: selectedView.primaryAction ?? listConfig.primaryAction,
       rowActions: selectedView.rowActions,
-      records,
-      total: totalSize,
-      page,
+      records: paginationResult.records,
+      total: paginationResult.totalSize,
       pageSize,
+      nextCursor: paginationResult.nextCursor,
       viewId: selectedView.id,
       visibility
     };
@@ -443,8 +474,9 @@ export class EntitiesService {
     user: SessionUser,
     entityId: string,
     relatedListId: string,
-    params: { recordId?: string; page?: number; pageSize?: number }
+    params: GetEntityRelatedListDto
   ): Promise<EntityRelatedListResponse> {
+    await this.entityQueryCursorService.deleteExpiredCursors();
     const entityConfig = await this.loadEntityConfig(entityId);
 
     const recordId = params.recordId?.trim() ?? '';
@@ -467,7 +499,6 @@ export class EntitiesService {
         queryKind: 'ENTITY_RELATED_LIST'
       }
     );
-    const page = this.clamp(params.page ?? 1, 1, Number.MAX_SAFE_INTEGER);
     const configuredPageSize = this.clamp(relatedList.pageSize ?? DEFAULT_PAGE_SIZE, 1, MAX_PAGE_SIZE);
     const pageSize = this.clamp(params.pageSize ?? configuredPageSize, 1, MAX_PAGE_SIZE);
     const visibleColumns = this.filterVisibleColumns(relatedList.columns, visibility);
@@ -480,31 +511,33 @@ export class EntitiesService {
 
     const scopedQuery = await this.buildSoqlFromQueryConfig(relatedList.query, {
       context: { id: recordId, recordId },
-      page,
-      pageSize,
+      ignoreConfiguredLimit: true,
       extraFields: lookupProjectionFields,
       visibility
     });
-    const rawQueryResult = await this.queryAuditService.executeReadOnlyQueryWithAudit({
-      contactId: user.sub,
+    const paginationResult = await this.executeCursorPaginatedQuery({
+      user,
+      cursor: params.cursor,
+      cursorKind: 'related-list',
       queryKind: 'ENTITY_RELATED_LIST',
-      targetId: entityId,
+      entityId,
       objectApiName: relatedList.query.object,
-      recordId,
+      pageSize,
       resolvedSoql: scopedQuery.soql,
+      baseWhere: scopedQuery.baseWhere ?? '',
+      finalWhere: scopedQuery.finalWhere ?? '',
       visibility,
-      baseWhere: scopedQuery.baseWhere,
-      finalWhere: scopedQuery.finalWhere,
+      recordId,
+      relatedListId,
+      selectedFields: scopedQuery.selectFields,
       metadata: {
         entityId,
         relatedListId,
         recordId,
-        page,
         pageSize,
         selectedFields: scopedQuery.selectFields,
       }
     });
-    const { records, totalSize } = this.extractRecords(rawQueryResult);
 
     return {
       relatedList,
@@ -513,10 +546,10 @@ export class EntitiesService {
       actions: relatedList.actions,
       rowActions: relatedList.rowActions,
       emptyState: relatedList.emptyState,
-      records,
-      total: totalSize,
-      page,
+      records: paginationResult.records,
+      total: paginationResult.totalSize,
       pageSize,
+      nextCursor: paginationResult.nextCursor,
       visibility
     };
   }
@@ -753,6 +786,185 @@ export class EntitiesService {
     }
   }
 
+  private async executeCursorPaginatedQuery(
+    input: EntityCursorExecutionInput
+  ): Promise<EntityCursorExecutionResult> {
+    const queryFingerprint = this.buildEntityQueryFingerprint(input);
+
+    if (input.cursor) {
+      const cursor = await this.entityQueryCursorService.readCursor(input.cursor);
+      this.assertCursorMatches(cursor, {
+        ...input,
+        queryFingerprint
+      });
+
+      return this.materializeCursorPage({
+        input,
+        sourceLocator: cursor.sourceLocator,
+        sourceRecords: cursor.sourceRecords,
+        queryFingerprint,
+        totalSize: cursor.totalSize
+      });
+    }
+
+    const rawQueryResult = await this.queryAuditService.executeReadOnlyQueryPageWithAudit({
+      contactId: input.user.sub,
+      queryKind: input.queryKind,
+      targetId: input.entityId,
+      objectApiName: input.objectApiName,
+      resolvedSoql: input.resolvedSoql,
+      visibility: input.visibility,
+      recordId: input.recordId,
+      baseWhere: input.baseWhere,
+      finalWhere: input.finalWhere,
+      pageSize: input.pageSize,
+      metadata: {
+        ...input.metadata,
+        paginationMode: 'cursor',
+        cursorPhase: 'initial'
+      }
+    });
+    const { records, totalSize } = this.extractRecords(rawQueryResult);
+    const pageRecords = records.slice(0, input.pageSize);
+    const remainingRecords = records.slice(input.pageSize);
+    const nextCursor =
+      remainingRecords.length > 0 || rawQueryResult.nextRecordsUrl
+        ? await this.entityQueryCursorService.createCursor(
+            this.buildEntityCursorScope(input, queryFingerprint, totalSize),
+            {
+              sourceLocator: rawQueryResult.nextRecordsUrl,
+              sourceRecords: remainingRecords
+            }
+          )
+        : null;
+
+    return {
+      records: pageRecords,
+      totalSize,
+      nextCursor
+    };
+  }
+
+  private async materializeCursorPage(params: {
+    input: EntityCursorExecutionInput;
+    sourceLocator?: string;
+    sourceRecords: Array<Record<string, unknown>>;
+    queryFingerprint: string;
+    totalSize: number;
+  }): Promise<EntityCursorExecutionResult> {
+    const workingRecords = [...params.sourceRecords];
+    let locator = params.sourceLocator;
+
+    while (workingRecords.length < params.input.pageSize && locator) {
+      const rawQueryResult = await this.queryAuditService.executeReadOnlyQueryMoreWithAudit({
+        contactId: params.input.user.sub,
+        queryKind: params.input.queryKind,
+        targetId: params.input.entityId,
+        objectApiName: params.input.objectApiName,
+        resolvedSoql: params.input.resolvedSoql,
+        visibility: params.input.visibility,
+        recordId: params.input.recordId,
+        baseWhere: params.input.baseWhere,
+        finalWhere: params.input.finalWhere,
+        locator,
+        pageSize: params.input.pageSize,
+        metadata: {
+          ...params.input.metadata,
+          paginationMode: 'cursor',
+          cursorPhase: 'continue'
+        }
+      });
+      const { records } = this.extractRecords(rawQueryResult);
+      workingRecords.push(...records);
+      locator = rawQueryResult.nextRecordsUrl;
+    }
+
+    const pageRecords = workingRecords.slice(0, params.input.pageSize);
+    const remainingRecords = workingRecords.slice(params.input.pageSize);
+    const nextCursor =
+      remainingRecords.length > 0 || locator
+        ? await this.entityQueryCursorService.createCursor(
+            this.buildEntityCursorScope(params.input, params.queryFingerprint, params.totalSize),
+            {
+              sourceLocator: locator,
+              sourceRecords: remainingRecords
+            }
+          )
+        : null;
+
+    return {
+      records: pageRecords,
+      totalSize: params.totalSize,
+      nextCursor
+    };
+  }
+
+  private buildEntityQueryFingerprint(input: EntityCursorExecutionInput): string {
+    return this.entityQueryCursorService.hashFingerprint([
+      input.user.sub,
+      input.cursorKind,
+      input.entityId,
+      input.viewId,
+      input.relatedListId,
+      input.recordId,
+      input.search,
+      input.pageSize,
+      input.objectApiName,
+      input.resolvedSoql,
+      input.baseWhere,
+      input.finalWhere,
+      input.visibility.permissionsHash,
+      input.visibility.policyVersion,
+      input.visibility.objectPolicyVersion,
+      input.visibility.compiledPredicate,
+      (input.visibility.compiledFields ?? []).join(','),
+      input.selectedFields.join(',')
+    ]);
+  }
+
+  private buildEntityCursorScope(
+    input: EntityCursorExecutionInput,
+    queryFingerprint: string,
+    totalSize: number
+  ) {
+    return {
+      cursorKind: input.cursorKind,
+      contactId: input.user.sub,
+      entityId: input.entityId,
+      viewId: input.viewId,
+      relatedListId: input.relatedListId,
+      recordId: input.recordId,
+      searchTerm: input.search,
+      objectApiName: input.objectApiName,
+      pageSize: input.pageSize,
+      totalSize,
+      resolvedSoql: input.resolvedSoql,
+      baseWhere: input.baseWhere,
+      finalWhere: input.finalWhere,
+      queryFingerprint
+    };
+  }
+
+  private assertCursorMatches(
+    cursor: Awaited<ReturnType<EntityQueryCursorService['readCursor']>>,
+    input: EntityCursorExecutionInput & { queryFingerprint: string }
+  ): void {
+    if (
+      cursor.cursorKind !== input.cursorKind ||
+      cursor.contactId !== input.user.sub ||
+      cursor.entityId !== input.entityId ||
+      cursor.viewId !== input.viewId ||
+      cursor.relatedListId !== input.relatedListId ||
+      cursor.recordId !== input.recordId ||
+      cursor.pageSize !== input.pageSize ||
+      cursor.objectApiName !== input.objectApiName ||
+      (cursor.searchTerm ?? '') !== (input.search ?? '') ||
+      cursor.queryFingerprint !== input.queryFingerprint
+    ) {
+      throw new BadRequestException('Invalid or expired entity cursor');
+    }
+  }
+
   private selectListView(views: EntityListViewConfig[], requestedViewId?: string): EntityListViewConfig {
     const requested = requestedViewId?.trim();
     if (requested) {
@@ -802,17 +1014,16 @@ export class EntitiesService {
     const orderByClause = this.compileOrderByClause(query);
 
     const limitFromConfig = Number.isInteger(query.limit) && Number(query.limit) > 0 ? Number(query.limit) : undefined;
-    const limit = options.forcedLimit ?? options.pageSize ?? limitFromConfig;
+    const limit =
+      typeof options.forcedLimit === 'number'
+        ? options.forcedLimit
+        : options.ignoreConfiguredLimit === true
+          ? undefined
+          : limitFromConfig;
     const limitClause = typeof limit === 'number' ? ` LIMIT ${limit}` : '';
 
-    const offset =
-      typeof options.page === 'number' && typeof options.pageSize === 'number'
-        ? (options.page - 1) * options.pageSize
-        : undefined;
-    const offsetClause = typeof offset === 'number' && offset > 0 ? ` OFFSET ${offset}` : '';
-
     return {
-      soql: `SELECT ${selectFields.join(', ')} FROM ${objectApiName}${whereClause}${orderByClause}${limitClause}${offsetClause}`,
+      soql: `SELECT ${selectFields.join(', ')} FROM ${objectApiName}${whereClause}${orderByClause}${limitClause}`,
       baseWhere,
       finalWhere,
       selectFields

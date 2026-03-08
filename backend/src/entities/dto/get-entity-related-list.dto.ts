@@ -6,10 +6,8 @@ export class GetEntityRelatedListDto {
   recordId!: string;
 
   @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  page?: number;
+  @IsString()
+  cursor?: string;
 
   @IsOptional()
   @Type(() => Number)
