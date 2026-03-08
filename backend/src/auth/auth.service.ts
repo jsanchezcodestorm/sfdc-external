@@ -60,20 +60,19 @@ export class AuthService {
 
   async verifySessionToken(token: string): Promise<SessionUser> {
     try {
-      const decoded = verify(token, this.jwtSecret, { algorithms: ['HS256'] }) as SessionTokenPayload | string;
+      return this.mapSessionUserFromPayload(this.verifyAndDecodeSessionToken(token));
+    } catch {
+      throw new UnauthorizedException('Invalid or expired session');
+    }
+  }
 
-      if (typeof decoded === 'string') {
-        throw new UnauthorizedException('Invalid session payload');
-      }
+  async refreshSessionUser(token: string): Promise<SessionUser> {
+    try {
+      const decoded = this.verifyAndDecodeSessionToken(token);
 
       return {
-        sub: decoded.sub,
-        email: decoded.email,
-        permissions: await this.resolveEffectivePermissions(decoded.sub, decoded.email),
-        contactRecordTypeDeveloperName:
-          typeof decoded.contactRecordTypeDeveloperName === 'string'
-            ? decoded.contactRecordTypeDeveloperName
-            : undefined
+        ...this.mapSessionUserFromPayload(decoded),
+        permissions: await this.resolveEffectivePermissions(decoded.sub, decoded.email)
       };
     } catch {
       throw new UnauthorizedException('Invalid or expired session');
@@ -141,6 +140,40 @@ export class AuthService {
     );
   }
 
+  private verifyAndDecodeSessionToken(token: string): SessionTokenPayload {
+    const decoded = verify(token, this.jwtSecret, { algorithms: ['HS256'] }) as SessionTokenPayload | string;
+
+    if (typeof decoded === 'string') {
+      throw new UnauthorizedException('Invalid session payload');
+    }
+
+    if (!this.isNonEmptyString(decoded.sub) || !this.isNonEmptyString(decoded.email)) {
+      throw new UnauthorizedException('Invalid session payload');
+    }
+
+    if (!Array.isArray(decoded.permissions) || decoded.permissions.some((entry) => typeof entry !== 'string')) {
+      throw new UnauthorizedException('Invalid session payload');
+    }
+
+    if (
+      decoded.contactRecordTypeDeveloperName !== undefined &&
+      typeof decoded.contactRecordTypeDeveloperName !== 'string'
+    ) {
+      throw new UnauthorizedException('Invalid session payload');
+    }
+
+    return decoded;
+  }
+
+  private mapSessionUserFromPayload(decoded: SessionTokenPayload): SessionUser {
+    return {
+      sub: decoded.sub,
+      email: decoded.email,
+      permissions: this.aclService.normalizePermissions(decoded.permissions),
+      contactRecordTypeDeveloperName: decoded.contactRecordTypeDeveloperName
+    };
+  }
+
   private async resolveEffectivePermissions(contactId: string, email: string): Promise<string[]> {
     const permissions = [
       ...this.aclService.getDefaultPermissions(),
@@ -192,5 +225,9 @@ export class AuthService {
   private normalizeEmail(value?: string): string | null {
     const normalized = value?.trim().toLowerCase();
     return normalized ? normalized : null;
+  }
+
+  private isNonEmptyString(value: unknown): value is string {
+    return typeof value === 'string' && value.trim().length > 0;
   }
 }

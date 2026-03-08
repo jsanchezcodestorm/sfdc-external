@@ -1,10 +1,9 @@
-import { Body, Controller, Get, Post, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Req, Res, UnauthorizedException, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
 
 import { SESSION_COOKIE_NAME } from '../app.constants';
 import { AuditWriteService } from '../audit/audit-write.service';
 import { RequestContextService } from '../audit/request-context.service';
-import { CurrentUser } from '../common/decorators/current-user.decorator';
 
 import { AuthService } from './auth.service';
 import { CsrfService } from './csrf.service';
@@ -72,10 +71,24 @@ export class AuthController {
 
   @Get('session')
   @UseGuards(JwtAuthGuard)
-  getSession(
-    @CurrentUser() user: SessionUser,
+  async getSession(
+    @Req()
+    request: {
+      cookies?: Record<string, string>;
+      user?: SessionUser;
+    },
     @Res({ passthrough: true }) response: Response
-  ): AuthSessionResponse {
+  ): Promise<AuthSessionResponse> {
+    const sessionToken = request.cookies?.[SESSION_COOKIE_NAME];
+
+    if (!sessionToken) {
+      throw new UnauthorizedException('Missing session cookie');
+    }
+
+    const user = await this.authService.refreshSessionUser(sessionToken);
+    request.user = user;
+    this.requestContextService.setUser(user);
+
     const token = this.authService.issueSessionToken(user);
     response.cookie(SESSION_COOKIE_NAME, token, this.authService.getSessionCookieOptions());
     const csrfToken = this.csrfService.issueToken(response);

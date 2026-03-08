@@ -13,6 +13,7 @@ function createAuthService(options?: {
 }) {
   const state = {
     explicitPermissions: options?.explicitPermissions ?? ['ACCOUNT_READ'],
+    permissionReads: 0,
   };
 
   const configService = {
@@ -44,6 +45,7 @@ function createAuthService(options?: {
 
   const aclContactPermissionsRepository = {
     async listPermissionCodesByContactId() {
+      state.permissionReads += 1;
       return [...state.explicitPermissions];
     },
   };
@@ -68,7 +70,7 @@ function createAuthService(options?: {
 }
 
 test('loginWithGoogleIdToken merges default, explicit, and admin fallback permissions', async () => {
-  const { service } = createAuthService({
+  const { service, state } = createAuthService({
     defaultPermissions: ['PORTAL_USER'],
     explicitPermissions: ['ACCOUNT_READ', 'PORTAL_USER'],
     adminFallbackEmail: 'admin@example.com',
@@ -79,9 +81,10 @@ test('loginWithGoogleIdToken merges default, explicit, and admin fallback permis
 
   assert.deepEqual(response.user.permissions, ['PORTAL_USER', 'ACCOUNT_READ', 'PORTAL_ADMIN']);
   assert.equal(response.user.contactRecordTypeDeveloperName, 'Customer');
+  assert.equal(state.permissionReads, 1);
 });
 
-test('contact permission changes apply on the next authenticated request', async () => {
+test('verifySessionToken trusts the JWT permission snapshot without rereading PostgreSQL', async () => {
   const { service, state } = createAuthService({
     defaultPermissions: ['PORTAL_USER'],
     explicitPermissions: ['ACCOUNT_READ'],
@@ -94,5 +97,23 @@ test('contact permission changes apply on the next authenticated request', async
   const firstSession = await service.verifySessionToken(firstLogin.token);
 
   assert.deepEqual(firstLogin.user.permissions, ['PORTAL_USER', 'ACCOUNT_READ']);
-  assert.deepEqual(firstSession.permissions, ['PORTAL_USER', 'ACCOUNT_WRITE']);
+  assert.deepEqual(firstSession.permissions, ['PORTAL_USER', 'ACCOUNT_READ']);
+  assert.equal(state.permissionReads, 1);
+});
+
+test('refreshSessionUser applies updated contact permissions from PostgreSQL', async () => {
+  const { service, state } = createAuthService({
+    defaultPermissions: ['PORTAL_USER'],
+    explicitPermissions: ['ACCOUNT_READ'],
+    userEmail: 'user@example.com',
+  });
+
+  const firstLogin = await service.loginWithGoogleIdToken('first-token');
+  state.explicitPermissions = ['ACCOUNT_WRITE'];
+
+  const refreshedSession = await service.refreshSessionUser(firstLogin.token);
+
+  assert.deepEqual(firstLogin.user.permissions, ['PORTAL_USER', 'ACCOUNT_READ']);
+  assert.deepEqual(refreshedSession.permissions, ['PORTAL_USER', 'ACCOUNT_WRITE']);
+  assert.equal(state.permissionReads, 2);
 });
