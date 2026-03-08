@@ -27,6 +27,7 @@ import type {
 type RuntimeRuleRow = {
   id: string;
   objectApiName: string;
+  description?: string | null;
   effect: VisibilityRuleEffect;
   conditionJson: unknown;
   fieldsAllowed: unknown;
@@ -500,6 +501,7 @@ export class VisibilityService {
       id: rule.id,
       coneId: '',
       objectApiName: rule.objectApiName,
+      description: rule.description ?? undefined,
       effect: rule.effect,
       condition: normalizeVisibilityRuleNode(rule.conditionJson),
       fieldsAllowed: Array.isArray(rule.fieldsAllowed)

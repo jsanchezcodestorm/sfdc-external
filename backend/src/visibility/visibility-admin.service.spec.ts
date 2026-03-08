@@ -34,6 +34,7 @@ function createEvaluation(
 function createVisibilityAdminService(options?: {
   evaluation?: VisibilityEvaluation;
   applyFieldVisibility?: (fields: string[], evaluation: VisibilityEvaluation) => string[];
+  prisma?: Record<string, unknown>;
   queryResult?: unknown;
 }) {
   const evaluateCalls: Array<Record<string, unknown>> = [];
@@ -65,7 +66,7 @@ function createVisibilityAdminService(options?: {
   };
 
   const service = new VisibilityAdminService(
-    {} as never,
+    (options?.prisma ?? {}) as never,
     visibilityService as never,
     salesforceService as never,
   );
@@ -311,4 +312,127 @@ test('targeted invalidation with no affected objects only bumps global policy ve
   assert.equal(calls.objectVersionUpsertCalls.length, 0);
   assert.equal(calls.userScopeDeleteManyCalls.length, 0);
   assert.equal(calls.definitionDeleteManyCalls.length, 0);
+});
+
+test('normalizeRule keeps a trimmed optional description and drops whitespace-only values', async () => {
+  const prisma = {
+    visibilityCone: {
+      async findUnique() {
+        return { id: 'ddcf4148-5230-45ea-97e0-741417507a85' };
+      },
+    },
+  };
+  const { service } = createVisibilityAdminService({ prisma });
+
+  const normalizeRule = service as unknown as {
+    normalizeRule(ruleId: string | undefined, value: unknown): Promise<Record<string, unknown>>;
+  };
+
+  const normalizedWithDescription = await normalizeRule.normalizeRule(undefined, {
+    coneId: 'ddcf4148-5230-45ea-97e0-741417507a85',
+    objectApiName: 'Account',
+    description: '  Regola per account attivi  ',
+    effect: 'ALLOW',
+    condition: {
+      field: 'Status__c',
+      op: '=',
+      value: 'Active',
+    },
+    active: true,
+  });
+
+  assert.equal(normalizedWithDescription.description, 'Regola per account attivi');
+
+  const normalizedWithoutDescription = await normalizeRule.normalizeRule(undefined, {
+    coneId: 'ddcf4148-5230-45ea-97e0-741417507a85',
+    objectApiName: 'Account',
+    description: '   ',
+    effect: 'ALLOW',
+    condition: {
+      field: 'Status__c',
+      op: '=',
+      value: 'Active',
+    },
+    active: true,
+  });
+
+  assert.equal(normalizedWithoutDescription.description, undefined);
+});
+
+test('listRules includes optional description in summary responses', async () => {
+  const prisma = {
+    visibilityRule: {
+      async findMany() {
+        return [
+          {
+            id: 'rule-1',
+            coneId: 'cone-1',
+            objectApiName: 'Account',
+            description: 'Regola account attivi',
+            effect: 'ALLOW',
+            active: true,
+            fieldsAllowed: ['Name'],
+            fieldsDenied: null,
+            updatedAt: new Date('2026-03-08T12:00:00.000Z'),
+            cone: {
+              code: 'commercial',
+            },
+          },
+          {
+            id: 'rule-2',
+            coneId: 'cone-1',
+            objectApiName: 'Account',
+            description: null,
+            effect: 'DENY',
+            active: false,
+            fieldsAllowed: null,
+            fieldsDenied: ['Secret__c'],
+            updatedAt: new Date('2026-03-08T12:05:00.000Z'),
+            cone: {
+              code: 'commercial',
+            },
+          },
+        ];
+      },
+    },
+  };
+  const { service } = createVisibilityAdminService({ prisma });
+
+  const response = await service.listRules();
+
+  assert.equal(response.items.length, 2);
+  assert.equal(response.items[0].description, 'Regola account attivi');
+  assert.equal(response.items[0].fieldsAllowedCount, 1);
+  assert.equal(response.items[1].description, undefined);
+  assert.equal(response.items[1].fieldsDeniedCount, 1);
+});
+
+test('getRule maps optional description on detail responses', async () => {
+  const prisma = {
+    visibilityRule: {
+      async findUnique() {
+        return {
+          id: 'ddcf4148-5230-45ea-97e0-741417507a85',
+          coneId: '1711c370-76c2-48c1-a29d-c2554b338e21',
+          objectApiName: 'Account',
+          description: 'Regola account attivi',
+          effect: 'ALLOW',
+          conditionJson: {
+            field: 'Status__c',
+            op: '=',
+            value: 'Active',
+          },
+          fieldsAllowed: ['Name'],
+          fieldsDenied: null,
+          active: true,
+        };
+      },
+    },
+  };
+  const { service } = createVisibilityAdminService({ prisma });
+
+  const response = await service.getRule('ddcf4148-5230-45ea-97e0-741417507a85');
+
+  assert.equal(response.rule.description, 'Regola account attivi');
+  assert.equal(response.rule.objectApiName, 'Account');
 });

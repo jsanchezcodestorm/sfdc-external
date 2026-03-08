@@ -51,6 +51,7 @@ export interface VisibilityRuleDefinition {
   id: string;
   coneId: string;
   objectApiName: string;
+  description?: string;
   effect: VisibilityDecision;
   condition: VisibilityRuleNode;
   fieldsAllowed?: string[];

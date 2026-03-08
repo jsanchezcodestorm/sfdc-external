@@ -64,6 +64,7 @@ export interface VisibilityRuleSummaryResponse {
   coneId: string;
   coneCode: string;
   objectApiName: string;
+  description?: string;
   effect: VisibilityRuleEffect;
   active: boolean;
   fieldsAllowedCount: number;
@@ -251,6 +252,7 @@ export class VisibilityAdminService {
         coneId: row.coneId,
         coneCode: row.cone.code,
         objectApiName: row.objectApiName,
+        description: row.description ?? undefined,
         effect: row.effect,
         active: row.active,
         fieldsAllowedCount: Array.isArray(row.fieldsAllowed) ? row.fieldsAllowed.length : 0,
@@ -284,6 +286,7 @@ export class VisibilityAdminService {
         data: {
           coneId: rule.coneId,
           objectApiName: rule.objectApiName,
+          description: rule.description ?? null,
           effect: rule.effect,
           conditionJson: rule.condition as unknown as Prisma.InputJsonValue,
           fieldsAllowed:
@@ -320,6 +323,7 @@ export class VisibilityAdminService {
         data: {
           coneId: rule.coneId,
           objectApiName: rule.objectApiName,
+          description: rule.description ?? null,
           effect: rule.effect,
           conditionJson: rule.condition as unknown as Prisma.InputJsonValue,
           fieldsAllowed:
@@ -637,6 +641,7 @@ export class VisibilityAdminService {
       id: ruleId ?? randomUUID(),
       coneId,
       objectApiName: this.requireString(rule.objectApiName, 'rule.objectApiName is required'),
+      description: this.asOptionalString(rule.description),
       effect,
       condition,
       fieldsAllowed: normalizeVisibilityFieldList(rule.fieldsAllowed, 'rule.fieldsAllowed'),
@@ -829,6 +834,7 @@ export class VisibilityAdminService {
       id: row.id,
       coneId: row.coneId,
       objectApiName: row.objectApiName,
+      description: row.description ?? undefined,
       effect: row.effect,
       condition: normalizeVisibilityRuleNode(row.conditionJson),
       fieldsAllowed: Array.isArray(row.fieldsAllowed)

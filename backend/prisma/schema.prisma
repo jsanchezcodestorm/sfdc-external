@@ -68,6 +68,7 @@ model VisibilityRule {
   id            String               @id @default(uuid()) @db.Uuid
   coneId        String               @db.Uuid
   objectApiName String               @db.VarChar(128)
+  description   String?              @db.VarChar(512)
   effect        VisibilityRuleEffect
   conditionJson Json
   fieldsAllowed Json?
