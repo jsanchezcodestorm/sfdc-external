@@ -7,7 +7,7 @@ import {
   type ReactNode,
 } from 'react'
 
-import { apiFetch, ApiError } from '../../lib/api'
+import { apiFetch, ApiError, clearCsrfToken, setCsrfToken } from '../../lib/api'
 
 import { AuthContext, type AuthContextValue } from './auth-context'
 import type { AuthSessionResponse, SessionUser } from './auth-types'
@@ -29,6 +29,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   const restoreSession = useCallback(async () => {
     const payload = await apiFetch<AuthSessionResponse>('/auth/session')
+    setCsrfToken(payload.csrfToken)
     setUser(payload.user)
   }, [])
 
@@ -40,6 +41,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       },
     })
 
+    setCsrfToken(payload.csrfToken)
     setUser(payload.user)
   }, [])
 
@@ -60,6 +62,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       // Ignore Google logout errors because local session is already cleared.
     }
 
+    clearCsrfToken()
     setUser(null)
   }, [])
 
@@ -71,6 +74,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         await restoreSession()
       } catch (error) {
         if (!isCancelled && isMissingSessionError(error)) {
+          clearCsrfToken()
           setUser(null)
           return
         }

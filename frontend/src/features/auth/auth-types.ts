@@ -7,4 +7,5 @@ export type SessionUser = {
 
 export type AuthSessionResponse = {
   user: SessionUser
+  csrfToken: string
 }
