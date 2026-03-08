@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import { ForbiddenException } from '@nestjs/common';
+
 import { QueryAuditService } from '../audit/query-audit.service';
 
 import { EntitiesService } from './entities.service';
@@ -314,4 +316,350 @@ test('getEntityRelatedList records query audit metadata and counters', async () 
   });
   assert.equal(harness.completeCalls[0].rowCount, 2);
   assert.equal(harness.visibilityAuditCalls[0].rowCount, 2);
+});
+
+function createWriteHarness(options?: {
+  authorizeError?: Error;
+  readResults?: unknown[];
+  visibility?: Record<string, unknown>;
+  createResult?: Record<string, unknown>;
+  updateResult?: Record<string, unknown>;
+}) {
+  const queryCreateCalls: Array<Record<string, unknown>> = [];
+  const queryCompleteCalls: Array<Record<string, unknown>> = [];
+  const applicationIntentCalls: Array<Record<string, unknown>> = [];
+  const applicationCompleteCalls: Array<Record<string, unknown>> = [];
+  const visibilityAuditCalls: Array<Record<string, unknown>> = [];
+  const authorizeCalls: Array<Record<string, unknown>> = [];
+  const readOnlyQueryCalls: string[] = [];
+  const createRecordCalls: Array<Record<string, unknown>> = [];
+  const updateRecordCalls: Array<Record<string, unknown>> = [];
+  const deleteRecordCalls: Array<Record<string, unknown>> = [];
+  const readResultsQueue = [...(options?.readResults ?? [])];
+
+  const visibility = {
+    contactId: '003000000000001',
+    permissionsHash: 'perm-hash',
+    recordType: null,
+    objectApiName: 'Account',
+    appliedCones: ['sales'],
+    appliedRules: ['rule-1'],
+    decision: 'ALLOW',
+    reasonCode: 'ALLOW_MATCH',
+    policyVersion: 7,
+    compiledPredicate: "OwnerId = '005000000000001'",
+    compiledFields: ['Id', 'Name'],
+    deniedFields: [],
+    baseWhere: '',
+    finalWhere: '',
+    ...(options?.visibility ?? {}),
+  };
+
+  const auditWriteService = {
+    async createQueryAuditIntentOrThrow(input: Record<string, unknown>) {
+      queryCreateCalls.push(input);
+      return BigInt(queryCreateCalls.length);
+    },
+    async completeQueryAuditOrThrow(input: Record<string, unknown>) {
+      queryCompleteCalls.push(input);
+    },
+    async createApplicationIntentOrThrow(input: Record<string, unknown>) {
+      applicationIntentCalls.push(input);
+      return BigInt(1000 + applicationIntentCalls.length);
+    },
+    async completeApplicationAuditOrThrow(input: Record<string, unknown>) {
+      applicationCompleteCalls.push(input);
+    },
+    normalizeErrorCode() {
+      return 'MUTATION_FAILED';
+    },
+  };
+
+  const salesforceService = {
+    async executeReadOnlyQuery(soql: string) {
+      readOnlyQueryCalls.push(soql);
+      return readResultsQueue.shift() ?? { totalSize: 1, done: true, records: [{ Id: '001000000000001' }] };
+    },
+    async createRecord(objectApiName: string, values: Record<string, unknown>) {
+      createRecordCalls.push({ objectApiName, values });
+      return options?.createResult ?? { id: '001000000000001', success: true };
+    },
+    async updateRecord(objectApiName: string, recordId: string, values: Record<string, unknown>) {
+      updateRecordCalls.push({ objectApiName, recordId, values });
+      return options?.updateResult ?? { id: recordId, success: true };
+    },
+    async deleteRecord(objectApiName: string, recordId: string) {
+      deleteRecordCalls.push({ objectApiName, recordId });
+    },
+  };
+
+  const visibilityService = {
+    async recordAudit(input: Record<string, unknown>) {
+      visibilityAuditCalls.push(input);
+    },
+  };
+
+  const queryAuditService = new QueryAuditService(
+    auditWriteService as never,
+    salesforceService as never,
+    visibilityService as never,
+  );
+
+  const resourceAccessService = {
+    async authorizeObjectAccess(
+      currentUser: Record<string, unknown>,
+      aclResourceId: string,
+      objectApiName: string,
+      auditContext: Record<string, unknown>,
+    ) {
+      authorizeCalls.push({
+        user: currentUser,
+        aclResourceId,
+        objectApiName,
+        auditContext,
+      });
+
+      if (options?.authorizeError) {
+        throw options.authorizeError;
+      }
+
+      return visibility;
+    },
+  };
+
+  const service = new EntitiesService(
+    auditWriteService as never,
+    queryAuditService,
+    resourceAccessService as never,
+    {
+      async getEntityConfig() {
+        return {};
+      },
+    } as never,
+    salesforceService as never,
+    visibilityService as never,
+  );
+
+  return {
+    service,
+    queryCreateCalls,
+    queryCompleteCalls,
+    applicationIntentCalls,
+    applicationCompleteCalls,
+    visibilityAuditCalls,
+    authorizeCalls,
+    readOnlyQueryCalls,
+    createRecordCalls,
+    updateRecordCalls,
+    deleteRecordCalls,
+  };
+}
+
+test('createEntityRecord denies before mutation when authorizeObjectAccess fails', async () => {
+  const harness = createWriteHarness({
+    authorizeError: new ForbiddenException('ACL denied entity:account'),
+  });
+
+  patchServiceMethods(harness.service, {
+    loadEntityConfig: async () => ({
+      id: 'account',
+      objectApiName: 'Account',
+    }),
+  });
+
+  await assert.rejects(
+    harness.service.createEntityRecord(user as never, 'account', { Name: 'Acme' }),
+    /ACL denied entity:account/,
+  );
+
+  assert.equal(harness.applicationIntentCalls.length, 0);
+  assert.equal(harness.createRecordCalls.length, 0);
+  assert.equal(harness.visibilityAuditCalls.length, 0);
+});
+
+test('createEntityRecord records visibility audit before application audit and mutation', async () => {
+  const harness = createWriteHarness();
+
+  patchServiceMethods(harness.service, {
+    loadEntityConfig: async () => ({
+      id: 'account',
+      objectApiName: 'Account',
+    }),
+    normalizeWritePayload: async () => ({
+      Name: 'Acme',
+    }),
+  });
+
+  const response = await harness.service.createEntityRecord(user as never, 'account', { Name: 'Acme' });
+
+  assert.equal(String(response.id), '001000000000001');
+  assert.deepEqual(harness.authorizeCalls[0], {
+    user,
+    aclResourceId: 'entity:account',
+    objectApiName: 'Account',
+    auditContext: {
+      queryKind: 'ENTITY_CREATE',
+    },
+  });
+  assert.equal(harness.visibilityAuditCalls.length, 1);
+  assert.equal(harness.visibilityAuditCalls[0].queryKind, 'ENTITY_CREATE');
+  assert.equal(harness.visibilityAuditCalls[0].rowCount, 0);
+  assert.equal(harness.applicationIntentCalls.length, 1);
+  assert.equal(harness.applicationIntentCalls[0].action, 'ENTITY_CREATE');
+  assert.deepEqual(harness.createRecordCalls, [
+    {
+      objectApiName: 'Account',
+      values: { Name: 'Acme' },
+    },
+  ]);
+});
+
+test('updateEntityRecord denies before preflight when authorizeObjectAccess fails', async () => {
+  const harness = createWriteHarness({
+    authorizeError: new ForbiddenException('Visibility denied'),
+  });
+  const recordId = '001000000000001';
+
+  patchServiceMethods(harness.service, {
+    loadEntityConfig: async () => ({
+      id: 'account',
+      objectApiName: 'Account',
+    }),
+  });
+
+  await assert.rejects(
+    harness.service.updateEntityRecord(user as never, 'account', recordId, { Name: 'Acme' }),
+    /Visibility denied/,
+  );
+
+  assert.equal(harness.readOnlyQueryCalls.length, 0);
+  assert.equal(harness.applicationIntentCalls.length, 0);
+  assert.equal(harness.updateRecordCalls.length, 0);
+});
+
+test('updateEntityRecord returns not found when preflight scoped query finds no rows', async () => {
+  const harness = createWriteHarness({
+    readResults: [{ totalSize: 0, done: true, records: [] }],
+  });
+  const recordId = '001000000000001';
+
+  patchServiceMethods(harness.service, {
+    loadEntityConfig: async () => ({
+      id: 'account',
+      objectApiName: 'Account',
+    }),
+  });
+
+  await assert.rejects(
+    harness.service.updateEntityRecord(user as never, 'account', recordId, { Name: 'Acme' }),
+    /Record 001000000000001 not found/,
+  );
+
+  assert.equal(harness.queryCreateCalls.length, 1);
+  assert.equal(harness.queryCreateCalls[0].queryKind, 'ENTITY_UPDATE_PREFLIGHT');
+  assert.equal(harness.queryCreateCalls[0].recordId, recordId);
+  assert.deepEqual(harness.queryCreateCalls[0].metadata, {
+    entityId: 'account',
+    operation: 'update',
+    selectedFields: ['Id'],
+  });
+  assert.equal(harness.applicationIntentCalls.length, 0);
+  assert.equal(harness.updateRecordCalls.length, 0);
+  assert.equal(harness.visibilityAuditCalls.length, 1);
+  assert.equal(harness.visibilityAuditCalls[0].queryKind, 'ENTITY_UPDATE_PREFLIGHT');
+});
+
+test('updateEntityRecord runs preflight audit and final mutation audits when the record is in scope', async () => {
+  const harness = createWriteHarness({
+    readResults: [{ totalSize: 1, done: true, records: [{ Id: '001000000000001' }] }],
+  });
+  const recordId = '001000000000001';
+
+  patchServiceMethods(harness.service, {
+    loadEntityConfig: async () => ({
+      id: 'account',
+      objectApiName: 'Account',
+    }),
+    normalizeWritePayload: async () => ({
+      Name: 'Acme Updated',
+    }),
+  });
+
+  const response = await harness.service.updateEntityRecord(user as never, 'account', recordId, {
+    Name: 'Acme Updated',
+  });
+
+  assert.equal(String(response.id), recordId);
+  assert.equal(harness.queryCreateCalls[0].queryKind, 'ENTITY_UPDATE_PREFLIGHT');
+  assert.match(
+    harness.readOnlyQueryCalls[0],
+    /SELECT Id FROM Account WHERE \(Id = '001000000000001'\) AND \(OwnerId = '005000000000001'\) LIMIT 1/,
+  );
+  assert.equal(harness.visibilityAuditCalls.length, 2);
+  assert.equal(harness.visibilityAuditCalls[0].queryKind, 'ENTITY_UPDATE_PREFLIGHT');
+  assert.equal(harness.visibilityAuditCalls[1].queryKind, 'ENTITY_UPDATE');
+  assert.equal(harness.applicationIntentCalls.length, 1);
+  assert.equal(harness.applicationIntentCalls[0].action, 'ENTITY_UPDATE');
+  assert.deepEqual(harness.updateRecordCalls, [
+    {
+      objectApiName: 'Account',
+      recordId,
+      values: { Name: 'Acme Updated' },
+    },
+  ]);
+});
+
+test('deleteEntityRecord returns not found when preflight scoped query finds no rows', async () => {
+  const harness = createWriteHarness({
+    readResults: [{ totalSize: 0, done: true, records: [] }],
+  });
+  const recordId = '001000000000001';
+
+  patchServiceMethods(harness.service, {
+    loadEntityConfig: async () => ({
+      id: 'account',
+      objectApiName: 'Account',
+    }),
+  });
+
+  await assert.rejects(
+    harness.service.deleteEntityRecord(user as never, 'account', recordId),
+    /Record 001000000000001 not found/,
+  );
+
+  assert.equal(harness.queryCreateCalls.length, 1);
+  assert.equal(harness.queryCreateCalls[0].queryKind, 'ENTITY_DELETE_PREFLIGHT');
+  assert.equal(harness.applicationIntentCalls.length, 0);
+  assert.equal(harness.deleteRecordCalls.length, 0);
+  assert.equal(harness.visibilityAuditCalls.length, 1);
+  assert.equal(harness.visibilityAuditCalls[0].queryKind, 'ENTITY_DELETE_PREFLIGHT');
+});
+
+test('deleteEntityRecord runs preflight audit and final mutation audits when the record is in scope', async () => {
+  const harness = createWriteHarness({
+    readResults: [{ totalSize: 1, done: true, records: [{ Id: '001000000000001' }] }],
+  });
+  const recordId = '001000000000001';
+
+  patchServiceMethods(harness.service, {
+    loadEntityConfig: async () => ({
+      id: 'account',
+      objectApiName: 'Account',
+    }),
+  });
+
+  await harness.service.deleteEntityRecord(user as never, 'account', recordId);
+
+  assert.equal(harness.queryCreateCalls[0].queryKind, 'ENTITY_DELETE_PREFLIGHT');
+  assert.equal(harness.visibilityAuditCalls.length, 2);
+  assert.equal(harness.visibilityAuditCalls[0].queryKind, 'ENTITY_DELETE_PREFLIGHT');
+  assert.equal(harness.visibilityAuditCalls[1].queryKind, 'ENTITY_DELETE');
+  assert.equal(harness.applicationIntentCalls.length, 1);
+  assert.equal(harness.applicationIntentCalls[0].action, 'ENTITY_DELETE');
+  assert.deepEqual(harness.deleteRecordCalls, [
+    {
+      objectApiName: 'Account',
+      recordId,
+    },
+  ]);
 });

@@ -44,6 +44,11 @@ const TEXT_SEARCH_TYPES = new Set([
 ]);
 
 const NUMERIC_SEARCH_TYPES = new Set(['int', 'double', 'currency', 'percent']);
+const ENTITY_CREATE_QUERY_KIND = 'ENTITY_CREATE';
+const ENTITY_UPDATE_QUERY_KIND = 'ENTITY_UPDATE';
+const ENTITY_DELETE_QUERY_KIND = 'ENTITY_DELETE';
+const ENTITY_UPDATE_PREFLIGHT_QUERY_KIND = 'ENTITY_UPDATE_PREFLIGHT';
+const ENTITY_DELETE_PREFLIGHT_QUERY_KIND = 'ENTITY_DELETE_PREFLIGHT';
 
 type FormInputType = 'text' | 'email' | 'tel' | 'date' | 'textarea';
 type WriteMode = 'create' | 'update';
@@ -521,10 +526,17 @@ export class EntitiesService {
     payload: unknown
   ): Promise<Record<string, unknown>> {
     const entityConfig = await this.loadEntityConfig(entityId);
+    const visibility = await this.authorizeEntityWriteAccess(
+      user,
+      entityId,
+      entityConfig.objectApiName,
+      ENTITY_CREATE_QUERY_KIND
+    );
     const values = await this.normalizeWritePayload(entityConfig, payload, 'create');
+    await this.recordWriteVisibilityAudit(visibility, ENTITY_CREATE_QUERY_KIND);
     const auditId = await this.auditWriteService.createApplicationIntentOrThrow({
       contactId: user.sub,
-      action: 'ENTITY_CREATE',
+      action: ENTITY_CREATE_QUERY_KIND,
       targetType: 'entity-record',
       targetId: entityId,
       objectApiName: entityConfig.objectApiName,
@@ -566,10 +578,26 @@ export class EntitiesService {
   ): Promise<Record<string, unknown>> {
     this.assertSalesforceRecordId(recordId);
     const entityConfig = await this.loadEntityConfig(entityId);
+    const visibility = await this.authorizeEntityWriteAccess(
+      user,
+      entityId,
+      entityConfig.objectApiName,
+      ENTITY_UPDATE_QUERY_KIND
+    );
+    await this.assertRecordInWriteScope(
+      user,
+      entityId,
+      entityConfig.objectApiName,
+      recordId,
+      visibility,
+      ENTITY_UPDATE_PREFLIGHT_QUERY_KIND,
+      'update'
+    );
     const values = await this.normalizeWritePayload(entityConfig, payload, 'update');
+    await this.recordWriteVisibilityAudit(visibility, ENTITY_UPDATE_QUERY_KIND);
     const auditId = await this.auditWriteService.createApplicationIntentOrThrow({
       contactId: user.sub,
-      action: 'ENTITY_UPDATE',
+      action: ENTITY_UPDATE_QUERY_KIND,
       targetType: 'entity-record',
       targetId: recordId,
       objectApiName: entityConfig.objectApiName,
@@ -607,9 +635,25 @@ export class EntitiesService {
   async deleteEntityRecord(user: SessionUser, entityId: string, recordId: string): Promise<void> {
     this.assertSalesforceRecordId(recordId);
     const entityConfig = await this.loadEntityConfig(entityId);
+    const visibility = await this.authorizeEntityWriteAccess(
+      user,
+      entityId,
+      entityConfig.objectApiName,
+      ENTITY_DELETE_QUERY_KIND
+    );
+    await this.assertRecordInWriteScope(
+      user,
+      entityId,
+      entityConfig.objectApiName,
+      recordId,
+      visibility,
+      ENTITY_DELETE_PREFLIGHT_QUERY_KIND,
+      'delete'
+    );
+    await this.recordWriteVisibilityAudit(visibility, ENTITY_DELETE_QUERY_KIND);
     const auditId = await this.auditWriteService.createApplicationIntentOrThrow({
       contactId: user.sub,
-      action: 'ENTITY_DELETE',
+      action: ENTITY_DELETE_QUERY_KIND,
       targetType: 'entity-record',
       targetId: recordId,
       objectApiName: entityConfig.objectApiName,
@@ -645,6 +689,67 @@ export class EntitiesService {
   private async loadEntityConfig(entityId: string): Promise<EntityConfig> {
     this.resourceAccessService.assertKebabCaseId(entityId, 'entityId');
     return this.entityConfigRepository.getEntityConfig(entityId);
+  }
+
+  private async authorizeEntityWriteAccess(
+    user: SessionUser,
+    entityId: string,
+    objectApiName: string,
+    queryKind: string
+  ): Promise<VisibilityEvaluation> {
+    return this.resourceAccessService.authorizeObjectAccess(
+      user,
+      `entity:${entityId}`,
+      objectApiName,
+      {
+        queryKind
+      }
+    );
+  }
+
+  private async recordWriteVisibilityAudit(visibility: VisibilityEvaluation, queryKind: string): Promise<void> {
+    await this.visibilityService.recordAudit({
+      evaluation: visibility,
+      queryKind,
+      rowCount: 0,
+      durationMs: 0
+    });
+  }
+
+  private async assertRecordInWriteScope(
+    user: SessionUser,
+    entityId: string,
+    objectApiName: string,
+    recordId: string,
+    visibility: VisibilityEvaluation,
+    queryKind: string,
+    operation: 'update' | 'delete'
+  ): Promise<void> {
+    const normalizedObjectApiName = this.toSoqlIdentifier(objectApiName);
+    const baseWhere = `Id = ${this.serializeSoqlValue(recordId)}`;
+    const finalWhere = this.composeVisibilityWhere(baseWhere, visibility.compiledPredicate);
+    const whereClause = finalWhere ? ` WHERE ${finalWhere}` : '';
+    const rawResult = await this.queryAuditService.executeReadOnlyQueryWithAudit({
+      contactId: user.sub,
+      queryKind,
+      targetId: entityId,
+      objectApiName,
+      recordId,
+      resolvedSoql: `SELECT Id FROM ${normalizedObjectApiName}${whereClause} LIMIT 1`,
+      visibility,
+      baseWhere,
+      finalWhere,
+      metadata: {
+        entityId,
+        operation,
+        selectedFields: ['Id']
+      }
+    });
+    const { records } = this.extractRecords(rawResult);
+
+    if (records.length === 0) {
+      throw new NotFoundException(`Record ${recordId} not found`);
+    }
   }
 
   private selectListView(views: EntityListViewConfig[], requestedViewId?: string): EntityListViewConfig {

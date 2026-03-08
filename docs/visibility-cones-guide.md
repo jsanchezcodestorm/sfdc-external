@@ -223,9 +223,10 @@ Esiti invalidazione DSL:
 | Entity bundle (read) | Coperto | Enforce su sotto-query incluse |
 | Query template DSL/SOQL | Coperto | Enforce su oggetto target template |
 | Pagination `queryMore` | Coperto | Solo cursor opaco scoped |
+| Write create | Coperto parziale | Enforce entity ACL + object visibility, senza row-level pre-persistenza |
+| Write update/delete | Coperto | Enforce object visibility + preflight row-level scoped sul record |
 | Global search | Escluso | Fase successiva |
 | Raw query `/salesforce/query` | Escluso | Solo debug admin, default off in prod |
-| Write operations | Escluso | Governate da ACL + business rules dedicate |
 
 ## 12) Field-level visibility
 Regole minime:
@@ -379,7 +380,7 @@ Il tema coni e accettato quando:
 ## 22) Non-obiettivi (Fase 1)
 - policy storage su Salesforce custom objects
 - global search con visibility completa
-- write-time row-level cones (create/update/delete)
+- enforcement row-level pre-persistenza atomico sulla create
 - registry pubblico template/policy per utenti finali
 
 ## 23) Documenti correlati

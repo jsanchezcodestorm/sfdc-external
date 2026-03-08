@@ -514,9 +514,10 @@ Nota:
 | Entity bundle (read)                      | Coperto                     | Enforce su tutte le sotto-query incluse      |
 | Query template DSL/SOQL                   | Coperto                     | Enforce per oggetto target template          |
 | Pagination `queryMore`                    | Coperto                     | Solo cursor opachi firmati emessi da query scoped |
+| Write create                              | Coperto parziale            | Enforce entity ACL + object visibility, senza row-level pre-persistenza |
+| Write update/delete                       | Coperto                     | Enforce object visibility + preflight row-level sul record |
 | Global search                             | Escluso                     | Pianificato in fase successiva               |
 | Endpoint raw query (`/salesforce/query`)  | Escluso                     | Solo debug admin, disabilitato in produzione |
-| Operazioni write (`create/update/delete`) | Escluso                     | Governate da ACL + regole business dedicate  |
 
 ### 14.9 Cache policy: invalidazione e SLA
 
