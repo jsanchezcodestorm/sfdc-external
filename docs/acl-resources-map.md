@@ -128,6 +128,7 @@ Regole:
 - ACL decide la capability
 - visibility decide il perimetro dati
 - i query template usano solo `query:<templateId>` come sorgente autorizzativa
+- il frontend consuma `GET /navigation` come source of truth per le `route:*` consentite
 
 ## 7) Checklist operativa
 Per aggiungere una capability nuova:

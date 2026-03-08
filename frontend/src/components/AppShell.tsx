@@ -11,6 +11,7 @@ import {
 import { AppWorkspaceProvider } from '../features/apps/AppWorkspaceContext'
 import { useAppWorkspace } from '../features/apps/useAppWorkspace'
 import { useAuth } from '../features/auth/useAuth'
+import { RouteAccessProvider } from '../features/route-access/RouteAccessContext'
 
 function isRuntimeWorkspacePath(pathname: string): boolean {
   return pathname === '/' || pathname.startsWith('/s/')
@@ -22,13 +23,15 @@ export function AppShell() {
   const isRuntimeRoute = isRuntimeWorkspacePath(location.pathname)
 
   return (
-    <AdminNavigationProvider>
-      <RuntimeNavigationProvider>
-        <AppWorkspaceProvider enabled={Boolean(user) && isRuntimeRoute}>
-          <AppShellLayout isRuntimeRoute={isRuntimeRoute} />
-        </AppWorkspaceProvider>
-      </RuntimeNavigationProvider>
-    </AdminNavigationProvider>
+    <RouteAccessProvider>
+      <AdminNavigationProvider>
+        <RuntimeNavigationProvider>
+          <AppWorkspaceProvider enabled={Boolean(user) && isRuntimeRoute}>
+            <AppShellLayout isRuntimeRoute={isRuntimeRoute} />
+          </AppWorkspaceProvider>
+        </RuntimeNavigationProvider>
+      </AdminNavigationProvider>
+    </RouteAccessProvider>
   )
 }
 

@@ -23,10 +23,21 @@ import {
   type WorkspaceSidebarModule,
 } from './WorkspaceSidebar'
 import { useAdminNavigation } from './useAdminNavigation'
+import {
+  ADMIN_ACL_ROUTE_ID,
+  ADMIN_APPS_ROUTE_ID,
+  ADMIN_AUDIT_ROUTE_ID,
+  ADMIN_ENTITY_CONFIG_ROUTE_ID,
+  ADMIN_QUERY_TEMPLATES_ROUTE_ID,
+  ADMIN_VISIBILITY_ROUTE_ID,
+} from '../features/route-access/route-access-registry'
+import type { AdminRouteId } from '../features/route-access/route-access-types'
+import { useRouteAccess } from '../features/route-access/useRouteAccess'
 
 export function AdminShell() {
   const location = useLocation()
   const { isSidebarOpen, closeSidebar } = useAdminNavigation()
+  const { allowedAdminRouteIds } = useRouteAccess()
 
   useEffect(() => {
     if (!isSidebarOpen) {
@@ -46,8 +57,8 @@ export function AdminShell() {
   }, [closeSidebar, isSidebarOpen])
 
   const modules = useMemo(
-    () => buildAdminSidebarModules(location.pathname, location.search),
-    [location.pathname, location.search],
+    () => buildAdminSidebarModules(location.pathname, location.search, allowedAdminRouteIds),
+    [allowedAdminRouteIds, location.pathname, location.search],
   )
 
   return (
@@ -96,18 +107,31 @@ export function AdminShell() {
   )
 }
 
-function buildAdminSidebarModules(pathname: string, search: string): WorkspaceSidebarModule[] {
+function buildAdminSidebarModules(
+  pathname: string,
+  search: string,
+  allowedAdminRouteIds: readonly AdminRouteId[],
+): WorkspaceSidebarModule[] {
+  const allowedRouteIdSet = new Set(allowedAdminRouteIds)
+
   return [
-    buildEntityConfigModule(pathname),
-    buildAppsModule(pathname),
-    buildAclModule(pathname),
-    buildQueryTemplatesModule(pathname),
-    buildVisibilityModule(pathname),
-    buildAuditModule(pathname, search),
-  ]
+    buildEntityConfigModule(pathname, allowedRouteIdSet),
+    buildAppsModule(pathname, allowedRouteIdSet),
+    buildAclModule(pathname, allowedRouteIdSet),
+    buildQueryTemplatesModule(pathname, allowedRouteIdSet),
+    buildVisibilityModule(pathname, allowedRouteIdSet),
+    buildAuditModule(pathname, search, allowedRouteIdSet),
+  ].filter((module): module is WorkspaceSidebarModule => module !== null)
 }
 
-function buildEntityConfigModule(pathname: string): WorkspaceSidebarModule {
+function buildEntityConfigModule(
+  pathname: string,
+  allowedRouteIdSet: ReadonlySet<AdminRouteId>,
+): WorkspaceSidebarModule | null {
+  if (!allowedRouteIdSet.has(ADMIN_ENTITY_CONFIG_ROUTE_ID)) {
+    return null
+  }
+
   const isActive = pathname.startsWith('/admin/entity-config')
   const isCatalogRoute = pathname === buildEntityCatalogPath()
   const isCreateRoute = pathname === buildEntityCreatePath()
@@ -189,7 +213,14 @@ function buildEntityConfigModule(pathname: string): WorkspaceSidebarModule {
   }
 }
 
-function buildAppsModule(pathname: string): WorkspaceSidebarModule {
+function buildAppsModule(
+  pathname: string,
+  allowedRouteIdSet: ReadonlySet<AdminRouteId>,
+): WorkspaceSidebarModule | null {
+  if (!allowedRouteIdSet.has(ADMIN_APPS_ROUTE_ID)) {
+    return null
+  }
+
   const isActive = pathname.startsWith('/admin/apps')
   const isCatalogRoute = pathname === buildAppsAdminListPath()
   const isCreateRoute = pathname === buildAppsAdminCreatePath()
@@ -248,7 +279,14 @@ function buildAppsModule(pathname: string): WorkspaceSidebarModule {
   }
 }
 
-function buildAclModule(pathname: string): WorkspaceSidebarModule {
+function buildAclModule(
+  pathname: string,
+  allowedRouteIdSet: ReadonlySet<AdminRouteId>,
+): WorkspaceSidebarModule | null {
+  if (!allowedRouteIdSet.has(ADMIN_ACL_ROUTE_ID)) {
+    return null
+  }
+
   const isActive = pathname.startsWith('/admin/acl')
 
   return {
@@ -290,7 +328,14 @@ function buildAclModule(pathname: string): WorkspaceSidebarModule {
   }
 }
 
-function buildQueryTemplatesModule(pathname: string): WorkspaceSidebarModule {
+function buildQueryTemplatesModule(
+  pathname: string,
+  allowedRouteIdSet: ReadonlySet<AdminRouteId>,
+): WorkspaceSidebarModule | null {
+  if (!allowedRouteIdSet.has(ADMIN_QUERY_TEMPLATES_ROUTE_ID)) {
+    return null
+  }
+
   const isActive = pathname.startsWith('/admin/query-templates')
 
   return {
@@ -311,7 +356,14 @@ function buildQueryTemplatesModule(pathname: string): WorkspaceSidebarModule {
   }
 }
 
-function buildVisibilityModule(pathname: string): WorkspaceSidebarModule {
+function buildVisibilityModule(
+  pathname: string,
+  allowedRouteIdSet: ReadonlySet<AdminRouteId>,
+): WorkspaceSidebarModule | null {
+  if (!allowedRouteIdSet.has(ADMIN_VISIBILITY_ROUTE_ID)) {
+    return null
+  }
+
   const isActive = pathname.startsWith('/admin/visibility')
 
   return {
@@ -353,7 +405,15 @@ function buildVisibilityModule(pathname: string): WorkspaceSidebarModule {
   }
 }
 
-function buildAuditModule(pathname: string, search: string): WorkspaceSidebarModule {
+function buildAuditModule(
+  pathname: string,
+  search: string,
+  allowedRouteIdSet: ReadonlySet<AdminRouteId>,
+): WorkspaceSidebarModule | null {
+  if (!allowedRouteIdSet.has(ADMIN_AUDIT_ROUTE_ID)) {
+    return null
+  }
+
   const isActive = pathname.startsWith('/admin/audit')
   const detailMatch = matchPath('/admin/audit/:stream/:auditId', pathname)
   const detailStream = detailMatch?.params.stream

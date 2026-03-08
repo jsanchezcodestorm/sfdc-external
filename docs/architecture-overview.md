@@ -49,7 +49,7 @@ flowchart LR
 ### Frontend (React/Vite)
 - autenticazione tramite cookie di sessione backend
 - launcher home che mostra le app disponibili per l utente autenticato
-- routing protetto e navigazione dinamica guidata da ACL
+- routing protetto e navigazione dinamica guidata da ACL tramite `GET /navigation`
 - backoffice `/#/admin/apps` per il catalogo app e integrazione ACL
 - consumo endpoint backend senza accesso diretto a Salesforce
 

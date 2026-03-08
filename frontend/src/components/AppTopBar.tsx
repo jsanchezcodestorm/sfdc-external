@@ -5,6 +5,7 @@ import type { AvailableApp, AvailableAppEntity } from '../features/apps/app-type
 import { useAdminNavigation } from './useAdminNavigation'
 import { useRuntimeNavigation } from './useRuntimeNavigation'
 import { useAuth } from '../features/auth/useAuth'
+import { useRouteAccess } from '../features/route-access/useRouteAccess'
 
 type RuntimeWorkspaceTopBarProps = {
   apps: AvailableApp[]
@@ -24,13 +25,10 @@ export function AppTopBar({ runtimeWorkspace }: AppTopBarProps) {
   const { user, isBootstrapping, logout } = useAuth()
   const { isAdminRoute, toggleSidebar } = useAdminNavigation()
   const { isRuntimeRoute, toggleDrawer } = useRuntimeNavigation()
+  const { firstAllowedAdminPath, isLoading: isRouteAccessLoading } = useRouteAccess()
   const [isLoggingOut, setIsLoggingOut] = useState(false)
   const [logoutError, setLogoutError] = useState<string | null>(null)
-  const canAccessAdmin = Boolean(
-    user?.permissions.some((permission) =>
-      ['PORTAL_ADMIN', 'ADMIN', 'SUPERUSER'].includes(permission.trim().toUpperCase()),
-    ),
-  )
+  const canAccessAdmin = Boolean(user) && !isRouteAccessLoading && Boolean(firstAllowedAdminPath)
   const runtimeContext =
     Boolean(user) && isRuntimeRoute && !isAdminRoute ? runtimeWorkspace : undefined
 
@@ -105,9 +103,9 @@ export function AppTopBar({ runtimeWorkspace }: AppTopBarProps) {
           {!isBootstrapping && user ? (
             <>
               <span className="hidden text-sm text-slate-600 sm:inline">{user.email}</span>
-              {canAccessAdmin ? (
+              {canAccessAdmin && firstAllowedAdminPath ? (
                 <Link
-                  to="/admin/entity-config"
+                  to={firstAllowedAdminPath}
                   className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-2 text-sm font-medium text-sky-700 transition hover:border-sky-300 hover:bg-sky-100"
                 >
                   Admin Config
