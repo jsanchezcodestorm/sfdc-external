@@ -257,7 +257,7 @@ Regola obbligatoria in produzione:
 ### 8.2 Endpoint auth minimi
 
 - `POST /auth/google`
-- `GET /auth/session`
+- `GET /auth/session` (refresh user + permessi da PostgreSQL e rotazione cookie sessione)
 - `POST /auth/logout`
 - `GET /auth/csrf` (consigliato per bootstrap token CSRF)
 - opzionale: `login-as` per admin
@@ -273,7 +273,7 @@ Regola obbligatoria in produzione:
 
 Nota operativa:
 - `permissions` nel JWT interno derivano dal merge tra default permissions ACL globali e assegnazioni dirette al `Contact` salvate su PostgreSQL
-- una modifica alle assegnazioni dirette diventa effettiva dal login successivo
+- una modifica alle assegnazioni dirette diventa effettiva al prossimo `/auth/session` o nuovo login
 
 ### 8.4 Practice sicurezza sessione e CSRF
 

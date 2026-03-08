@@ -74,7 +74,7 @@ Repository tecnico aggiuntivo per catalogo app e ACL:
 2. Backend valida token e risolve Contact Salesforce attivo
 3. Backend emette JWT e lo salva in cookie HttpOnly
 4. Ogni chiamata API usa cookie + guard di sessione
-5. A ogni request autenticata il backend ricalcola i permission code effettivi come `defaultPermissions + acl_contact_permissions + admin fallback`
+5. `GET /auth/session` ricalcola i permission code effettivi come `defaultPermissions + acl_contact_permissions + admin fallback` e ruota il JWT; le altre request protette usano lo snapshot permessi gia presente nel cookie
 
 ### 6.2 Lettura dati protetta
 1. richiesta API autenticata
