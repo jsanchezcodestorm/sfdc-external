@@ -31,6 +31,7 @@ export interface AvailableAppEntity {
   description?: string;
   basePath?: string;
   objectApiName: string;
+  keyPrefix?: string;
 }
 
 export interface AvailableApp {

@@ -5,6 +5,7 @@ import { AuditModule } from '../audit/audit.module';
 import { AuthModule } from '../auth/auth.module';
 import { ResourceAccessService } from '../common/services/resource-access.service';
 import { PrismaModule } from '../prisma/prisma.module';
+import { SalesforceModule } from '../salesforce/salesforce.module';
 import { VisibilityModule } from '../visibility/visibility.module';
 
 import { AppsAdminConfigRepository } from './apps-admin-config.repository';
@@ -13,7 +14,7 @@ import { AppsController } from './apps.controller';
 import { AppsService } from './apps.service';
 
 @Module({
-  imports: [PrismaModule, AuthModule, AclModule, VisibilityModule, AuditModule],
+  imports: [PrismaModule, AuthModule, AclModule, VisibilityModule, AuditModule, SalesforceModule],
   controllers: [AppsController],
   providers: [AppsAdminConfigRepository, AppsAdminService, AppsService, ResourceAccessService],
   exports: [AppsAdminConfigRepository]
