@@ -5,9 +5,11 @@ import { getAppEntityBasePath } from '../features/apps/app-workspace-routing'
 import { useAppWorkspace } from '../features/apps/useAppWorkspace'
 import { GoogleSignInButton } from '../features/auth/components/GoogleSignInButton'
 import { useAuth } from '../features/auth/useAuth'
+import { useSetup } from '../features/setup/useSetup'
 import { fetchHealthCheck, type HealthCheckResponse } from '../lib/api'
 
 export function HomePage() {
+  const { brandName } = useSetup()
   const { user, isBootstrapping } = useAuth()
   const { error, loading, selectedApp, selectedEntities } = useAppWorkspace()
   const [health, setHealth] = useState<HealthCheckResponse | null>(null)
@@ -172,7 +174,7 @@ export function HomePage() {
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
         <header className="rounded-3xl border border-sky-100 bg-white/85 p-8 shadow-[0_24px_50px_-28px_rgba(2,132,199,0.55)] backdrop-blur-sm">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-700">
-            SFDC External
+            {brandName}
           </p>
           <h1 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">
             Workspace Launcher

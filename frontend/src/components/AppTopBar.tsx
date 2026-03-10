@@ -6,6 +6,7 @@ import { useAdminNavigation } from './useAdminNavigation'
 import { useRuntimeNavigation } from './useRuntimeNavigation'
 import { useAuth } from '../features/auth/useAuth'
 import { useRouteAccess } from '../features/route-access/useRouteAccess'
+import { useSetup } from '../features/setup/useSetup'
 
 type RuntimeWorkspaceTopBarProps = {
   apps: AvailableApp[]
@@ -22,6 +23,7 @@ type AppTopBarProps = {
 }
 
 export function AppTopBar({ runtimeWorkspace }: AppTopBarProps) {
+  const { brandName } = useSetup()
   const { user, isBootstrapping, logout } = useAuth()
   const { isAdminRoute, toggleSidebar } = useAdminNavigation()
   const { isRuntimeRoute, toggleDrawer } = useRuntimeNavigation()
@@ -76,7 +78,7 @@ export function AppTopBar({ runtimeWorkspace }: AppTopBarProps) {
             to="/"
             className="text-sm font-semibold uppercase tracking-[0.18em] text-sky-700 transition hover:text-sky-800"
           >
-            SFDC External
+            {brandName}
           </Link>
 
           {runtimeContext ? (

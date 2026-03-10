@@ -41,6 +41,8 @@ import { VisibilityRuleEditorPage } from './features/visibility-admin/pages/Visi
 import { VisibilityRulesPage } from './features/visibility-admin/pages/VisibilityRulesPage'
 import { AdminIndexRedirect } from './features/route-access/components/AdminIndexRedirect'
 import { RequireRouteAccess } from './features/route-access/components/RequireRouteAccess'
+import { RequireCompletedSetup } from './features/setup/components/RequireCompletedSetup'
+import { SetupPage } from './features/setup/pages/SetupPage'
 import {
   ADMIN_ACL_ROUTE_ID,
   ADMIN_APPS_ROUTE_ID,
@@ -56,131 +58,135 @@ import { LoginPage } from './pages/LoginPage'
 const router = createHashRouter(
   createRoutesFromElements(
     <>
-      <Route path="/login" element={<LoginPage />} />
+      <Route path="/setup" element={<SetupPage />} />
 
-      <Route element={<AppShell />}>
-        <Route element={<RequireRouteAccess routeId={HOME_ROUTE_ID} allowAnonymous />}>
-          <Route path="/" element={<HomePage />} />
-        </Route>
+      <Route element={<RequireCompletedSetup />}>
+        <Route path="/login" element={<LoginPage />} />
 
-        <Route element={<RequireAuth />}>
-          <Route path="/s/:entityId" element={<EntityRuntimePage />} />
-          <Route path="/s/:entityId/new" element={<EntityFormPage />} />
-          <Route path="/s/:entityId/:recordId" element={<EntityDetailPage />} />
-          <Route path="/s/:entityId/:recordId/edit" element={<EntityFormPage />} />
-          <Route
-            path="/s/:entityId/:recordId/related/:relatedListId"
-            element={<EntityRelatedListPage />}
-          />
-          <Route path="/s/:entityId/*" element={<EntityRouteFallbackPage />} />
+        <Route element={<AppShell />}>
+          <Route element={<RequireRouteAccess routeId={HOME_ROUTE_ID} allowAnonymous />}>
+            <Route path="/" element={<HomePage />} />
+          </Route>
 
-          <Route path="/admin" element={<AdminShell />}>
-            <Route index element={<AdminIndexRedirect />} />
+          <Route element={<RequireAuth />}>
+            <Route path="/s/:entityId" element={<EntityRuntimePage />} />
+            <Route path="/s/:entityId/new" element={<EntityFormPage />} />
+            <Route path="/s/:entityId/:recordId" element={<EntityDetailPage />} />
+            <Route path="/s/:entityId/:recordId/edit" element={<EntityFormPage />} />
+            <Route
+              path="/s/:entityId/:recordId/related/:relatedListId"
+              element={<EntityRelatedListPage />}
+            />
+            <Route path="/s/:entityId/*" element={<EntityRouteFallbackPage />} />
 
-            <Route element={<RequireRouteAccess routeId={ADMIN_ENTITY_CONFIG_ROUTE_ID} />}>
-              <Route path="entity-config" element={<EntityAdminConfigPage />} />
-              <Route path="entity-config/__new__/base" element={<EntityAdminConfigPage />} />
-              <Route path="entity-config/:entityId" element={<EntityAdminConfigPage />} />
-              <Route path="entity-config/:entityId/edit/base" element={<EntityAdminConfigPage />} />
-              <Route path="entity-config/:entityId/edit/list" element={<EntityAdminConfigPage />} />
-              <Route
-                path="entity-config/:entityId/edit/detail/:detailArea"
-                element={<EntityAdminConfigPage />}
-              />
-              <Route
-                path="entity-config/:entityId/edit/form/:formArea"
-                element={<EntityAdminConfigPage />}
-              />
-            </Route>
+            <Route path="/admin" element={<AdminShell />}>
+              <Route index element={<AdminIndexRedirect />} />
 
-            <Route element={<RequireRouteAccess routeId={ADMIN_APPS_ROUTE_ID} />}>
-              <Route path="apps" element={<AppsAdminListPage />} />
-              <Route path="apps/__new__" element={<AppsAdminEditorPage mode="create" />} />
-              <Route path="apps/:appId" element={<AppsAdminDetailPage />} />
-              <Route path="apps/:appId/edit" element={<AppsAdminEditorPage mode="edit" />} />
-            </Route>
-
-            <Route element={<RequireRouteAccess routeId={ADMIN_ACL_ROUTE_ID} />}>
-              <Route path="acl" element={<AclAdminLayout />}>
-                <Route index element={<Navigate replace to="permissions" />} />
-                <Route path="permissions" element={<AclPermissionsPage />} />
-                <Route path="permissions/__new__" element={<AclPermissionEditorPage mode="create" />} />
-                <Route path="permissions/:permissionCode" element={<AclPermissionDetailPage />} />
-                <Route path="permissions/:permissionCode/edit" element={<AclPermissionEditorPage mode="edit" />} />
-                <Route path="defaults" element={<AclDefaultsPage />} />
-                <Route path="contact-permissions" element={<AclContactPermissionsPage />} />
+              <Route element={<RequireRouteAccess routeId={ADMIN_ENTITY_CONFIG_ROUTE_ID} />}>
+                <Route path="entity-config" element={<EntityAdminConfigPage />} />
+                <Route path="entity-config/__new__/base" element={<EntityAdminConfigPage />} />
+                <Route path="entity-config/:entityId" element={<EntityAdminConfigPage />} />
+                <Route path="entity-config/:entityId/edit/base" element={<EntityAdminConfigPage />} />
+                <Route path="entity-config/:entityId/edit/list" element={<EntityAdminConfigPage />} />
                 <Route
-                  path="contact-permissions/__new__"
-                  element={<AclContactPermissionEditorPage mode="create" />}
+                  path="entity-config/:entityId/edit/detail/:detailArea"
+                  element={<EntityAdminConfigPage />}
                 />
                 <Route
-                  path="contact-permissions/:contactId/edit"
-                  element={<AclContactPermissionEditorPage mode="edit" />}
-                />
-                <Route path="resources" element={<AclResourcesPage />} />
-                <Route path="resources/__new__" element={<AclResourceEditorPage mode="create" />} />
-                <Route path="resources/:resourceId" element={<AclResourceDetailPage />} />
-                <Route path="resources/:resourceId/edit" element={<AclResourceEditorPage mode="edit" />} />
-              </Route>
-            </Route>
-
-            <Route element={<RequireRouteAccess routeId={ADMIN_QUERY_TEMPLATES_ROUTE_ID} />}>
-              <Route path="query-templates" element={<QueryTemplateAdminLayout />}>
-                <Route index element={<QueryTemplateListPage />} />
-                <Route path="__new__" element={<QueryTemplateEditorPage mode="create" />} />
-                <Route path=":templateId" element={<QueryTemplateDetailPage />} />
-                <Route
-                  path=":templateId/edit"
-                  element={<QueryTemplateEditorPage mode="edit" />}
+                  path="entity-config/:entityId/edit/form/:formArea"
+                  element={<EntityAdminConfigPage />}
                 />
               </Route>
-            </Route>
 
-            <Route element={<RequireRouteAccess routeId={ADMIN_VISIBILITY_ROUTE_ID} />}>
-              <Route path="visibility" element={<VisibilityAdminLayout />}>
-                <Route index element={<Navigate replace to="cones" />} />
-                <Route path="cones" element={<VisibilityConesPage />} />
-                <Route path="cones/__new__" element={<VisibilityConeEditorPage mode="create" />} />
-                <Route path="cones/:coneId" element={<VisibilityConeDetailPage />} />
-                <Route
-                  path="cones/:coneId/edit"
-                  element={<VisibilityConeEditorPage mode="edit" />}
-                />
-                <Route path="rules" element={<VisibilityRulesPage />} />
-                <Route path="rules/__new__" element={<VisibilityRuleEditorPage mode="create" />} />
-                <Route path="rules/:ruleId" element={<VisibilityRuleDetailPage />} />
-                <Route
-                  path="rules/:ruleId/edit"
-                  element={<VisibilityRuleEditorPage mode="edit" />}
-                />
-                <Route path="assignments" element={<VisibilityAssignmentsPage />} />
-                <Route
-                  path="assignments/__new__"
-                  element={<VisibilityAssignmentEditorPage mode="create" />}
-                />
-                <Route
-                  path="assignments/:assignmentId"
-                  element={<VisibilityAssignmentDetailPage />}
-                />
-                <Route
-                  path="assignments/:assignmentId/edit"
-                  element={<VisibilityAssignmentEditorPage mode="edit" />}
-                />
-                <Route path="debug" element={<VisibilityDebugPage />} />
+              <Route element={<RequireRouteAccess routeId={ADMIN_APPS_ROUTE_ID} />}>
+                <Route path="apps" element={<AppsAdminListPage />} />
+                <Route path="apps/__new__" element={<AppsAdminEditorPage mode="create" />} />
+                <Route path="apps/:appId" element={<AppsAdminDetailPage />} />
+                <Route path="apps/:appId/edit" element={<AppsAdminEditorPage mode="edit" />} />
               </Route>
-            </Route>
 
-            <Route element={<RequireRouteAccess routeId={ADMIN_AUDIT_ROUTE_ID} />}>
-              <Route path="audit" element={<AuditAdminPage />} />
-              <Route path="audit/:stream/:auditId" element={<AuditAdminDetailPage />} />
+              <Route element={<RequireRouteAccess routeId={ADMIN_ACL_ROUTE_ID} />}>
+                <Route path="acl" element={<AclAdminLayout />}>
+                  <Route index element={<Navigate replace to="permissions" />} />
+                  <Route path="permissions" element={<AclPermissionsPage />} />
+                  <Route path="permissions/__new__" element={<AclPermissionEditorPage mode="create" />} />
+                  <Route path="permissions/:permissionCode" element={<AclPermissionDetailPage />} />
+                  <Route path="permissions/:permissionCode/edit" element={<AclPermissionEditorPage mode="edit" />} />
+                  <Route path="defaults" element={<AclDefaultsPage />} />
+                  <Route path="contact-permissions" element={<AclContactPermissionsPage />} />
+                  <Route
+                    path="contact-permissions/__new__"
+                    element={<AclContactPermissionEditorPage mode="create" />}
+                  />
+                  <Route
+                    path="contact-permissions/:contactId/edit"
+                    element={<AclContactPermissionEditorPage mode="edit" />}
+                  />
+                  <Route path="resources" element={<AclResourcesPage />} />
+                  <Route path="resources/__new__" element={<AclResourceEditorPage mode="create" />} />
+                  <Route path="resources/:resourceId" element={<AclResourceDetailPage />} />
+                  <Route path="resources/:resourceId/edit" element={<AclResourceEditorPage mode="edit" />} />
+                </Route>
+              </Route>
+
+              <Route element={<RequireRouteAccess routeId={ADMIN_QUERY_TEMPLATES_ROUTE_ID} />}>
+                <Route path="query-templates" element={<QueryTemplateAdminLayout />}>
+                  <Route index element={<QueryTemplateListPage />} />
+                  <Route path="__new__" element={<QueryTemplateEditorPage mode="create" />} />
+                  <Route path=":templateId" element={<QueryTemplateDetailPage />} />
+                  <Route
+                    path=":templateId/edit"
+                    element={<QueryTemplateEditorPage mode="edit" />}
+                  />
+                </Route>
+              </Route>
+
+              <Route element={<RequireRouteAccess routeId={ADMIN_VISIBILITY_ROUTE_ID} />}>
+                <Route path="visibility" element={<VisibilityAdminLayout />}>
+                  <Route index element={<Navigate replace to="cones" />} />
+                  <Route path="cones" element={<VisibilityConesPage />} />
+                  <Route path="cones/__new__" element={<VisibilityConeEditorPage mode="create" />} />
+                  <Route path="cones/:coneId" element={<VisibilityConeDetailPage />} />
+                  <Route
+                    path="cones/:coneId/edit"
+                    element={<VisibilityConeEditorPage mode="edit" />}
+                  />
+                  <Route path="rules" element={<VisibilityRulesPage />} />
+                  <Route path="rules/__new__" element={<VisibilityRuleEditorPage mode="create" />} />
+                  <Route path="rules/:ruleId" element={<VisibilityRuleDetailPage />} />
+                  <Route
+                    path="rules/:ruleId/edit"
+                    element={<VisibilityRuleEditorPage mode="edit" />}
+                  />
+                  <Route path="assignments" element={<VisibilityAssignmentsPage />} />
+                  <Route
+                    path="assignments/__new__"
+                    element={<VisibilityAssignmentEditorPage mode="create" />}
+                  />
+                  <Route
+                    path="assignments/:assignmentId"
+                    element={<VisibilityAssignmentDetailPage />}
+                  />
+                  <Route
+                    path="assignments/:assignmentId/edit"
+                    element={<VisibilityAssignmentEditorPage mode="edit" />}
+                  />
+                  <Route path="debug" element={<VisibilityDebugPage />} />
+                </Route>
+              </Route>
+
+              <Route element={<RequireRouteAccess routeId={ADMIN_AUDIT_ROUTE_ID} />}>
+                <Route path="audit" element={<AuditAdminPage />} />
+                <Route path="audit/:stream/:auditId" element={<AuditAdminDetailPage />} />
+              </Route>
             </Route>
           </Route>
-        </Route>
 
-        <Route
-          path="*"
-          element={<Navigate replace to="/" />}
-        />
+          <Route
+            path="*"
+            element={<Navigate replace to="/" />}
+          />
+        </Route>
       </Route>
     </>,
   ),

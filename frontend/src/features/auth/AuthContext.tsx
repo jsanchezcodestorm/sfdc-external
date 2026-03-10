@@ -8,6 +8,7 @@ import {
 } from 'react'
 
 import { apiFetch, ApiError, clearCsrfToken, setCsrfToken } from '../../lib/api'
+import { useSetup } from '../setup/useSetup'
 
 import { AuthContext, type AuthContextValue } from './auth-context'
 import type { AuthSessionResponse, SessionUser } from './auth-types'
@@ -24,6 +25,7 @@ function isMissingSessionError(error: unknown): boolean {
 }
 
 export function AuthProvider({ children }: AuthProviderProps) {
+  const { isLoading: isSetupLoading, status: setupStatus } = useSetup()
   const [user, setUser] = useState<SessionUser | null>(null)
   const [isBootstrapping, setIsBootstrapping] = useState(true)
 
@@ -69,6 +71,24 @@ export function AuthProvider({ children }: AuthProviderProps) {
   useEffect(() => {
     let isCancelled = false
 
+    if (isSetupLoading) {
+      return () => {
+        isCancelled = true
+      }
+    }
+
+    if (setupStatus?.state !== 'completed') {
+      clearCsrfToken()
+      setUser(null)
+      setIsBootstrapping(false)
+
+      return () => {
+        isCancelled = true
+      }
+    }
+
+    setIsBootstrapping(true)
+
     const bootstrap = async () => {
       try {
         await restoreSession()
@@ -98,7 +118,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     return () => {
       isCancelled = true
     }
-  }, [restoreSession])
+  }, [isSetupLoading, restoreSession, setupStatus?.state])
 
   const value = useMemo<AuthContextValue>(
     () => ({
