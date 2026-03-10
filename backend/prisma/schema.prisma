@@ -35,6 +35,11 @@ enum AclResourceKind {
   ROUTE
 }
 
+enum SetupSalesforceMode {
+  USERNAME_PASSWORD
+  ACCESS_TOKEN
+}
+
 model VisibilityPolicyMeta {
   id            Int      @id @default(1)
   policyVersion BigInt   @default(1)
@@ -252,6 +257,19 @@ model SalesforceSObjectDescribeCache {
   @@index([cacheScope, objectApiName, apiVersion])
   @@index([expiresAt])
   @@map("salesforce_sobject_describe_cache")
+}
+
+model InstanceSetupRecord {
+  id                         Int                 @id @default(1)
+  siteName                   String              @db.VarChar(128)
+  adminEmail                 String              @db.VarChar(320)
+  salesforceMode             SetupSalesforceMode
+  salesforceConfigEncrypted  String              @db.Text
+  completedAt                DateTime
+  createdAt                  DateTime            @default(now())
+  updatedAt                  DateTime            @updatedAt
+
+  @@map("instance_setup")
 }
 
 model EntityQueryCursorCache {

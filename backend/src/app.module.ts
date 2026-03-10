@@ -12,6 +12,7 @@ import { NavigationModule } from './navigation/navigation.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { QueryModule } from './query/query.module';
 import { SalesforceModule } from './salesforce/salesforce.module';
+import { SetupModule } from './setup/setup.module';
 import { VisibilityModule } from './visibility/visibility.module';
 
 @Module({
@@ -22,6 +23,7 @@ import { VisibilityModule } from './visibility/visibility.module';
     }),
     AuditModule,
     PrismaModule,
+    SetupModule,
     AclModule,
     AppsModule,
     AuthModule,
