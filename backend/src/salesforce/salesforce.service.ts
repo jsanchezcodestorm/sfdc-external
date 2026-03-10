@@ -8,6 +8,10 @@ import type { Connection } from 'jsforce';
 
 import { AuditWriteService } from '../audit/audit-write.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { SetupService } from '../setup/setup.service';
+import type { SetupSalesforceConfig } from '../setup/setup.types';
+
+import { SalesforceNotConfiguredException } from './salesforce-not-configured.exception';
 
 interface SalesforceObjectSummary {
   name: string;
@@ -69,11 +73,13 @@ export class SalesforceService {
   private readonly describeCacheTtlMs: number;
   private readonly describeCacheStaleWhileRevalidateMs: number;
   private connection: Connection | null = null;
+  private connectionContext: SalesforceConnectionContext | null = null;
 
   constructor(
     private readonly configService: ConfigService,
     private readonly prismaService: PrismaService,
-    private readonly auditWriteService: AuditWriteService
+    private readonly auditWriteService: AuditWriteService,
+    private readonly setupService: SetupService
   ) {
     this.describeCacheTtlMs = this.readPositiveIntConfig('SALESFORCE_DESCRIBE_CACHE_TTL_MS', DEFAULT_DESCRIBE_CACHE_TTL_MS);
     this.describeCacheStaleWhileRevalidateMs = this.readPositiveIntConfig(
@@ -497,6 +503,10 @@ export class SalesforceService {
   }
 
   private resolveConnectionContext(connection: Connection): SalesforceConnectionContext {
+    if (this.connectionContext) {
+      return this.connectionContext;
+    }
+
     const configuredApiVersion = this.configService.get<string>('SALESFORCE_API_VERSION')?.trim();
     const resolvedApiVersion =
       configuredApiVersion && configuredApiVersion.length > 0
@@ -504,13 +514,9 @@ export class SalesforceService {
         : this.readStringProperty(connection, 'version') ?? 'unknown';
 
     const organizationId = this.readOrganizationId(connection);
-    const instanceUrl =
-      this.configService.get<string>('SALESFORCE_INSTANCE_URL')?.trim() ??
-      this.readStringProperty(connection, 'instanceUrl') ??
-      this.configService.get<string>('SALESFORCE_LOGIN_URL')?.trim();
-    const username = this.configService.get<string>('SALESFORCE_USERNAME')?.trim();
+    const instanceUrl = this.readStringProperty(connection, 'instanceUrl');
 
-    const scopeParts = [organizationId, instanceUrl, username].filter(
+    const scopeParts = [organizationId, instanceUrl].filter(
       (part): part is string => typeof part === 'string' && part.length > 0
     );
 
@@ -627,29 +633,56 @@ export class SalesforceService {
       return this.connection;
     }
 
-    const accessToken = this.configService.get<string>('SALESFORCE_ACCESS_TOKEN');
-    const instanceUrl = this.configService.get<string>('SALESFORCE_INSTANCE_URL');
-
-    if (accessToken && instanceUrl) {
-      this.connection = new jsforce.Connection({ accessToken, instanceUrl });
-      return this.connection;
+    const setup = await this.setupService.getCompletedSetup();
+    if (!setup) {
+      throw new SalesforceNotConfiguredException();
     }
 
-    const username = this.configService.get<string>('SALESFORCE_USERNAME');
-    const password = this.configService.get<string>('SALESFORCE_PASSWORD');
-    const securityToken = this.configService.get<string>('SALESFORCE_SECURITY_TOKEN', '');
-    const loginUrl = this.configService.get<string>('SALESFORCE_LOGIN_URL', 'https://login.salesforce.com');
-
-    if (!username || !password) {
-      throw new ServiceUnavailableException('Salesforce credentials are not configured');
-    }
-
-    const connection = new jsforce.Connection({ loginUrl });
-    await connection.login(username, `${password}${securityToken}`);
+    const connection = await this.createConnectionFromSetup(setup.salesforce);
+    this.connectionContext = this.buildConnectionContext(connection, setup.salesforce);
 
     this.logger.log('Salesforce connection established.');
     this.connection = connection;
     return connection;
+  }
+
+  private async createConnectionFromSetup(config: SetupSalesforceConfig): Promise<Connection> {
+    if (config.mode === 'access-token') {
+      const connection = new jsforce.Connection({
+        accessToken: config.accessToken,
+        instanceUrl: config.instanceUrl
+      });
+      await connection.identity();
+      return connection;
+    }
+
+    const connection = new jsforce.Connection({ loginUrl: config.loginUrl });
+    await connection.login(config.username, `${config.password}${config.securityToken ?? ''}`);
+    return connection;
+  }
+
+  private buildConnectionContext(
+    connection: Connection,
+    config: SetupSalesforceConfig
+  ): SalesforceConnectionContext {
+    const configuredApiVersion = this.configService.get<string>('SALESFORCE_API_VERSION')?.trim();
+    const resolvedApiVersion =
+      configuredApiVersion && configuredApiVersion.length > 0
+        ? configuredApiVersion
+        : this.readStringProperty(connection, 'version') ?? 'unknown';
+    const organizationId = this.readOrganizationId(connection);
+    const instanceUrl =
+      this.readStringProperty(connection, 'instanceUrl') ??
+      (config.mode === 'access-token' ? config.instanceUrl : config.loginUrl);
+    const scopeIdentity = config.mode === 'access-token' ? 'access-token' : config.username;
+    const scopeParts = [organizationId, instanceUrl, scopeIdentity].filter(
+      (part): part is string => typeof part === 'string' && part.length > 0
+    );
+
+    return {
+      cacheScope: scopeParts.length > 0 ? scopeParts.join('|') : 'default',
+      apiVersion: resolvedApiVersion
+    };
   }
 
   private assertReadOnlySoql(soql: string): void {

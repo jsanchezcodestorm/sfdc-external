@@ -7,6 +7,7 @@ import { sign, verify, type JwtPayload } from 'jsonwebtoken';
 import { AclContactPermissionsRepository } from '../acl/acl-contact-permissions.repository';
 import { AclService } from '../acl/acl.service';
 import { SalesforceService } from '../salesforce/salesforce.service';
+import { SetupService } from '../setup/setup.service';
 
 import type { SessionUser } from './session-user.interface';
 
@@ -22,12 +23,12 @@ export class AuthService {
   private readonly googleClient: OAuth2Client;
   private readonly jwtSecret: string;
   private readonly jwtExpiresInSeconds: number;
-  private readonly adminFallbackEmail: string | null;
 
   constructor(
     private readonly configService: ConfigService,
     private readonly aclService: AclService,
     private readonly aclContactPermissionsRepository: AclContactPermissionsRepository,
+    private readonly setupService: SetupService,
     @Inject(forwardRef(() => SalesforceService))
     private readonly salesforceService: SalesforceService
   ) {
@@ -36,7 +37,6 @@ export class AuthService {
 
     this.jwtSecret = this.configService.get<string>('JWT_SECRET', 'change-me-in-production');
     this.jwtExpiresInSeconds = this.readPositiveIntEnv('JWT_EXPIRES_IN_SECONDS', 3600);
-    this.adminFallbackEmail = this.readNormalizedEmailEnv('ADMIN_FALLBACK_EMAIL');
   }
 
   async loginWithGoogleIdToken(idToken: string): Promise<{ token: string; user: SessionUser }> {
@@ -180,8 +180,9 @@ export class AuthService {
       ...(await this.aclContactPermissionsRepository.listPermissionCodesByContactId(contactId))
     ];
     const userEmail = this.normalizeEmail(email);
+    const bootstrapAdminEmail = this.normalizeEmail(await this.setupService.getCompletedAdminEmail());
 
-    if (this.adminFallbackEmail && userEmail === this.adminFallbackEmail) {
+    if (bootstrapAdminEmail && userEmail === bootstrapAdminEmail) {
       permissions.push('PORTAL_ADMIN');
     }
 
@@ -218,11 +219,7 @@ export class AuthService {
     return fallback;
   }
 
-  private readNormalizedEmailEnv(key: string): string | null {
-    return this.normalizeEmail(this.configService.get<string>(key));
-  }
-
-  private normalizeEmail(value?: string): string | null {
+  private normalizeEmail(value?: string | null): string | null {
     const normalized = value?.trim().toLowerCase();
     return normalized ? normalized : null;
   }

@@ -2,6 +2,7 @@ import { forwardRef, Module } from '@nestjs/common';
 
 import { AclModule } from '../acl/acl.module';
 import { SalesforceModule } from '../salesforce/salesforce.module';
+import { SetupModule } from '../setup/setup.module';
 
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
@@ -10,7 +11,11 @@ import { CsrfGuard } from './guards/csrf.guard';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 
 @Module({
-  imports: [forwardRef(() => AclModule), forwardRef(() => SalesforceModule)],
+  imports: [
+    forwardRef(() => AclModule),
+    forwardRef(() => SalesforceModule),
+    forwardRef(() => SetupModule),
+  ],
   controllers: [AuthController],
   providers: [AuthService, CsrfService, JwtAuthGuard, CsrfGuard],
   exports: [AuthService, CsrfService, JwtAuthGuard, CsrfGuard]

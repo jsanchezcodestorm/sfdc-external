@@ -8,7 +8,7 @@ const CONTACT_ID = '003000000000001AAA';
 function createAuthService(options?: {
   defaultPermissions?: string[];
   explicitPermissions?: string[];
-  adminFallbackEmail?: string;
+  bootstrapAdminEmail?: string;
   userEmail?: string;
 }) {
   const state = {
@@ -23,10 +23,6 @@ function createAuthService(options?: {
         JWT_SECRET: 'jwt-secret',
         JWT_EXPIRES_IN_SECONDS: '3600',
       };
-
-      if (options?.adminFallbackEmail) {
-        values.ADMIN_FALLBACK_EMAIL = options.adminFallbackEmail;
-      }
 
       return values[key] ?? fallback;
     },
@@ -50,10 +46,17 @@ function createAuthService(options?: {
     },
   };
 
+  const setupService = {
+    async getCompletedAdminEmail() {
+      return options?.bootstrapAdminEmail ?? null;
+    },
+  };
+
   const service = new AuthService(
     configService as never,
     aclService as never,
     aclContactPermissionsRepository as never,
+    setupService as never,
     {} as never,
   );
 
@@ -69,11 +72,11 @@ function createAuthService(options?: {
   return { service, state };
 }
 
-test('loginWithGoogleIdToken merges default, explicit, and admin fallback permissions', async () => {
+test('loginWithGoogleIdToken merges default, explicit, and setup bootstrap admin permissions', async () => {
   const { service, state } = createAuthService({
     defaultPermissions: ['PORTAL_USER'],
     explicitPermissions: ['ACCOUNT_READ', 'PORTAL_USER'],
-    adminFallbackEmail: 'admin@example.com',
+    bootstrapAdminEmail: 'admin@example.com',
     userEmail: 'admin@example.com',
   });
 

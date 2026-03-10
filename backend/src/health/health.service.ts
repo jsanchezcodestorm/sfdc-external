@@ -1,9 +1,10 @@
 import { Injectable } from '@nestjs/common';
 
 import { PrismaService } from '../prisma/prisma.service';
+import { SalesforceNotConfiguredException } from '../salesforce/salesforce-not-configured.exception';
 import { SalesforceService } from '../salesforce/salesforce.service';
 
-type DependencyStatus = 'up' | 'down';
+type DependencyStatus = 'up' | 'down' | 'not_configured';
 
 type DependencyCheckResult = {
   status: DependencyStatus;
@@ -73,6 +74,14 @@ export class HealthService {
         latencyMs: Date.now() - startedAt
       };
     } catch (error) {
+      if (error instanceof SalesforceNotConfiguredException) {
+        return {
+          status: 'not_configured',
+          latencyMs: Date.now() - startedAt,
+          error: this.normalizeError(error)
+        };
+      }
+
       return {
         status: 'down',
         latencyMs: Date.now() - startedAt,
