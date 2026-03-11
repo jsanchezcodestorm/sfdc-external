@@ -5,7 +5,10 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { SetupSalesforceMode as PrismaSetupSalesforceMode } from '@prisma/client';
-import jsforce from 'jsforce';
+import jsforce, { type Connection } from 'jsforce';
+
+import { LocalCredentialProvisioningService } from '../auth/local-credential-provisioning.service';
+import { PrismaService } from '../prisma/prisma.service';
 
 import { SetupSecretsService } from './setup-secrets.service';
 import { SetupRepository } from './setup.repository';
@@ -17,15 +20,23 @@ import type {
 } from './setup.types';
 import {
   normalizeAdminEmail,
+  normalizeBootstrapPassword,
   normalizeSalesforceSetupConfig,
   normalizeSiteName,
 } from './setup.validation';
+
+interface SetupContactRecord {
+  Id: string;
+  Email?: string;
+}
 
 @Injectable()
 export class SetupService {
   constructor(
     private readonly setupRepository: SetupRepository,
-    private readonly setupSecretsService: SetupSecretsService
+    private readonly setupSecretsService: SetupSecretsService,
+    private readonly localCredentialProvisioningService: LocalCredentialProvisioningService,
+    private readonly prismaService: PrismaService
   ) {}
 
   async getStatus(): Promise<SetupStatusResponse> {
@@ -34,14 +45,14 @@ export class SetupService {
     if (!record?.completedAt) {
       return {
         state: 'pending',
-        googleConfigMode: 'env',
+        authConfigMode: 'database',
       };
     }
 
     return {
       state: 'completed',
       siteName: record.siteName,
-      googleConfigMode: 'env',
+      authConfigMode: 'database',
     };
   }
 
@@ -73,28 +84,49 @@ export class SetupService {
   async completeSetup(payload: {
     siteName: unknown;
     adminEmail: unknown;
+    bootstrapPassword: unknown;
     salesforce: unknown;
   }): Promise<SetupStatusResponse> {
     await this.assertPending();
 
     const siteName = normalizeSiteName(payload.siteName);
     const adminEmail = normalizeAdminEmail(payload.adminEmail);
+    const bootstrapPassword = normalizeBootstrapPassword(payload.bootstrapPassword);
     const salesforce = normalizeSalesforceSetupConfig(payload.salesforce);
+    const completedAt = new Date();
 
     await this.probeSalesforceConnection(salesforce);
+    const bootstrapContact = await this.resolveBootstrapAdminContact(salesforce, adminEmail);
 
-    await this.setupRepository.saveCompletedSetup({
-      siteName,
-      adminEmail,
-      salesforceMode: this.mapSalesforceMode(salesforce.mode),
-      salesforceConfigEncrypted: this.setupSecretsService.encryptJson(salesforce),
-      completedAt: new Date(),
+    await this.prismaService.$transaction(async (transaction) => {
+      await this.setupRepository.saveCompletedSetup(
+        {
+          siteName,
+          adminEmail,
+          salesforceMode: this.mapSalesforceMode(salesforce.mode),
+          salesforceConfigEncrypted: this.setupSecretsService.encryptJson(salesforce),
+          completedAt
+        },
+        transaction
+      );
+
+      await this.localCredentialProvisioningService.upsertResolvedCredential(
+        {
+          contactId: bootstrapContact.id,
+          username: bootstrapContact.email,
+          password: bootstrapPassword,
+          enabled: true
+        },
+        {
+          tx: transaction
+        }
+      );
     });
 
     return {
       state: 'completed',
       siteName,
-      googleConfigMode: 'env',
+      authConfigMode: 'database',
     };
   }
 
@@ -110,17 +142,7 @@ export class SetupService {
     config: SetupSalesforceConfig
   ): Promise<SetupSalesforceTestResponse> {
     try {
-      const connection =
-        config.mode === 'username-password'
-          ? new jsforce.Connection({ loginUrl: config.loginUrl })
-          : new jsforce.Connection({
-              accessToken: config.accessToken,
-              instanceUrl: config.instanceUrl,
-            });
-
-      if (config.mode === 'username-password') {
-        await connection.login(config.username, `${config.password}${config.securityToken ?? ''}`);
-      }
+      const connection = await this.openSetupSalesforceConnection(config);
 
       const identity = (await connection.identity()) as Record<string, unknown>;
 
@@ -137,6 +159,61 @@ export class SetupService {
         `Salesforce connection failed: ${this.normalizeErrorMessage(error)}`
       );
     }
+  }
+
+  private async resolveBootstrapAdminContact(
+    config: SetupSalesforceConfig,
+    adminEmail: string
+  ): Promise<{ id: string; email: string }> {
+    const connection = await this.openSetupSalesforceConnection(config);
+    const normalizedAdminEmail = normalizeAdminEmail(adminEmail);
+    const result = (await connection.query(
+      [
+        'SELECT Id, Email',
+        'FROM Contact',
+        `WHERE Email = '${this.escapeSoqlLiteral(normalizedAdminEmail)}'`,
+        'LIMIT 2'
+      ].join(' ')
+    )) as { records?: SetupContactRecord[] };
+    const records = Array.isArray(result.records) ? result.records : [];
+
+    if (records.length === 0) {
+      throw new BadRequestException(
+        'adminEmail must match an existing Salesforce Contact before completing setup'
+      );
+    }
+
+    if (records.length > 1) {
+      throw new BadRequestException(
+        'adminEmail must map to exactly one Salesforce Contact before completing setup'
+      );
+    }
+
+    const contact = records[0];
+    const contactEmail = normalizeAdminEmail(contact.Email ?? normalizedAdminEmail, 'adminEmail');
+
+    return {
+      id: String(contact.Id),
+      email: contactEmail
+    };
+  }
+
+  private async openSetupSalesforceConnection(
+    config: SetupSalesforceConfig
+  ): Promise<Connection> {
+    const connection =
+      config.mode === 'username-password'
+        ? new jsforce.Connection({ loginUrl: config.loginUrl })
+        : new jsforce.Connection({
+            accessToken: config.accessToken,
+            instanceUrl: config.instanceUrl
+          });
+
+    if (config.mode === 'username-password') {
+      await connection.login(config.username, `${config.password}${config.securityToken ?? ''}`);
+    }
+
+    return connection;
   }
 
   private readStoredSalesforceConfig(value: string): SetupSalesforceConfig {
@@ -184,5 +261,9 @@ export class SetupService {
     }
 
     return 'Unknown error';
+  }
+
+  private escapeSoqlLiteral(value: string): string {
+    return value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
   }
 }

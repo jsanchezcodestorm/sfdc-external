@@ -9,6 +9,10 @@ export class CompleteSetupDto {
   @MaxLength(320)
   adminEmail!: string;
 
+  @IsString()
+  @MaxLength(512)
+  bootstrapPassword!: string;
+
   @IsDefined()
   @IsObject()
   salesforce!: Record<string, unknown>;

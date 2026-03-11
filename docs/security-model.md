@@ -41,7 +41,7 @@ Attori:
 - utente non autenticato
 - amministratore applicativo
 - servizio backend
-- servizi esterni (Google, Salesforce)
+- servizi esterni (identity provider, Salesforce)
 
 Minacce prioritarie:
 - bypass ACL su endpoint dati
@@ -56,14 +56,14 @@ Minacce prioritarie:
 - browser -> backend API
 - backend -> Salesforce API
 - backend -> PostgreSQL
-- backend -> servizi Google
+- backend -> identity provider OIDC
 - CI/CD -> runtime environment
 
 Ogni attraversamento boundary richiede validazione esplicita e logging di sicurezza.
 
 ## 7) Autenticazione
 Metodo:
-- login federato Google
+- login OIDC multi-provider o locale username/password
 - validazione identita lato backend
 - mapping su Contact Salesforce attivo
 

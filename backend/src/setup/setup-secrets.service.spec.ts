@@ -57,3 +57,14 @@ test('constructor rejects invalid SETUP_SECRETS_KEY formats', () => {
       error.message === 'SETUP_SECRETS_KEY must be a hex or base64 encoded 32-byte key',
   );
 });
+
+test('deriveScopedSecret is deterministic per context and differs across contexts', () => {
+  const service = createService('11'.repeat(32));
+
+  const authSecret = service.deriveScopedSecret('local-credential-password:v1');
+  const sameAuthSecret = service.deriveScopedSecret('local-credential-password:v1');
+  const otherSecret = service.deriveScopedSecret('other-context:v1');
+
+  assert.equal(Buffer.compare(authSecret, sameAuthSecret), 0);
+  assert.notEqual(Buffer.compare(authSecret, otherSecret), 0);
+});

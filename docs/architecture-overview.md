@@ -26,7 +26,7 @@ Questo documento descrive l architettura target del middleware che integra Sales
 flowchart LR
   U["Utente"] --> FE["Frontend React/Vite"]
   FE -->|"/api + cookie sessione"| BE["Backend NestJS"]
-  BE --> AUTH["Auth Module (Google + JWT cookie)"]
+  BE --> AUTH["Auth Module (OIDC/local + JWT cookie)"]
   BE --> ACL["ACL Module"]
   BE --> QE["Query + Entities Engine"]
   BE --> VIS["Visibility Engine (coni)"]
@@ -38,7 +38,7 @@ flowchart LR
 ## 5) Componenti principali
 
 ### Backend (NestJS)
-- `Auth`: login Google, sessione JWT HttpOnly, restore session
+- `Auth`: login OIDC multi-provider e locale, sessione JWT HttpOnly, restore session
 - `ACL`: risorse `rest:*`, `entity:*`, `query:*`, `route:*`
 - `Apps Catalog`: catalogo app, associazioni app -> entity e permission -> app
 - `Salesforce Connector`: query/CRUD/describe/search centralizzati via `jsforce`
@@ -70,10 +70,10 @@ Repository tecnico aggiuntivo per catalogo app e ACL:
 ## 6) Flussi chiave
 
 ### 6.1 Login e sessione
-1. Frontend ottiene credenziale Google
-2. Backend valida token e risolve Contact Salesforce attivo
-3. Backend emette JWT e lo salva in cookie HttpOnly
-4. Ogni chiamata API usa cookie + guard di sessione
+1. Il setup iniziale crea la prima credenziale locale admin a partire da `adminEmail` e password bootstrap
+2. Per OIDC il browser avvia `GET /auth/oidc/:providerId/start`; per login locale usa `POST /auth/login/password`
+3. Backend valida identita esterna o credenziali locali e risolve Contact Salesforce attivo
+4. Backend emette JWT e lo salva in cookie HttpOnly
 5. `GET /auth/session` ricalcola i permission code effettivi come `defaultPermissions + acl_contact_permissions + admin fallback` e ruota il JWT; le altre request protette usano lo snapshot permessi gia presente nel cookie
 
 ### 6.2 Lettura dati protetta
@@ -97,7 +97,7 @@ Repository tecnico aggiuntivo per catalogo app e ACL:
 6. Il frontend salva in `localStorage` l `appId` selezionato per utente e usa i path entity esistenti `/#/s/:entityId`
 
 ## 7) Modello di sicurezza
-- autenticazione federata Google + sessione cookie sicura
+- autenticazione OIDC multi-provider e locale + sessione cookie sicura
 - ACL obbligatoria su endpoint e risorse
 - visibility centralizzata row-level e field-level
 - query raw Salesforce limitata ad amministrazione/incident e disabilitata in produzione

@@ -11,6 +11,6 @@ import { SetupService } from './setup.service';
   imports: [forwardRef(() => AuthModule)],
   controllers: [SetupController],
   providers: [SetupRepository, SetupSecretsService, SetupService],
-  exports: [SetupService],
+  exports: [SetupSecretsService, SetupService],
 })
 export class SetupModule {}

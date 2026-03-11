@@ -1,9 +1,9 @@
-export type SetupGoogleConfigMode = 'env';
+export type SetupAuthConfigMode = 'database';
 
 export interface SetupStatusResponse {
   state: 'pending' | 'completed';
   siteName?: string;
-  googleConfigMode: SetupGoogleConfigMode;
+  authConfigMode: SetupAuthConfigMode;
 }
 
 export type SetupSalesforceModeValue = 'username-password' | 'access-token';

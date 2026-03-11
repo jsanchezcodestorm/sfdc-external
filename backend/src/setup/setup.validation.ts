@@ -19,6 +19,13 @@ export function normalizeAdminEmail(value: unknown, fieldName = 'adminEmail'): s
   return normalized;
 }
 
+export function normalizeBootstrapPassword(
+  value: unknown,
+  fieldName = 'bootstrapPassword'
+): string {
+  return normalizeString(value, fieldName, 512);
+}
+
 export function normalizeSalesforceSetupConfig(
   value: unknown,
   fieldName = 'salesforce'
