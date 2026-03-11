@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 
+import { AclAdminConfigService } from '../../acl/acl-admin-config.service';
 import { AclService } from '../../acl/acl.service';
 import { AuditWriteService } from '../../audit/audit-write.service';
 import { ResourceAccessService } from '../../common/services/resource-access.service';
@@ -109,6 +110,7 @@ export class EntityAdminConfigService {
   private readonly salesforceFieldRefreshPromises = new Map<string, Promise<SalesforceFieldSuggestion[]>>();
 
   constructor(
+    private readonly aclAdminConfigService: AclAdminConfigService,
     private readonly aclService: AclService,
     private readonly auditWriteService: AuditWriteService,
     private readonly resourceAccessService: ResourceAccessService,
@@ -143,6 +145,7 @@ export class EntityAdminConfigService {
       throw new ConflictException(`Entity config ${entity.id} already exists`);
     }
 
+    await this.aclAdminConfigService.ensureEntityResource(entity.id);
     await this.repository.upsertEntityConfig(entity);
     await this.auditWriteService.recordApplicationSuccessOrThrow({
       action: 'ENTITY_CONFIG_CREATE',
@@ -185,6 +188,7 @@ export class EntityAdminConfigService {
 
     const normalizedEntityConfig = this.normalizeEntityConfig(entityId, payload.entity);
 
+    await this.aclAdminConfigService.ensureEntityResource(entityId);
     await this.repository.upsertEntityConfig(normalizedEntityConfig);
     await this.auditWriteService.recordApplicationSuccessOrThrow({
       action: 'ENTITY_CONFIG_UPDATE',

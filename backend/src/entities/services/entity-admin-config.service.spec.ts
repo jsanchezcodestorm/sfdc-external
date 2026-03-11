@@ -33,6 +33,7 @@ function createField(field: TestField) {
 
 function createService(fields: ReturnType<typeof createField>[]) {
   const counters = {
+    ensureAclResourceCalls: 0,
     assertKebabCaseIdCalls: 0,
     repositoryCalls: 0,
     auditCalls: 0,
@@ -40,6 +41,11 @@ function createService(fields: ReturnType<typeof createField>[]) {
   };
 
   const service = new EntityAdminConfigService(
+    {
+      async ensureEntityResource() {
+        counters.ensureAclResourceCalls += 1;
+      },
+    } as never,
     {
       hasResource() {
         return false;
@@ -354,4 +360,64 @@ test('createEntityConfig rejects unsupported query operators before touching the
 
   assert.equal(counters.repositoryCalls, 0);
   assert.equal(counters.auditCalls, 0);
+});
+
+test('createEntityConfig auto-provisions entity ACL resource before persistence', async () => {
+  const calls: string[] = [];
+  const service = new EntityAdminConfigService(
+    {
+      async ensureEntityResource(entityId: string) {
+        calls.push(`ensure:${entityId}`);
+      },
+    } as never,
+    {
+      hasResource() {
+        return true;
+      },
+    } as never,
+    {
+      async recordApplicationSuccessOrThrow() {
+        calls.push('audit');
+      },
+    } as never,
+    {
+      assertKebabCaseId(entityId: string) {
+        calls.push(`assert:${entityId}`);
+      },
+    } as never,
+    {
+      async listSummaries() {
+        return [];
+      },
+      async getEntityConfig(entityId: string) {
+        return {
+          id: entityId,
+          label: 'Account',
+          objectApiName: 'Account',
+        };
+      },
+      async hasEntityConfig() {
+        return false;
+      },
+      async upsertEntityConfig() {
+        calls.push('upsert');
+      },
+      async deleteEntityConfig() {},
+    } as never,
+    {
+      async describeObjectFields() {
+        return [];
+      },
+    } as never,
+  );
+
+  await service.createEntityConfig({
+    entity: {
+      id: 'account',
+      label: 'Account',
+      objectApiName: 'Account',
+    },
+  });
+
+  assert.deepEqual(calls, ['assert:account', 'ensure:account', 'upsert', 'audit']);
 });
