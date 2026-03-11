@@ -17,7 +17,7 @@ function createAuthValue(overrides: Partial<AuthContextValue>): AuthContextValue
   return {
     user: null,
     isBootstrapping: false,
-    async loginWithGoogleIdToken() {},
+    async loginWithPassword() {},
     async logout() {},
     ...overrides,
   }
