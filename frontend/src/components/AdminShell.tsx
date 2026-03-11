@@ -2,6 +2,11 @@ import { useEffect, useMemo } from 'react'
 import { Outlet, matchPath, useLocation } from 'react-router-dom'
 
 import {
+  buildAuthAdminProviderCreatePath,
+  buildAuthAdminLocalCredentialsPath,
+  buildAuthAdminProvidersPath,
+} from '../features/auth-admin/auth-admin-utils'
+import {
   buildAppsAdminCreatePath,
   buildAppsAdminListPath,
   buildAppsAdminEditPath,
@@ -24,6 +29,7 @@ import {
 } from './WorkspaceSidebar'
 import { useAdminNavigation } from './useAdminNavigation'
 import {
+  ADMIN_AUTH_ROUTE_ID,
   ADMIN_ACL_ROUTE_ID,
   ADMIN_APPS_ROUTE_ID,
   ADMIN_AUDIT_ROUTE_ID,
@@ -115,6 +121,7 @@ function buildAdminSidebarModules(
   const allowedRouteIdSet = new Set(allowedAdminRouteIds)
 
   return [
+    buildAuthModule(pathname, allowedRouteIdSet),
     buildEntityConfigModule(pathname, allowedRouteIdSet),
     buildAppsModule(pathname, allowedRouteIdSet),
     buildAclModule(pathname, allowedRouteIdSet),
@@ -122,6 +129,51 @@ function buildAdminSidebarModules(
     buildVisibilityModule(pathname, allowedRouteIdSet),
     buildAuditModule(pathname, search, allowedRouteIdSet),
   ].filter((module): module is WorkspaceSidebarModule => module !== null)
+}
+
+function buildAuthModule(
+  pathname: string,
+  allowedRouteIdSet: ReadonlySet<AdminRouteId>,
+): WorkspaceSidebarModule | null {
+  if (!allowedRouteIdSet.has(ADMIN_AUTH_ROUTE_ID)) {
+    return null
+  }
+
+  const isActive = pathname.startsWith('/admin/auth')
+  const isProvidersRoute =
+    pathname === buildAuthAdminProvidersPath() ||
+    pathname === buildAuthAdminProviderCreatePath() ||
+    matchPath('/admin/auth/providers/:providerId/edit', pathname) !== null
+  const isLocalCredentialsRoute = pathname === buildAuthAdminLocalCredentialsPath()
+  const providersCaption = matchPath('/admin/auth/providers/:providerId/edit', pathname)
+    ? 'Editor provider'
+    : pathname === buildAuthAdminProviderCreatePath()
+      ? 'Nuova configurazione'
+      : 'Registry runtime + override admin'
+
+  return {
+    id: 'auth',
+    label: 'Auth',
+    to: buildAuthAdminProvidersPath(),
+    description: 'Provider OIDC e credenziali locali.',
+    isActive,
+    items: [
+      {
+        id: 'auth-providers',
+        label: 'Providers',
+        to: buildAuthAdminProvidersPath(),
+        caption: providersCaption,
+        isActive: isProvidersRoute,
+      },
+      {
+        id: 'auth-local-credentials',
+        label: 'Local Credentials',
+        to: buildAuthAdminLocalCredentialsPath(),
+        caption: 'Provisioning credenziali Contact',
+        isActive: isLocalCredentialsRoute,
+      },
+    ],
+  }
 }
 
 function buildEntityConfigModule(

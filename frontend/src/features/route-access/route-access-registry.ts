@@ -1,3 +1,6 @@
+import {
+  buildAuthAdminProvidersPath,
+} from '../auth-admin/auth-admin-utils'
 import { buildAuditListPath, buildAuditSearch } from '../audit-admin/audit-admin-utils'
 import { buildAppsAdminListPath } from '../apps-admin/apps-admin-utils'
 import { buildEntityCatalogPath } from '../entities-admin/entity-admin-routing'
@@ -6,6 +9,7 @@ import { buildQueryTemplateListPath } from '../query-template-admin/query-templa
 import type { AdminRouteId, KnownRouteDefinition, KnownRouteId } from './route-access-types'
 
 export const HOME_ROUTE_ID: KnownRouteId = 'route:home'
+export const ADMIN_AUTH_ROUTE_ID: AdminRouteId = 'route:admin-auth'
 export const ADMIN_ENTITY_CONFIG_ROUTE_ID: AdminRouteId = 'route:admin-entity-config'
 export const ADMIN_APPS_ROUTE_ID: AdminRouteId = 'route:admin-apps'
 export const ADMIN_ACL_ROUTE_ID: AdminRouteId = 'route:admin-acl'
@@ -21,6 +25,14 @@ const KNOWN_ROUTE_DEFINITIONS: readonly KnownRouteDefinition[] = [
     description: 'Dashboard e launcher applicazioni.',
     isAdmin: false,
     sortOrder: 0,
+  },
+  {
+    id: ADMIN_AUTH_ROUTE_ID,
+    path: buildAuthAdminProvidersPath(),
+    label: 'Auth',
+    description: 'Provider di login e credenziali locali.',
+    isAdmin: true,
+    sortOrder: 5,
   },
   {
     id: ADMIN_ENTITY_CONFIG_ROUTE_ID,

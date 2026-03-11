@@ -10,6 +10,7 @@ export type NavigationRoutesResponse = {
 
 export type KnownRouteId =
   | 'route:home'
+  | 'route:admin-auth'
   | 'route:admin-entity-config'
   | 'route:admin-apps'
   | 'route:admin-acl'
