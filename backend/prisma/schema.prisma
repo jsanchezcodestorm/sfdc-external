@@ -35,6 +35,22 @@ enum AclResourceKind {
   ROUTE
 }
 
+enum AclResourceAccessMode {
+  DISABLED
+  AUTHENTICATED
+  PERMISSION_BOUND
+}
+
+enum AclResourceManagedBy {
+  MANUAL
+  SYSTEM
+}
+
+enum AclResourceSyncState {
+  PRESENT
+  STALE
+}
+
 enum SetupSalesforceMode {
   USERNAME_PASSWORD
   ACCESS_TOKEN
@@ -621,12 +637,18 @@ model AclContactPermissionRecord {
 model AclResourceRecord {
   id          String                      @id @db.VarChar(128)
   type        AclResourceKind
+  accessMode  AclResourceAccessMode       @default(AUTHENTICATED)
+  managedBy   AclResourceManagedBy        @default(MANUAL)
+  syncState   AclResourceSyncState        @default(PRESENT)
+  sourceType  AclResourceKind?
+  sourceRef   String?                     @db.VarChar(256)
   target      String?                     @db.VarChar(512)
   description String?                     @db.VarChar(512)
   createdAt   DateTime                    @default(now())
   updatedAt   DateTime                    @updatedAt
   permissions AclResourcePermissionRecord[]
 
+  @@index([managedBy, syncState])
   @@map("acl_resources")
 }
 

@@ -2,7 +2,12 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 
 import { AclConfigRepository } from './acl-config.repository';
 import { normalizeAclConfigSnapshot } from './acl-config.validation';
-import type { AclPermissionDefinition, AclResourceDefinition, AclResourceType } from './acl.types';
+import type {
+  AclPermissionDefinition,
+  AclResourceDefinition,
+  AclResourceStatus,
+  AclResourceType
+} from './acl.types';
 
 @Injectable()
 export class AclService implements OnModuleInit {
@@ -55,8 +60,16 @@ export class AclService implements OnModuleInit {
       return false;
     }
 
-    if (resource.permissions.length === 0) {
+    if (resource.syncState !== 'present' || resource.accessMode === 'disabled') {
+      return false;
+    }
+
+    if (resource.accessMode === 'authenticated') {
       return true;
+    }
+
+    if (resource.permissions.length === 0) {
+      return false;
     }
 
     const effectivePermissions = new Set<string>(
@@ -68,6 +81,25 @@ export class AclService implements OnModuleInit {
 
   hasResource(resourceId: string): boolean {
     return this.resources.has(resourceId);
+  }
+
+  getResource(resourceId: string): AclResourceDefinition | null {
+    const resource = this.resources.get(resourceId);
+    return resource ? { ...resource, permissions: [...resource.permissions] } : null;
+  }
+
+  getResourceStatus(resourceId: string): AclResourceStatus | null {
+    const resource = this.resources.get(resourceId);
+    if (!resource) {
+      return null;
+    }
+
+    return {
+      id: resource.id,
+      accessMode: resource.accessMode,
+      managedBy: resource.managedBy,
+      syncState: resource.syncState
+    };
   }
 
   listResourcesByType(type: AclResourceType): AclResourceDefinition[] {

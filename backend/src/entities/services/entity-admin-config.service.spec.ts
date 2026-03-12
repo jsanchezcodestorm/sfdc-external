@@ -41,9 +41,12 @@ function createService(fields: ReturnType<typeof createField>[]) {
 
   const service = new EntityAdminConfigService(
     {
-      hasResource() {
-        return false;
+      getResourceStatus() {
+        return null;
       },
+    } as never,
+    {
+      async syncSystemResources() {},
     } as never,
     {
       async recordApplicationSuccessOrThrow() {

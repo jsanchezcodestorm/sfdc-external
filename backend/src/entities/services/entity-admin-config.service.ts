@@ -1,5 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 
+import type { AclDerivedResourceStatus } from '../../acl/acl-admin.types';
+import { AclResourceSyncService } from '../../acl/acl-resource-sync.service';
 import { AclService } from '../../acl/acl.service';
 import { AuditWriteService } from '../../audit/audit-write.service';
 import { ResourceAccessService } from '../../common/services/resource-access.service';
@@ -20,7 +22,7 @@ import { normalizeEntityQueryConfig } from '../entity-query-config.validation';
 import { EntityAdminConfigRepository, EntityAdminConfigSummary } from './entity-admin-config.repository';
 
 export interface EntityAdminConfigListResponse {
-  items: Array<EntityAdminConfigSummary & { aclResourceConfigured: boolean }>;
+  items: Array<EntityAdminConfigSummary & { aclResourceStatus: AclDerivedResourceStatus }>;
 }
 
 export interface UpsertEntityAdminConfigPayload {
@@ -29,7 +31,7 @@ export interface UpsertEntityAdminConfigPayload {
 
 export interface EntityAdminConfigResponse {
   entity: EntityConfig;
-  aclResourceConfigured: boolean;
+  aclResourceStatus: AclDerivedResourceStatus;
 }
 
 export interface EntityAdminBootstrapPreviewResponse {
@@ -110,6 +112,7 @@ export class EntityAdminConfigService {
 
   constructor(
     private readonly aclService: AclService,
+    private readonly aclResourceSyncService: AclResourceSyncService,
     private readonly auditWriteService: AuditWriteService,
     private readonly resourceAccessService: ResourceAccessService,
     private readonly repository: EntityAdminConfigRepository,
@@ -121,7 +124,7 @@ export class EntityAdminConfigService {
     return {
       items: items.map((item) => ({
         ...item,
-        aclResourceConfigured: this.aclService.hasResource(`entity:${item.id}`)
+        aclResourceStatus: this.getEntityAclResourceStatus(item.id)
       }))
     };
   }
@@ -131,7 +134,7 @@ export class EntityAdminConfigService {
     const entity = await this.repository.getEntityConfig(entityId);
     return {
       entity,
-      aclResourceConfigured: this.aclService.hasResource(`entity:${entityId}`)
+      aclResourceStatus: this.getEntityAclResourceStatus(entityId)
     };
   }
 
@@ -144,6 +147,7 @@ export class EntityAdminConfigService {
     }
 
     await this.repository.upsertEntityConfig(entity);
+    await this.aclResourceSyncService.syncSystemResources();
     await this.auditWriteService.recordApplicationSuccessOrThrow({
       action: 'ENTITY_CONFIG_CREATE',
       targetType: 'entity-config',
@@ -155,7 +159,7 @@ export class EntityAdminConfigService {
 
     return {
       entity: await this.repository.getEntityConfig(entity.id),
-      aclResourceConfigured: this.aclService.hasResource(`entity:${entity.id}`)
+      aclResourceStatus: this.getEntityAclResourceStatus(entity.id)
     };
   }
 
@@ -186,6 +190,7 @@ export class EntityAdminConfigService {
     const normalizedEntityConfig = this.normalizeEntityConfig(entityId, payload.entity);
 
     await this.repository.upsertEntityConfig(normalizedEntityConfig);
+    await this.aclResourceSyncService.syncSystemResources();
     await this.auditWriteService.recordApplicationSuccessOrThrow({
       action: 'ENTITY_CONFIG_UPDATE',
       targetType: 'entity-config',
@@ -198,7 +203,7 @@ export class EntityAdminConfigService {
 
     return {
       entity,
-      aclResourceConfigured: this.aclService.hasResource(`entity:${entityId}`)
+      aclResourceStatus: this.getEntityAclResourceStatus(entityId)
     };
   }
 
@@ -210,6 +215,7 @@ export class EntityAdminConfigService {
     }
 
     await this.repository.deleteEntityConfig(entityId);
+    await this.aclResourceSyncService.syncSystemResources();
     await this.auditWriteService.recordApplicationSuccessOrThrow({
       action: 'ENTITY_CONFIG_DELETE',
       targetType: 'entity-config',
@@ -218,6 +224,17 @@ export class EntityAdminConfigService {
         entityId
       }
     });
+  }
+
+  private getEntityAclResourceStatus(entityId: string): AclDerivedResourceStatus {
+    return (
+      this.aclService.getResourceStatus(`entity:${entityId}`) ?? {
+        id: `entity:${entityId}`,
+        accessMode: 'disabled',
+        managedBy: 'system',
+        syncState: 'stale'
+      }
+    );
   }
 
   async searchSalesforceObjectApiNames(

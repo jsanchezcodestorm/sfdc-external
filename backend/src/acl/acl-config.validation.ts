@@ -1,10 +1,25 @@
 import { BadRequestException } from '@nestjs/common';
 
-import type { AclConfigSnapshot, AclPermissionDefinition, AclResourceConfig, AclResourceType } from './acl.types';
+import type {
+  AclConfigSnapshot,
+  AclPermissionDefinition,
+  AclResourceAccessMode,
+  AclResourceConfig,
+  AclResourceManagedBy,
+  AclResourceSyncState,
+  AclResourceType
+} from './acl.types';
 
 const CANONICAL_PERMISSION_CODE_PATTERN = /^[A-Z][A-Z0-9_]*$/;
 const RESOURCE_ID_PATTERN = /^(rest|entity|query|route):([a-z0-9]+(?:-[a-z0-9]+)*)$/;
 const RESOURCE_TYPES: ReadonlySet<AclResourceType> = new Set(['rest', 'entity', 'query', 'route']);
+const RESOURCE_ACCESS_MODES: ReadonlySet<AclResourceAccessMode> = new Set([
+  'disabled',
+  'authenticated',
+  'permission-bound'
+]);
+const RESOURCE_MANAGED_BY_VALUES: ReadonlySet<AclResourceManagedBy> = new Set(['manual', 'system']);
+const RESOURCE_SYNC_STATES: ReadonlySet<AclResourceSyncState> = new Set(['present', 'stale']);
 
 export function normalizeAclConfigSnapshot(value: unknown): AclConfigSnapshot {
   const snapshot = requireObject(value, 'ACL config snapshot must be an object');
@@ -72,9 +87,26 @@ export function normalizeAclResourceConfigInput(
 
   validateResourceId(id, type, `${fieldName}.id`);
 
+  const accessMode = normalizeAccessMode(resource.accessMode, permissions.length, `${fieldName}.accessMode`);
+  const managedBy = normalizeManagedBy(resource.managedBy, `${fieldName}.managedBy`);
+  const syncState = normalizeSyncState(resource.syncState, `${fieldName}.syncState`);
+  const sourceType = resource.sourceType === undefined
+    ? undefined
+    : normalizeResourceType(resource.sourceType, `${fieldName}.sourceType`);
+  const sourceRef = asOptionalString(resource.sourceRef);
+
+  if (sourceType && sourceType !== type) {
+    throw new BadRequestException(`${fieldName}.sourceType must match resource type ${type}`);
+  }
+
   return {
     id,
     type,
+    accessMode,
+    managedBy,
+    syncState,
+    sourceType,
+    sourceRef,
     target: asOptionalString(resource.target),
     description: asOptionalString(resource.description),
     permissions
@@ -86,6 +118,49 @@ function normalizeResourceType(value: unknown, fieldName: string): AclResourceTy
 
   if (!RESOURCE_TYPES.has(normalized)) {
     throw new BadRequestException(`${fieldName} must be one of rest, entity, query, route`);
+  }
+
+  return normalized;
+}
+
+function normalizeAccessMode(
+  value: unknown,
+  permissionCount: number,
+  fieldName: string
+): AclResourceAccessMode {
+  if (value === undefined || value === null || value === '') {
+    return permissionCount > 0 ? 'permission-bound' : 'authenticated';
+  }
+
+  const normalized = requireString(value, `${fieldName} must be a non-empty string`).toLowerCase() as AclResourceAccessMode;
+  if (!RESOURCE_ACCESS_MODES.has(normalized)) {
+    throw new BadRequestException(`${fieldName} must be one of disabled, authenticated, permission-bound`);
+  }
+
+  return normalized;
+}
+
+function normalizeManagedBy(value: unknown, fieldName: string): AclResourceManagedBy {
+  if (value === undefined || value === null || value === '') {
+    return 'manual';
+  }
+
+  const normalized = requireString(value, `${fieldName} must be a non-empty string`).toLowerCase() as AclResourceManagedBy;
+  if (!RESOURCE_MANAGED_BY_VALUES.has(normalized)) {
+    throw new BadRequestException(`${fieldName} must be one of manual, system`);
+  }
+
+  return normalized;
+}
+
+function normalizeSyncState(value: unknown, fieldName: string): AclResourceSyncState {
+  if (value === undefined || value === null || value === '') {
+    return 'present';
+  }
+
+  const normalized = requireString(value, `${fieldName} must be a non-empty string`).toLowerCase() as AclResourceSyncState;
+  if (!RESOURCE_SYNC_STATES.has(normalized)) {
+    throw new BadRequestException(`${fieldName} must be one of present, stale`);
   }
 
   return normalized;

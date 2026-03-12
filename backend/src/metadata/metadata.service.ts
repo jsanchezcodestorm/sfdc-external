@@ -22,6 +22,7 @@ import {
   normalizeCanonicalPermissionCode,
 } from '../acl/acl-config.validation';
 import { AclContactPermissionsRepository } from '../acl/acl-contact-permissions.repository';
+import { AclResourceSyncService } from '../acl/acl-resource-sync.service';
 import { AclService } from '../acl/acl.service';
 import type { AclConfigSnapshot, AclPermissionDefinition, AclResourceConfig } from '../acl/acl.types';
 import { AppsAdminConfigRepository } from '../apps/apps-admin-config.repository';
@@ -224,6 +225,7 @@ export class MetadataAdminService {
     private readonly aclAdminConfigRepository: AclAdminConfigRepository,
     private readonly aclContactPermissionsRepository: AclContactPermissionsRepository,
     private readonly aclService: AclService,
+    private readonly aclResourceSyncService: AclResourceSyncService,
     private readonly queryAdminTemplateRepository: QueryAdminTemplateRepository,
     private readonly queryAdminTemplateService: QueryAdminTemplateService,
     private readonly queryTemplateRepository: QueryTemplateRepository,
@@ -386,6 +388,7 @@ export class MetadataAdminService {
         deployableEntries.filter((entry) => entry.typeName === 'AclContactPermission'),
         appliedCounts,
       );
+      await this.aclResourceSyncService.syncSystemResources();
 
       const applied = DEPLOYABLE_TYPE_ORDER.map((typeName) => ({
         typeName,
