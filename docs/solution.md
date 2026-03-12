@@ -4,10 +4,10 @@
 
 - Obiettivo: replicare da zero una piattaforma middleware completa per integrare Salesforce con backend NestJS e frontend React/Vite.
 - Principio base: Salesforce resta system of record; il middleware governa auth, ACL, visibilita e API UX.
-- Stack: Node.js 22, NestJS, React/Vite, `jsforce`, Google Identity, PostgreSQL + Prisma.
+- Stack: Node.js 22, NestJS, React/Vite, `jsforce`, OIDC server-side + auth locale, PostgreSQL + Prisma.
 - Backend core: moduli `Auth`, `Salesforce`, `ACL`, `Entities`, `Query`, `Navigation`, `GlobalSearch`.
 - Connettore Salesforce: servizio centralizzato con retry, caching, describe, query/CRUD uniformi.
-- Auth/sessione: login Google, validazione Contact Salesforce, cookie JWT `HttpOnly`, restore via `/auth/session`.
+- Auth/sessione: login OIDC multi-provider o locale, validazione Contact Salesforce, cookie JWT `HttpOnly`, restore via `/auth/session`.
 - ACL: controllo capability su risorse `rest:*`, `entity:*`, `query:*`, `route:*`.
 - Layer config-driven: entita, ACL e query definite in configurazione versionata su PostgreSQL, non hardcoded.
 - Visibilita row-level: engine a coni con regole `ALLOW/DENY` e modello `deny-by-default`.
@@ -21,7 +21,7 @@
 Questa guida descrive come replicare da zero una piattaforma middleware stile `codestorm-middleware`:
 
 - backend NestJS con connettore Salesforce centralizzato
-- frontend React/Vite con autenticazione Google e sessione cookie
+- frontend React/Vite con autenticazione backend-driven e sessione cookie
 - modello config-driven per entity, query e navigation con source of truth PostgreSQL
 - ACL applicativa e visibilita row-level
 - practice operative su sicurezza, performance, audit e rilascio
@@ -40,7 +40,7 @@ Questa guida descrive come replicare da zero una piattaforma middleware stile `c
 flowchart LR
   U["Utente Web"] --> F["Frontend React/Vite"]
   F -->|"/api + cookie sessione"| B["Backend NestJS"]
-  B --> A["Auth Module (Google + JWT session)"]
+  B --> A["Auth Module (OIDC/local + JWT session)"]
   B --> Q["Query/Entities Engine (PostgreSQL-backed config)"]
   B --> V["Visibility Engine (coni)"]
   B --> S["Salesforce Connector (jsforce)"]
@@ -57,7 +57,7 @@ flowchart LR
 - Backend: NestJS + TypeScript + class-validator
 - Frontend: React + Vite + TypeScript + Tailwind
 - Salesforce SDK: `jsforce`
-- Auth federata: Google Identity Services (`@react-oauth/google`)
+- Auth federata: provider OIDC avviati dal backend + login locale username/password
 - ORM/DB toolkit: Prisma (`prisma` + `@prisma/client`)
 - Database policy visibility: PostgreSQL + Prisma (obbligatorio per coni/audit)
 
@@ -239,24 +239,20 @@ Regola obbligatoria in produzione:
 
 ## 8) Autenticazione e sessione
 
-### 8.1 Flusso login supportato (default: ID token flow)
+### 8.1 Flussi login supportati
 
-1. Frontend usa Google Identity Services e ottiene un `idToken` (non un authorization code).
-2. Backend valida firma e claim minimi del token (`aud`, `iss`, `exp`, opzionale `nonce`) contro `GOOGLE_CLIENT_ID`.
-3. Backend trova Contact attivo su Salesforce.
-4. Backend genera JWT interno e lo imposta su cookie `HttpOnly`.
-5. Frontend usa solo cookie (`credentials: include`), senza token in localStorage.
-
-### 8.1.1 Authorization code flow (opzionale, non default)
-
-- abilitarlo solo se serve un vero token exchange server-to-server con refresh token Google
-- richiede endpoint dedicato e separato dal flow ID token (`/auth/google/code` consigliato)
-- richiede `GOOGLE_CLIENT_SECRET` e `GOOGLE_REDIRECT_URI`
-- evitare flussi ibridi nello stesso endpoint per non creare ambiguita di sicurezza
+1. Frontend legge i provider attivi da `GET /auth/providers`.
+2. Per i provider OIDC il browser viene rediretto verso `GET /auth/oidc/:providerId/start`.
+3. Backend esegue discovery OIDC, `state`/`nonce`/PKCE, token exchange e validazione `id_token`.
+4. Per login locale il frontend usa `POST /auth/login/password`.
+5. In entrambi i casi il backend trova il Contact attivo su Salesforce e genera il JWT interno nel cookie `HttpOnly`.
 
 ### 8.2 Endpoint auth minimi
 
-- `POST /auth/google`
+- `GET /auth/providers`
+- `GET /auth/oidc/:providerId/start`
+- `GET /auth/oidc/:providerId/callback`
+- `POST /auth/login/password`
 - `GET /auth/session` (refresh user + permessi da PostgreSQL e rotazione cookie sessione)
 - `POST /auth/logout`
 - `GET /auth/csrf` (consigliato per bootstrap token CSRF)
@@ -363,7 +359,6 @@ tabella PostgreSQL `query_templates`
 
 ### 12.1 Provider e routing
 
-- `GoogleOAuthProvider`
 - `HashRouter` o `BrowserRouter` in base al deploy
 - `AuthProvider` con bootstrap sessione da `/auth/session`
 - `RequireAuth` per route protette
@@ -378,12 +373,12 @@ tabella PostgreSQL `query_templates`
 ### 12.3 Config frontend minima
 
 - `VITE_API_BASE_URL` (`/api` in dev)
-- `VITE_GOOGLE_CLIENT_ID`
-- scope/state Google da env
+- nessun SDK auth esterno richiesto nel frontend
 
 ### 12.4 Vite proxy in sviluppo
 
 Proxy `/api` -> backend locale (`http://localhost:3000`) per semplificare CORS e cookie.
+Il proxy deve preservare/forwardare host e proto originali per consentire al backend di derivare il callback OIDC pubblico corrente.
 
 ## 13) Navigation e UX dinamica
 
@@ -686,10 +681,9 @@ Codici motivo minimi (`reason_code`):
 - `SALESFORCE_LOGIN_URL`
 - `SALESFORCE_DESCRIBE_CACHE_TTL_MS` (default `21600000`)
 - `SALESFORCE_DESCRIBE_STALE_WHILE_REVALIDATE_MS` (default `21600000`)
-- `GOOGLE_CLIENT_ID`
-- `GOOGLE_AUTH_FLOW` (`ID_TOKEN` default; `AUTH_CODE` opzionale)
-- `GOOGLE_CLIENT_SECRET` (obbligatoria solo con `GOOGLE_AUTH_FLOW=AUTH_CODE`)
-- `GOOGLE_REDIRECT_URI` (obbligatoria solo con `GOOGLE_AUTH_FLOW=AUTH_CODE`)
+- `LOCAL_AUTH_ENABLED`
+- `LOCAL_AUTH_LABEL`
+- `SETUP_SECRETS_KEY`
 - `ENABLE_RAW_SALESFORCE_QUERY` (default `false`)
 - `DATABASE_URL`
 - `SHADOW_DATABASE_URL` (opzionale, utile per `prisma migrate dev`)
@@ -697,9 +691,7 @@ Codici motivo minimi (`reason_code`):
 ### 19.2 Frontend
 
 - `VITE_API_BASE_URL`
-- `VITE_GOOGLE_CLIENT_ID`
-- `VITE_GOOGLE_SCOPE`
-- `VITE_GOOGLE_STATE`
+- nessuna variabile obbligatoria per SDK auth esterni
 
 ### 19.3 Postgres (obbligatorio)
 
@@ -717,11 +709,12 @@ Codici motivo minimi (`reason_code`):
 1. `npm install`
 2. se i template esistono: `cp backend/.env.example backend/.env` e `cp frontend/.env.example frontend/.env`
 3. se i template non esistono: crea direttamente `backend/.env` e `frontend/.env` dalla checklist della sezione 19
-4. configura almeno `DATABASE_URL`, credenziali Salesforce e `GOOGLE_CLIENT_ID` (`GOOGLE_CLIENT_SECRET` + `GOOGLE_REDIRECT_URI` solo se `AUTH_CODE`)
-5. migrazioni DB: `npm exec --workspace backend prisma -- migrate dev --schema prisma/schema.prisma`
-6. avvio backend: `npm run start:dev --workspace backend`
-7. avvio frontend: `npm run dev --workspace frontend`
-8. verifica health base su `http://localhost:3000/api/docs` e web app su `http://localhost:5173`
+4. configura almeno `DATABASE_URL`, `SETUP_SECRETS_KEY` e le credenziali Salesforce; il primo login admin locale viene creato durante il setup iniziale
+5. i provider OIDC si configurano successivamente dal backoffice `Auth > Providers`; il callback viene mostrato come campo read-only derivato dal dominio pubblico corrente e `SETUP_SECRETS_KEY` cifra i `clientSecret` persistiti a DB
+6. migrazioni DB: `npm exec --workspace backend prisma -- migrate dev --schema prisma/schema.prisma`
+7. avvio backend: `npm run start:dev --workspace backend`
+8. avvio frontend: `npm run dev --workspace frontend`
+9. verifica health base su `http://localhost:3000/api/docs` e web app su `http://localhost:5173`
 
 ## 21) CI/CD consigliata
 
@@ -794,7 +787,7 @@ Gate di rilascio:
 ### Fase A - Foundation
 
 - scaffolding monorepo + backend/frontend
-- auth Google + session cookie
+- auth OIDC/local + session cookie
 - SalesforceService centralizzato
 
 ### Fase B - Access control

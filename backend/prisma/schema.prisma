@@ -40,6 +40,11 @@ enum SetupSalesforceMode {
   ACCESS_TOKEN
 }
 
+enum AuthProviderType {
+  OIDC
+  LOCAL
+}
+
 model VisibilityPolicyMeta {
   id            Int      @id @default(1)
   policyVersion BigInt   @default(1)
@@ -270,6 +275,36 @@ model InstanceSetupRecord {
   updatedAt                  DateTime            @updatedAt
 
   @@map("instance_setup")
+}
+
+model AuthProviderAdminConfigRecord {
+  providerId             String           @id @db.VarChar(64)
+  type                   AuthProviderType
+  label                  String?          @db.VarChar(128)
+  enabled                Boolean          @default(true)
+  sortOrder              Int              @default(0)
+  configJson             Json?
+  clientSecretEncrypted  String?          @db.Text
+  createdAt              DateTime         @default(now())
+  updatedAt              DateTime         @updatedAt
+
+  @@map("auth_provider_admin_configs")
+}
+
+model LocalCredentialRecord {
+  contactId       String   @id @db.VarChar(18)
+  username        String   @unique @db.VarChar(320)
+  passwordHash    String   @db.Text
+  enabled         Boolean  @default(true)
+  failedAttempts  Int      @default(0)
+  lockedUntil     DateTime?
+  lastLoginAt     DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([username])
+  @@index([enabled, updatedAt])
+  @@map("local_credentials")
 }
 
 model EntityQueryCursorCache {

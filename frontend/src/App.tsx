@@ -2,6 +2,9 @@ import { Navigate, Route, RouterProvider, createHashRouter, createRoutesFromElem
 import { AdminShell } from './components/AdminShell'
 import { AppShell } from './components/AppShell'
 import { RequireAuth } from './features/auth/components/RequireAuth'
+import { AuthAdminLocalCredentialsPage } from './features/auth-admin/pages/AuthAdminLocalCredentialsPage'
+import { AuthAdminProviderEditorPage } from './features/auth-admin/pages/AuthAdminProviderEditorPage'
+import { AuthAdminProvidersPage } from './features/auth-admin/pages/AuthAdminProvidersPage'
 import { AclAdminLayout } from './features/acl-admin/pages/AclAdminLayout'
 import { AclContactPermissionEditorPage } from './features/acl-admin/pages/AclContactPermissionEditorPage'
 import { AclContactPermissionsPage } from './features/acl-admin/pages/AclContactPermissionsPage'
@@ -24,6 +27,8 @@ import { EntityRelatedListPage } from './features/entities/pages/EntityRelatedLi
 import { EntityRuntimePage } from './features/entities/pages/EntityRuntimePage'
 import { EntityRouteFallbackPage } from './features/entities/pages/EntityRouteFallbackPage'
 import { EntityAdminConfigPage } from './features/entities-admin/pages/EntityAdminConfigPage'
+import { MetadataAdminPage } from './features/metadata-admin/pages/MetadataAdminPage'
+import { MetadataAdminPreviewPage } from './features/metadata-admin/pages/MetadataAdminPreviewPage'
 import { QueryTemplateAdminLayout } from './features/query-template-admin/pages/QueryTemplateAdminLayout'
 import { QueryTemplateDetailPage } from './features/query-template-admin/pages/QueryTemplateDetailPage'
 import { QueryTemplateEditorPage } from './features/query-template-admin/pages/QueryTemplateEditorPage'
@@ -44,12 +49,14 @@ import { RequireRouteAccess } from './features/route-access/components/RequireRo
 import { RequireCompletedSetup } from './features/setup/components/RequireCompletedSetup'
 import { SetupPage } from './features/setup/pages/SetupPage'
 import {
+  ADMIN_AUTH_ROUTE_ID,
   ADMIN_ACL_ROUTE_ID,
   ADMIN_APPS_ROUTE_ID,
   ADMIN_AUDIT_ROUTE_ID,
   ADMIN_ENTITY_CONFIG_ROUTE_ID,
   ADMIN_QUERY_TEMPLATES_ROUTE_ID,
   ADMIN_VISIBILITY_ROUTE_ID,
+  ADMIN_METADATA_ROUTE_ID,
   HOME_ROUTE_ID,
 } from './features/route-access/route-access-registry'
 import { HomePage } from './pages/HomePage'
@@ -81,6 +88,22 @@ const router = createHashRouter(
 
             <Route path="/admin" element={<AdminShell />}>
               <Route index element={<AdminIndexRedirect />} />
+
+              <Route element={<RequireRouteAccess routeId={ADMIN_AUTH_ROUTE_ID} />}>
+                <Route path="auth/providers" element={<AuthAdminProvidersPage />} />
+                <Route
+                  path="auth/providers/__new__"
+                  element={<AuthAdminProviderEditorPage mode="create" />}
+                />
+                <Route
+                  path="auth/providers/:providerId/edit"
+                  element={<AuthAdminProviderEditorPage mode="edit" />}
+                />
+                <Route
+                  path="auth/local-credentials"
+                  element={<AuthAdminLocalCredentialsPage />}
+                />
+              </Route>
 
               <Route element={<RequireRouteAccess routeId={ADMIN_ENTITY_CONFIG_ROUTE_ID} />}>
                 <Route path="entity-config" element={<EntityAdminConfigPage />} />
@@ -173,6 +196,11 @@ const router = createHashRouter(
                   />
                   <Route path="debug" element={<VisibilityDebugPage />} />
                 </Route>
+              </Route>
+
+              <Route element={<RequireRouteAccess routeId={ADMIN_METADATA_ROUTE_ID} />}>
+                <Route path="metadata" element={<MetadataAdminPage />} />
+                <Route path="metadata/preview" element={<MetadataAdminPreviewPage />} />
               </Route>
 
               <Route element={<RequireRouteAccess routeId={ADMIN_AUDIT_ROUTE_ID} />}>

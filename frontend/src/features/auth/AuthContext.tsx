@@ -1,4 +1,3 @@
-import { googleLogout } from '@react-oauth/google'
 import {
   useCallback,
   useEffect,
@@ -35,11 +34,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
     setUser(payload.user)
   }, [])
 
-  const loginWithGoogleIdToken = useCallback(async (idToken: string) => {
-    const payload = await apiFetch<AuthSessionResponse>('/auth/google', {
+  const loginWithPassword = useCallback(async (username: string, password: string) => {
+    const payload = await apiFetch<AuthSessionResponse>('/auth/login/password', {
       method: 'POST',
       body: {
-        idToken,
+        username,
+        password,
       },
     })
 
@@ -56,12 +56,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
       if (!isMissingSessionError(error)) {
         throw error
       }
-    }
-
-    try {
-      googleLogout()
-    } catch {
-      // Ignore Google logout errors because local session is already cleared.
     }
 
     clearCsrfToken()
@@ -124,10 +118,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
     () => ({
       user,
       isBootstrapping,
-      loginWithGoogleIdToken,
+      loginWithPassword,
       logout,
     }),
-    [user, isBootstrapping, loginWithGoogleIdToken, logout],
+    [user, isBootstrapping, loginWithPassword, logout],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

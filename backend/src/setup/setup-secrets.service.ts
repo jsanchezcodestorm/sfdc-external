@@ -1,4 +1,4 @@
-import { createDecipheriv, createCipheriv, randomBytes } from 'node:crypto';
+import { createDecipheriv, createCipheriv, hkdfSync, randomBytes } from 'node:crypto';
 
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -87,6 +87,15 @@ export class SetupSecretsService {
     }
 
     return this.encryptionKey;
+  }
+
+  isConfigured(): boolean {
+    return Boolean(this.encryptionKey);
+  }
+
+  deriveScopedSecret(context: string): Buffer {
+    const key = this.requireEncryptionKey();
+    return Buffer.from(hkdfSync('sha256', key, Buffer.alloc(0), Buffer.from(context, 'utf8'), 32));
   }
 
   private readEncryptionKey(): Buffer | null {

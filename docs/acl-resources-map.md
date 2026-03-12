@@ -99,6 +99,7 @@ REST:
 - `rest:salesforce-objects`
 - `rest:salesforce-raw-query`
 - `rest:visibility-admin`
+- `rest:metadata-admin`
 
 ENTITY:
 - `entity:account`
@@ -112,6 +113,7 @@ ROUTE:
 - `route:operations-pipeline`
 - `route:admin-apps`
 - `route:admin-visibility`
+- `route:admin-metadata`
 - `route:admin-entity-config`
 - `route:admin-acl`
 - `route:admin-query-templates`

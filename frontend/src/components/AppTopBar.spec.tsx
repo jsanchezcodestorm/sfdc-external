@@ -14,7 +14,7 @@ function createAuthValue(overrides: Partial<AuthContextValue>): AuthContextValue
   return {
     user: null,
     isBootstrapping: false,
-    async loginWithGoogleIdToken() {},
+    async loginWithPassword() {},
     async logout() {},
     ...overrides,
   }
@@ -40,7 +40,7 @@ function createSetupValue(overrides: Partial<SetupContextValue>): SetupContextVa
     status: {
       state: 'completed',
       siteName: 'Acme Portal',
-      googleConfigMode: 'env',
+      authConfigMode: 'database',
     },
     brandName: 'Acme Portal',
     isLoading: false,
@@ -49,7 +49,7 @@ function createSetupValue(overrides: Partial<SetupContextValue>): SetupContextVa
       return {
         state: 'completed',
         siteName: 'Acme Portal',
-        googleConfigMode: 'env',
+        authConfigMode: 'database',
       }
     },
     ...overrides,

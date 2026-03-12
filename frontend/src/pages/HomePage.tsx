@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom'
 
 import { getAppEntityBasePath } from '../features/apps/app-workspace-routing'
 import { useAppWorkspace } from '../features/apps/useAppWorkspace'
-import { GoogleSignInButton } from '../features/auth/components/GoogleSignInButton'
 import { useAuth } from '../features/auth/useAuth'
 import { useSetup } from '../features/setup/useSetup'
 import { fetchHealthCheck, type HealthCheckResponse } from '../lib/api'
@@ -212,7 +211,7 @@ export function HomePage() {
                 Nessuna sessione attiva.
               </p>
               <p className="mt-1 text-sm text-slate-600">
-                Apri la pagina di accesso o usa direttamente il bottone Google.
+                Apri la pagina di accesso per scegliere il provider disponibile.
               </p>
               <div className="mt-4 flex flex-col gap-4">
                 <Link
@@ -221,7 +220,6 @@ export function HomePage() {
                 >
                   Vai al login
                 </Link>
-                <GoogleSignInButton />
               </div>
             </>
           ) : null}

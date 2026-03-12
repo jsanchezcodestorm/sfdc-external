@@ -24,6 +24,11 @@ import { QueryTemplateRepository } from './services/query-template.repository';
     QueryTemplateCompiler,
     ResourceAccessService
   ],
-  exports: [QueryService]
+  exports: [
+    QueryService,
+    QueryAdminTemplateRepository,
+    QueryAdminTemplateService,
+    QueryTemplateRepository
+  ]
 })
 export class QueryModule {}

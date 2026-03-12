@@ -116,6 +116,26 @@ test('allows referer fallback when origin is absent', async () => {
   assert.deepEqual(auditCalls, []);
 });
 
+test('allows multipart form uploads with allowed origin and matching tokens', async () => {
+  const { guard, auditCalls } = createGuard();
+  const request = createRequest({
+    method: 'POST',
+    headers: {
+      Origin: 'http://localhost:5173',
+      'Content-Type': 'multipart/form-data; boundary=----codex-boundary',
+      'X-CSRF-Token': 'csrf-token',
+    },
+    cookies: {
+      csrf: 'csrf-token',
+    },
+  });
+
+  const result = await guard.canActivate(createContext(request));
+
+  assert.equal(result, true);
+  assert.deepEqual(auditCalls, []);
+});
+
 test('denies missing or mismatched tokens with CSRF_VALIDATION_FAILED', async () => {
   const { guard, auditCalls } = createGuard();
   const request = createRequest({
@@ -184,7 +204,8 @@ test('denies unsafe non-json content types', async () => {
     () => guard.canActivate(createContext(request)),
     (error: unknown) =>
       error instanceof ForbiddenException &&
-      error.message === 'Mutating requests must use application/json content type',
+      error.message ===
+        'Mutating requests must use application/json or multipart/form-data content type',
   );
 
   assert.equal(auditCalls.length, 1);

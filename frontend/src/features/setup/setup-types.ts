@@ -1,7 +1,7 @@
 export type SetupStatusResponse = {
   state: 'pending' | 'completed'
   siteName?: string
-  googleConfigMode: 'env'
+  authConfigMode: 'database'
 }
 
 export type SetupSalesforceConfig =
@@ -28,5 +28,6 @@ export type SetupSalesforceTestResponse = {
 export type CompleteSetupRequest = {
   siteName: string
   adminEmail: string
+  bootstrapPassword: string
   salesforce: SetupSalesforceConfig
 }

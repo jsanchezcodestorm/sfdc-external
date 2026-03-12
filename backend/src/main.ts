@@ -18,6 +18,7 @@ async function bootstrap(): Promise<void> {
   const port = configService.get<number>('PORT', 3000);
   const allowedOrigins = readAllowedFrontendOrigins(configService);
 
+  app.getHttpAdapter().getInstance().set('trust proxy', true);
   app.setGlobalPrefix('api');
 
   app.use(cookieParser());

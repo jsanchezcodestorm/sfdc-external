@@ -28,8 +28,10 @@ import { AclService } from './acl.service';
     AclService,
     AclGuard,
     AclConfigRepository,
+    AclAdminConfigRepository,
     AclAdminConfigService,
-    AclContactPermissionsRepository
+    AclContactPermissionsRepository,
+    AclContactPermissionsAdminService
   ]
 })
 export class AclModule {}

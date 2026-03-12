@@ -42,6 +42,7 @@ function renderAdminShell(
           <Routes>
             <Route path="/admin" element={<AdminShell />}>
               <Route path="apps" element={<div>Apps page</div>} />
+              <Route path="auth/providers/:providerId/edit" element={<div>Auth provider edit</div>} />
               <Route path="entity-config/:entityId/edit/detail/:detailArea" element={<div>Detail page</div>} />
               <Route path="entity-config/:entityId/edit/form/:formArea" element={<div>Form page</div>} />
             </Route>
@@ -111,5 +112,27 @@ describe('AdminShell', () => {
 
     expect(formLink).not.toBeNull()
     expect(formLink?.className).toContain('bg-slate-900')
+  })
+
+  it('keeps auth providers active on nested provider editor routes', () => {
+    const { container } = renderAdminShell(
+      '/admin/auth/providers/google/edit',
+      createRouteAccessValue({
+        allowedRouteIds: ['route:admin-auth'],
+        allowedAdminRouteIds: ['route:admin-auth'],
+        firstAllowedAdminRouteId: 'route:admin-auth',
+        firstAllowedAdminPath: '/admin/auth/providers',
+        hasRoute: (routeId: string) => routeId === 'route:admin-auth',
+      }),
+    )
+
+    const providerLinks = Array.from(
+      container.querySelectorAll('a[href="/admin/auth/providers"]'),
+    )
+
+    expect(providerLinks.length).toBeGreaterThan(0)
+    expect(
+      providerLinks.some((link) => link.className.includes('bg-slate-900')),
+    ).toBe(true)
   })
 })

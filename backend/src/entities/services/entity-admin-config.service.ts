@@ -264,6 +264,13 @@ export class EntityAdminConfigService {
     };
   }
 
+  normalizeEntityConfigForPersistence(
+    entityId: string | undefined,
+    value: unknown
+  ): EntityConfig {
+    return this.normalizeEntityConfig(entityId, value);
+  }
+
   private normalizeEntityConfig(entityId: string | undefined, value: unknown): EntityConfig {
     const entity = this.requireObject(value, 'entity payload must be an object');
     const id = this.requireString(entity.id, 'entity.id is required');

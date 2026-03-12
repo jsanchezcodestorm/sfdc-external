@@ -19,10 +19,19 @@ npm exec --workspace backend prisma -- migrate dev --schema prisma/schema.prisma
 ## Endpoint base
 
 - `GET /api/health`
-- `POST /api/auth/google`
+- `GET /api/auth/providers`
+- `GET /api/auth/oidc/:providerId/start`
+- `GET /api/auth/oidc/:providerId/callback`
+- `POST /api/auth/login/password`
 - `GET /api/auth/csrf`
 - `GET /api/auth/session`
 - `POST /api/auth/logout`
+- `GET /api/auth/admin/providers`
+- `GET /api/auth/admin/providers/:providerId`
+- `PUT /api/auth/admin/providers/:providerId`
+- `GET /api/auth/admin/local-credentials`
+- `PUT /api/auth/admin/local-credentials/:contactId`
+- `DELETE /api/auth/admin/local-credentials/:contactId`
 - `GET /api/navigation`
 - `GET /api/entities/:entityId/config`
 - `GET /api/entities/:entityId/list`

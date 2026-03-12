@@ -12,7 +12,7 @@ function createSetupValue(
   return {
     status: {
       state: 'pending',
-      googleConfigMode: 'env',
+      authConfigMode: 'database',
     },
     brandName: 'SFDC External',
     isLoading: false,
@@ -20,7 +20,7 @@ function createSetupValue(
     async refreshStatus() {
       return {
         state: 'pending',
-        googleConfigMode: 'env',
+        authConfigMode: 'database',
       }
     },
     ...overrides,
@@ -53,7 +53,7 @@ describe('RequireCompletedSetup', () => {
             status: {
               state: 'completed',
               siteName: 'Acme Portal',
-              googleConfigMode: 'env',
+              authConfigMode: 'database',
             },
             brandName: 'Acme Portal',
           })}

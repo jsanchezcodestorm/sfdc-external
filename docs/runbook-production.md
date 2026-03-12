@@ -42,7 +42,8 @@ Accessi minimi richiesti:
 Verificare prima di ogni deploy:
 - sessione/auth: `JWT_SECRET`, `JWT_EXPIRES_IN`, `SESSION_COOKIE_*`, `FRONTEND_ORIGINS`
 - Salesforce: `SALESFORCE_*`, `SALESFORCE_DESCRIBE_CACHE_TTL_MS`, `SALESFORCE_DESCRIBE_STALE_WHILE_REVALIDATE_MS`
-- Google: `GOOGLE_CLIENT_ID` (+ secret/redirect se flow code)
+- auth provider: `SETUP_SECRETS_KEY`, `LOCAL_AUTH_ENABLED`, `LOCAL_AUTH_LABEL`
+- provider OIDC: verificare che `Auth > Providers` contenga le configurazioni richieste, che i secret risultino presenti a DB e che il callback read-only mostrato dal backoffice coincida con il dominio pubblico previsto
 - visibility/postgres: `DATABASE_URL`, `VISIBILITY_*`
 - hardening: `ENABLE_RAW_SALESFORCE_QUERY=false` in produzione
 
@@ -150,7 +151,7 @@ Regole:
 - frontend servito correttamente (`/`)
 
 ### 9.2 Smoke funzionale minimo
-- login utente valido (`/auth/google` + `/auth/session`)
+- login utente valido (`/auth/providers` + login OIDC o `POST /auth/login/password` + `/auth/session`)
 - query base protetta via cookie (`POST /query`)
 - entity list di almeno una entita autorizzata
 - endpoint critico business di dominio principale

@@ -10,11 +10,13 @@ export type NavigationRoutesResponse = {
 
 export type KnownRouteId =
   | 'route:home'
+  | 'route:admin-auth'
   | 'route:admin-entity-config'
   | 'route:admin-apps'
   | 'route:admin-acl'
   | 'route:admin-query-templates'
   | 'route:admin-visibility'
+  | 'route:admin-metadata'
   | 'route:admin-audit'
 
 export type AdminRouteId = Exclude<KnownRouteId, 'route:home'>

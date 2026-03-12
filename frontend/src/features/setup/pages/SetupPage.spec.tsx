@@ -19,7 +19,7 @@ function createSetupValue(
   return {
     status: {
       state: 'pending',
-      googleConfigMode: 'env',
+      authConfigMode: 'database',
     },
     brandName: 'SFDC External',
     isLoading: false,
@@ -28,7 +28,7 @@ function createSetupValue(
       return {
         state: 'completed',
         siteName: 'Acme Portal',
-        googleConfigMode: 'env',
+        authConfigMode: 'database',
       }
     },
     ...overrides,
@@ -46,12 +46,12 @@ describe('SetupPage', () => {
     vi.mocked(completeInitialSetup).mockResolvedValue({
       state: 'completed',
       siteName: 'Acme Portal',
-      googleConfigMode: 'env',
+      authConfigMode: 'database',
     })
     const refreshStatus = vi.fn(async (): Promise<SetupStatusResponse> => ({
       state: 'completed',
       siteName: 'Acme Portal',
-      googleConfigMode: 'env',
+      authConfigMode: 'database',
     }))
 
     render(
@@ -74,6 +74,12 @@ describe('SetupPage', () => {
     })
     fireEvent.change(screen.getByPlaceholderText('admin@example.com'), {
       target: { value: 'admin@example.com' },
+    })
+    fireEvent.change(screen.getByPlaceholderText('Inserisci la password iniziale'), {
+      target: { value: 'Bootstrap!123' },
+    })
+    fireEvent.change(screen.getByPlaceholderText('Ripeti la password iniziale'), {
+      target: { value: 'Bootstrap!123' },
     })
     fireEvent.click(screen.getByRole('button', { name: 'Continua' }))
 
@@ -112,6 +118,7 @@ describe('SetupPage', () => {
     expect(vi.mocked(completeInitialSetup)).toHaveBeenCalledWith({
       siteName: 'Acme Portal',
       adminEmail: 'admin@example.com',
+      bootstrapPassword: 'Bootstrap!123',
       salesforce: {
         mode: 'username-password',
         loginUrl: 'https://login.salesforce.com',

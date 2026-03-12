@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { SetupSalesforceMode } from '@prisma/client';
+import { Prisma, SetupSalesforceMode } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -19,8 +19,9 @@ export class SetupRepository {
     salesforceMode: SetupSalesforceMode;
     salesforceConfigEncrypted: string;
     completedAt: Date;
-  }): Promise<void> {
-    await this.prisma.instanceSetupRecord.upsert({
+  }, tx?: Prisma.TransactionClient): Promise<void> {
+    const client = tx ?? this.prisma;
+    await client.instanceSetupRecord.upsert({
       where: { id: 1 },
       create: {
         id: 1,

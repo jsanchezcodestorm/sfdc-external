@@ -20,6 +20,7 @@ export interface CsrfValidationFailure {
 }
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+const ALLOWED_MUTATING_CONTENT_TYPES = ['application/json', 'multipart/form-data'];
 
 @Injectable()
 export class CsrfService {
@@ -65,9 +66,9 @@ export class CsrfService {
     }
 
     const contentType = request.header('content-type')?.trim().toLowerCase() ?? '';
-    if (!contentType.startsWith('application/json')) {
+    if (!this.isAllowedMutatingContentType(contentType)) {
       return {
-        message: 'Mutating requests must use application/json content type',
+        message: 'Mutating requests must use application/json or multipart/form-data content type',
         reasonCode: 'CSRF_VALIDATION_FAILED',
         metadata: {
           contentType: contentType || null
@@ -93,6 +94,12 @@ export class CsrfService {
 
   isSafeMethod(method: string): boolean {
     return SAFE_METHODS.has(method.trim().toUpperCase());
+  }
+
+  private isAllowedMutatingContentType(contentType: string): boolean {
+    return ALLOWED_MUTATING_CONTENT_TYPES.some((allowedType) =>
+      contentType.startsWith(allowedType),
+    );
   }
 
   private getCookieOptions(): CookieOptions {

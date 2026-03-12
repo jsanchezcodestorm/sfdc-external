@@ -5,7 +5,7 @@ import type { SessionUser } from './auth-types'
 export type AuthContextValue = {
   user: SessionUser | null
   isBootstrapping: boolean
-  loginWithGoogleIdToken: (idToken: string) => Promise<void>
+  loginWithPassword: (username: string, password: string) => Promise<void>
   logout: () => Promise<void>
 }
 

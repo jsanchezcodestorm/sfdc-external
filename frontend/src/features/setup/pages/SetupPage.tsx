@@ -56,8 +56,18 @@ function buildSalesforcePayload(value: SalesforceDraftState): SetupSalesforceCon
   }
 }
 
-function isStepOneComplete(siteName: string, adminEmail: string): boolean {
-  return siteName.trim().length > 0 && adminEmail.trim().length > 0
+function isStepOneComplete(
+  siteName: string,
+  adminEmail: string,
+  bootstrapPassword: string,
+  confirmBootstrapPassword: string,
+): boolean {
+  return (
+    siteName.trim().length > 0 &&
+    adminEmail.trim().length > 0 &&
+    bootstrapPassword.trim().length > 0 &&
+    bootstrapPassword === confirmBootstrapPassword
+  )
 }
 
 type StepButtonProps = {
@@ -90,6 +100,8 @@ export function SetupPage() {
   const [step, setStep] = useState<WizardStep>(1)
   const [siteName, setSiteName] = useState('')
   const [adminEmail, setAdminEmail] = useState('')
+  const [bootstrapPassword, setBootstrapPassword] = useState('')
+  const [confirmBootstrapPassword, setConfirmBootstrapPassword] = useState('')
   const [salesforce, setSalesforce] = useState<SalesforceDraftState>(
     createInitialSalesforceDraft,
   )
@@ -189,12 +201,15 @@ export function SetupPage() {
       const payload: CompleteSetupRequest = {
         siteName: siteName.trim(),
         adminEmail: adminEmail.trim(),
+        bootstrapPassword,
         salesforce: salesforcePayload,
       }
 
       await completeInitialSetup(payload)
       await refreshStatus()
-      navigate('/login', { replace: true })
+      navigate(`/login?username=${encodeURIComponent(adminEmail.trim())}`, {
+        replace: true,
+      })
     } catch (saveError) {
       const message =
         saveError instanceof Error
@@ -225,7 +240,12 @@ export function SetupPage() {
         <section className="grid gap-3 md:grid-cols-3">
           <StepButton
             isActive={step === 1}
-            isCompleted={isStepOneComplete(siteName, adminEmail)}
+            isCompleted={isStepOneComplete(
+              siteName,
+              adminEmail,
+              bootstrapPassword,
+              confirmBootstrapPassword,
+            )}
             label="Step 1"
             title="Branding e admin"
           />
@@ -254,8 +274,8 @@ export function SetupPage() {
                   Identità base dell’istanza
                 </h2>
                 <p className="mt-2 text-sm leading-6 text-slate-600">
-                  Il nome sito viene usato nel branding UI. L’email admin bootstrap riceverà
-                  `PORTAL_ADMIN` al primo login Google completato.
+                  Il nome sito viene usato nel branding UI. L’email admin bootstrap diventa il
+                  primo account `PORTAL_ADMIN` e definisce qui la password iniziale locale.
                 </p>
               </div>
 
@@ -280,13 +300,55 @@ export function SetupPage() {
                     type="email"
                   />
                 </label>
+
+                <label className="space-y-2">
+                  <span className="text-sm font-semibold text-slate-800">
+                    Password iniziale admin
+                  </span>
+                  <input
+                    value={bootstrapPassword}
+                    onChange={(event) => setBootstrapPassword(event.target.value)}
+                    className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
+                    placeholder="Inserisci la password iniziale"
+                    type="password"
+                    autoComplete="new-password"
+                  />
+                </label>
+
+                <label className="space-y-2 md:col-span-2">
+                  <span className="text-sm font-semibold text-slate-800">
+                    Conferma password
+                  </span>
+                  <input
+                    value={confirmBootstrapPassword}
+                    onChange={(event) => setConfirmBootstrapPassword(event.target.value)}
+                    className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
+                    placeholder="Ripeti la password iniziale"
+                    type="password"
+                    autoComplete="new-password"
+                  />
+                </label>
               </div>
+
+              {confirmBootstrapPassword.length > 0 &&
+              confirmBootstrapPassword !== bootstrapPassword ? (
+                <p className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                  Le password non coincidono.
+                </p>
+              ) : null}
 
               <div className="flex justify-end">
                 <button
                   type="button"
                   onClick={() => setStep(2)}
-                  disabled={!isStepOneComplete(siteName, adminEmail)}
+                  disabled={
+                    !isStepOneComplete(
+                      siteName,
+                      adminEmail,
+                      bootstrapPassword,
+                      confirmBootstrapPassword,
+                    )
+                  }
                   className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
                 >
                   Continua
@@ -501,11 +563,14 @@ export function SetupPage() {
 
                 <article className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
                   <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-                    Google Auth
+                    Auth applicativa
                   </p>
-                  <p className="mt-3 text-lg font-semibold text-slate-950">Gestito via env</p>
+                  <p className="mt-3 text-lg font-semibold text-slate-950">
+                    Credenziale locale bootstrap
+                  </p>
                   <p className="mt-2 text-sm text-slate-600">
-                    La wizard non modifica `GOOGLE_CLIENT_ID` o `VITE_GOOGLE_CLIENT_ID`.
+                    Primo login: {adminEmail.trim()} con password definita nello step 1. I provider
+                    OIDC restano opzionali e configurabili successivamente.
                   </p>
                 </article>
 

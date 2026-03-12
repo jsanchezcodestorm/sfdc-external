@@ -3,4 +3,6 @@ export interface SessionUser {
   email: string;
   permissions: string[];
   contactRecordTypeDeveloperName?: string;
+  authProvider?: string;
+  authMethod?: 'oidc' | 'local';
 }
