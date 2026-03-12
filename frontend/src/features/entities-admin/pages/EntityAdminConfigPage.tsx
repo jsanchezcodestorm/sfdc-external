@@ -72,11 +72,14 @@ type EntityAdminLocationState = {
 }
 
 export function EntityAdminConfigPage() {
-  const { confirm } = useAppDialog()
+  const { confirm, alert } = useAppDialog()
   const location = useLocation()
   const navigate = useNavigate()
   const params = useParams<RouteParams>()
   const blockedNavigationKeyRef = useRef<string | null>(null)
+  const pageErrorRef = useRef<HTMLElement | null>(null)
+  const editorErrorRef = useRef<HTMLElement | null>(null)
+  const bootstrapErrorRef = useRef<HTMLElement | null>(null)
   const shouldAutoSyncIdRef = useRef(true)
   const shouldAutoSyncLabelRef = useRef(true)
 
@@ -345,6 +348,31 @@ export function EntityAdminConfigPage() {
     setBootstrapPreviewError(null)
     setLoadingBootstrapPreview(false)
   }, [isCreateRoute])
+
+  useEffect(() => {
+    const focusError = (node: HTMLElement | null) => {
+      if (!node) {
+        return
+      }
+
+      node.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      node.focus({ preventScroll: true })
+    }
+
+    if (pageError) {
+      focusError(pageErrorRef.current)
+      return
+    }
+
+    if (editorError) {
+      focusError(editorErrorRef.current)
+      return
+    }
+
+    if (bootstrapPreviewError && isCreateRoute) {
+      focusError(bootstrapErrorRef.current)
+    }
+  }, [bootstrapPreviewError, editorError, isCreateRoute, pageError])
 
   const shouldBlockDirtyNavigation = useCallback(
     ({
@@ -788,6 +816,12 @@ export function EntityAdminConfigPage() {
       const message =
         error instanceof Error ? error.message : 'Errore generazione bootstrap preview'
       setBootstrapPreviewError(message)
+      await alert({
+        title: 'Errore generazione preset',
+        description: message,
+        tone: 'danger',
+        confirmLabel: 'Chiudi',
+      })
     } finally {
       setLoadingBootstrapPreview(false)
     }
@@ -844,6 +878,12 @@ export function EntityAdminConfigPage() {
       const message =
         error instanceof Error ? error.message : 'Errore salvataggio entity config'
       setPageError(message)
+      await alert({
+        title: 'Errore salvataggio entity',
+        description: message,
+        tone: 'danger',
+        confirmLabel: 'Chiudi',
+      })
     } finally {
       setSaving(false)
     }
@@ -876,6 +916,12 @@ export function EntityAdminConfigPage() {
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Errore creazione entity config'
       setPageError(message)
+      await alert({
+        title: 'Errore creazione entity',
+        description: message,
+        tone: 'danger',
+        confirmLabel: 'Chiudi',
+      })
     } finally {
       setSaving(false)
     }
@@ -910,6 +956,12 @@ export function EntityAdminConfigPage() {
       const message =
         error instanceof Error ? error.message : 'Errore creazione entity con preset'
       setPageError(message)
+      await alert({
+        title: 'Errore creazione entity con preset',
+        description: message,
+        tone: 'danger',
+        confirmLabel: 'Chiudi',
+      })
     } finally {
       setSaving(false)
     }
@@ -942,6 +994,12 @@ export function EntityAdminConfigPage() {
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Errore eliminazione entity config'
       setPageError(message)
+      await alert({
+        title: 'Errore eliminazione entity',
+        description: message,
+        tone: 'danger',
+        confirmLabel: 'Chiudi',
+      })
     } finally {
       setDeleting(false)
     }
@@ -1036,8 +1094,32 @@ export function EntityAdminConfigPage() {
       </header>
 
       {pageError ? (
-        <section className="rounded-2xl border border-rose-200 bg-rose-50 p-5 shadow-sm">
+        <section
+          ref={pageErrorRef}
+          tabIndex={-1}
+          className="rounded-2xl border border-rose-200 bg-rose-50 p-5 shadow-sm outline-none"
+        >
           <p className="text-sm text-rose-700">{pageError}</p>
+        </section>
+      ) : null}
+
+      {editorError ? (
+        <section
+          ref={editorErrorRef}
+          tabIndex={-1}
+          className="rounded-2xl border border-rose-200 bg-rose-50 p-5 shadow-sm outline-none"
+        >
+          <p className="text-sm text-rose-700">{editorError}</p>
+        </section>
+      ) : null}
+
+      {isCreateRoute && bootstrapPreviewError ? (
+        <section
+          ref={bootstrapErrorRef}
+          tabIndex={-1}
+          className="rounded-2xl border border-rose-200 bg-rose-50 p-5 shadow-sm outline-none"
+        >
+          <p className="text-sm text-rose-700">{bootstrapPreviewError}</p>
         </section>
       ) : null}
 

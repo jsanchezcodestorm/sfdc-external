@@ -107,7 +107,7 @@ export function EntityConfigListForm({
 
       <div className="mt-4 grid gap-4 md:grid-cols-2">
         <label className="text-sm font-medium text-slate-700">
-          List Title
+          List Title <span className="text-rose-600">*</span>
           <input
             type="text"
             value={value.title}
@@ -248,7 +248,7 @@ export function EntityConfigListForm({
               <div className="space-y-5">
                 <div className="grid gap-4 md:grid-cols-2">
                   <label className="text-sm font-medium text-slate-700">
-                    View Id
+                    View Id <span className="text-rose-600">*</span>
                     <input
                       type="text"
                       value={editingView.id}
@@ -260,7 +260,7 @@ export function EntityConfigListForm({
                   </label>
 
                   <label className="text-sm font-medium text-slate-700">
-                    View Label
+                    View Label <span className="text-rose-600">*</span>
                     <input
                       type="text"
                       value={editingView.label}
@@ -374,7 +374,7 @@ export function EntityConfigListForm({
 
                   <div className="space-y-4">
                     <SalesforceFieldMultiSelect
-                      label="Query Fields"
+                      label="Query Fields *"
                       objectApiName={baseObjectApiName}
                       value={editingView.queryFields}
                       helperText="Selezione multipla campi inclusi nella query list."
@@ -404,7 +404,7 @@ export function EntityConfigListForm({
                 </div>
 
                 <SalesforceColumnsBuilder
-                  label="Columns"
+                  label="Columns *"
                   objectApiName={baseObjectApiName}
                   queryFields={editingView.queryFields}
                   value={editingView.columns}
