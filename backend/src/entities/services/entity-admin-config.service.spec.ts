@@ -35,7 +35,7 @@ function createService(fields: ReturnType<typeof createField>[]) {
   const counters = {
     ensureAclResourceCalls: 0,
     ensureVisibilityBootstrapCalls: 0,
-    assertKebabCaseIdCalls: 0,
+    assertEntityIdCalls: 0,
     repositoryCalls: 0,
     auditCalls: 0,
     describeCalls: 0,
@@ -63,8 +63,8 @@ function createService(fields: ReturnType<typeof createField>[]) {
       },
     } as never,
     {
-      assertKebabCaseId() {
-        counters.assertKebabCaseIdCalls += 1;
+      assertEntityId() {
+        counters.assertEntityIdCalls += 1;
       },
     } as never,
     {
@@ -134,7 +134,7 @@ test('previewEntityBootstrap prioritizes Name in list and detail presets', async
   });
 
   assert.equal(counters.describeCalls, 1);
-  assert.equal(counters.assertKebabCaseIdCalls, 1);
+  assert.equal(counters.assertEntityIdCalls, 1);
   assert.equal(response.entity.list?.views[0]?.query.fields?.[0], 'Id');
   assert.equal(response.entity.list?.views[0]?.query.fields?.[1], 'Name');
   assert.deepEqual(response.entity.list?.views[0]?.columns?.[0], {
@@ -392,7 +392,7 @@ test('createEntityConfig auto-provisions entity ACL resource before persistence'
       },
     } as never,
     {
-      assertKebabCaseId(entityId: string) {
+      assertEntityId(entityId: string) {
         calls.push(`assert:${entityId}`);
       },
     } as never,

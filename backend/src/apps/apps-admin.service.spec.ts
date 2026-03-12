@@ -16,6 +16,7 @@ test('createApp rejects duplicate entity ids', async () => {
 
   const resourceAccessService = {
     assertKebabCaseId() {},
+    assertEntityId() {},
   };
 
   const auditWriteService = {
@@ -53,6 +54,7 @@ test('createApp rejects duplicate permission codes', async () => {
 
   const resourceAccessService = {
     assertKebabCaseId() {},
+    assertEntityId() {},
   };
 
   const auditWriteService = {
@@ -105,6 +107,7 @@ test('createApp persists normalized payload and records audit metadata', async (
 
   const resourceAccessService = {
     assertKebabCaseId() {},
+    assertEntityId() {},
   };
 
   const auditWriteService = {

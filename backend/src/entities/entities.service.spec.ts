@@ -75,6 +75,7 @@ function createHarness(rawResult: Record<string, unknown>, queryMoreResults: Rec
   );
 
   const resourceAccessService = {
+    assertEntityId() {},
     async authorizeObjectAccess() {
       return visibility;
     },
@@ -745,6 +746,7 @@ function createWriteHarness(options?: {
   );
 
   const resourceAccessService = {
+    assertEntityId() {},
     async authorizeObjectAccess(
       currentUser: Record<string, unknown>,
       aclResourceId: string,

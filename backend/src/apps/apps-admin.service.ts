@@ -137,7 +137,7 @@ export class AppsAdminService {
 
     const entityIds = value.map((entry, index) => {
       const entityId = this.requireString(entry, `app.entityIds[${index}] must be a non-empty string`);
-      this.resourceAccessService.assertKebabCaseId(entityId, `app.entityIds[${index}]`);
+      this.resourceAccessService.assertEntityId(entityId, `app.entityIds[${index}]`);
       return entityId;
     });
     const uniqueEntityIds = [...new Set(entityIds)];

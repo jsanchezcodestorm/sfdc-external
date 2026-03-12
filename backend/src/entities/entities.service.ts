@@ -721,7 +721,7 @@ export class EntitiesService {
   }
 
   private async loadEntityConfig(entityId: string): Promise<EntityConfig> {
-    this.resourceAccessService.assertKebabCaseId(entityId, 'entityId');
+    this.resourceAccessService.assertEntityId(entityId, 'entityId');
     return this.entityConfigRepository.getEntityConfig(entityId);
   }
 

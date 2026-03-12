@@ -131,7 +131,7 @@ export class EntityAdminConfigService {
   }
 
   async getEntityConfig(entityId: string): Promise<EntityAdminConfigResponse> {
-    this.resourceAccessService.assertKebabCaseId(entityId, 'entityId');
+    this.resourceAccessService.assertEntityId(entityId, 'entityId');
     const entity = await this.repository.getEntityConfig(entityId);
     return {
       entity,
@@ -141,7 +141,7 @@ export class EntityAdminConfigService {
 
   async createEntityConfig(payload: UpsertEntityAdminConfigPayload): Promise<EntityAdminConfigResponse> {
     const entity = this.normalizeEntityConfig(undefined, payload.entity);
-    this.resourceAccessService.assertKebabCaseId(entity.id, 'entity.id');
+    this.resourceAccessService.assertEntityId(entity.id, 'entity.id');
 
     if (await this.repository.hasEntityConfig(entity.id)) {
       throw new ConflictException(`Entity config ${entity.id} already exists`);
@@ -172,7 +172,7 @@ export class EntityAdminConfigService {
     payload: UpsertEntityAdminConfigPayload
   ): Promise<EntityAdminBootstrapPreviewResponse> {
     const entity = this.normalizeBootstrapEntityBase(payload.entity);
-    this.resourceAccessService.assertKebabCaseId(entity.id, 'entity.id');
+    this.resourceAccessService.assertEntityId(entity.id, 'entity.id');
 
     const describedFields = (await this.salesforceService.describeObjectFields(
       entity.objectApiName
@@ -186,7 +186,7 @@ export class EntityAdminConfigService {
   }
 
   async updateEntityConfig(entityId: string, payload: UpsertEntityAdminConfigPayload): Promise<EntityAdminConfigResponse> {
-    this.resourceAccessService.assertKebabCaseId(entityId, 'entityId');
+    this.resourceAccessService.assertEntityId(entityId, 'entityId');
 
     if (!(await this.repository.hasEntityConfig(entityId))) {
       throw new NotFoundException(`Entity config ${entityId} not found`);
@@ -213,7 +213,7 @@ export class EntityAdminConfigService {
   }
 
   async deleteEntityConfig(entityId: string): Promise<void> {
-    this.resourceAccessService.assertKebabCaseId(entityId, 'entityId');
+    this.resourceAccessService.assertEntityId(entityId, 'entityId');
 
     if (!(await this.repository.hasEntityConfig(entityId))) {
       throw new NotFoundException(`Entity config ${entityId} not found`);
