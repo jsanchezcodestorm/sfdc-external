@@ -136,7 +136,7 @@ export async function apiFetch<T = unknown>(
   const serializeAsJson = shouldSerializeAsJson(body)
   const requestHeaders = new Headers(headers)
 
-  if ((requiresCsrf || serializeAsJson) && !requestHeaders.has('Content-Type')) {
+  if (serializeAsJson && !requestHeaders.has('Content-Type')) {
     requestHeaders.set('Content-Type', 'application/json')
   }
 
@@ -190,7 +190,7 @@ export async function apiFetchBlob(
   const serializeAsJson = shouldSerializeAsJson(body)
   const requestHeaders = new Headers(headers)
 
-  if ((requiresCsrf || serializeAsJson) && !requestHeaders.has('Content-Type')) {
+  if (serializeAsJson && !requestHeaders.has('Content-Type')) {
     requestHeaders.set('Content-Type', 'application/json')
   }
 

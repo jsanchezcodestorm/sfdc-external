@@ -28,6 +28,7 @@ import { EntityRuntimePage } from './features/entities/pages/EntityRuntimePage'
 import { EntityRouteFallbackPage } from './features/entities/pages/EntityRouteFallbackPage'
 import { EntityAdminConfigPage } from './features/entities-admin/pages/EntityAdminConfigPage'
 import { MetadataAdminPage } from './features/metadata-admin/pages/MetadataAdminPage'
+import { MetadataAdminPreviewPage } from './features/metadata-admin/pages/MetadataAdminPreviewPage'
 import { QueryTemplateAdminLayout } from './features/query-template-admin/pages/QueryTemplateAdminLayout'
 import { QueryTemplateDetailPage } from './features/query-template-admin/pages/QueryTemplateDetailPage'
 import { QueryTemplateEditorPage } from './features/query-template-admin/pages/QueryTemplateEditorPage'
@@ -199,6 +200,7 @@ const router = createHashRouter(
 
               <Route element={<RequireRouteAccess routeId={ADMIN_METADATA_ROUTE_ID} />}>
                 <Route path="metadata" element={<MetadataAdminPage />} />
+                <Route path="metadata/preview" element={<MetadataAdminPreviewPage />} />
               </Route>
 
               <Route element={<RequireRouteAccess routeId={ADMIN_AUDIT_ROUTE_ID} />}>

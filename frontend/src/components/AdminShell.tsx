@@ -23,6 +23,10 @@ import {
   parseEntityConfigEditPath,
 } from '../features/entities-admin/entity-admin-routing'
 import {
+  buildMetadataAdminPath,
+  buildMetadataAdminPreviewPath,
+} from '../features/metadata-admin/metadata-admin-utils'
+import {
   WorkspaceSidebar,
   type WorkspaceSidebarItem,
   type WorkspaceSidebarModule,
@@ -525,21 +529,30 @@ function buildMetadataModule(
     return null
   }
 
-  const isActive = pathname.startsWith('/admin/metadata')
+  const isPackagesRoute = pathname === buildMetadataAdminPath()
+  const isPreviewRoute = pathname === buildMetadataAdminPreviewPath()
+  const isActive = pathname.startsWith(buildMetadataAdminPath())
 
   return {
     id: 'metadata',
     label: 'Metadata',
-    to: '/admin/metadata',
+    to: buildMetadataAdminPath(),
     description: 'Package zip YAML per retrieve, preview e deploy.',
     isActive,
     items: [
       {
         id: 'metadata-packages',
         label: 'Packages',
-        to: '/admin/metadata',
-        caption: 'Export zip, diff preview e deploy batch',
-        isActive,
+        to: buildMetadataAdminPath(),
+        caption: 'Export zip e selezione package',
+        isActive: isPackagesRoute,
+      },
+      {
+        id: 'metadata-preview',
+        label: 'Preview',
+        to: buildMetadataAdminPreviewPath(),
+        caption: 'Diff package, blocker e deploy',
+        isActive: isPreviewRoute,
       },
     ],
   }
