@@ -37,11 +37,6 @@ export type AppExternalLinkItemConfig = AppItemBaseConfig & {
 
 export type AppReportItemConfig = AppItemBaseConfig & {
   kind: 'report'
-  url: string
-  openMode: AppEmbedOpenMode
-  iframeTitle?: string
-  height?: number
-  providerLabel?: string
 }
 
 export type AppItemConfig =

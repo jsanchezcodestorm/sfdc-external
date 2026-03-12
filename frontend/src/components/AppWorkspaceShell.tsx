@@ -255,7 +255,7 @@ function WorkspaceNavItem({
     )
   }
 
-  if ((item.kind === 'external-link' || item.kind === 'report') && item.openMode === 'new-tab') {
+  if (item.kind === 'external-link' && item.openMode === 'new-tab') {
     return (
       <a
         href={href}
@@ -287,7 +287,7 @@ function describeItem(item: AvailableAppItem): string {
     case 'external-link':
       return item.openMode === 'iframe' ? 'Embed esterno' : 'Nuova tab'
     case 'report':
-      return item.providerLabel?.trim() || 'Report'
+      return 'Report'
   }
 }
 

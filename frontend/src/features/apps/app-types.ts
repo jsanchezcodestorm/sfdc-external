@@ -72,11 +72,6 @@ export type AvailableAppExternalLinkItem = AvailableAppItemBase & {
 
 export type AvailableAppReportItem = AvailableAppItemBase & {
   kind: 'report'
-  url: string
-  openMode: AppEmbedOpenMode
-  iframeTitle?: string
-  height?: number
-  providerLabel?: string
 }
 
 export type AvailableAppItem =

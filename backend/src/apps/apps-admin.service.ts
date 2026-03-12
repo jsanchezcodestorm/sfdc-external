@@ -244,19 +244,14 @@ export class AppsAdminService {
 
   private normalizeReportItem(
     item: Record<string, unknown>,
-    index: number
+    _index: number
   ): AppReportItemConfig {
     return {
       id: item.id as string,
       kind: 'report',
       label: item.label as string,
       description: item.description as string | undefined,
-      resourceId: item.resourceId as string | undefined,
-      url: this.normalizeHttpsUrl(item.url, `app.items[${index}].url`),
-      openMode: this.normalizeEmbedOpenMode(item.openMode, `app.items[${index}].openMode`),
-      iframeTitle: this.asOptionalString(item.iframeTitle),
-      height: this.normalizeOptionalHeight(item.height, `app.items[${index}].height`),
-      providerLabel: this.asOptionalString(item.providerLabel)
+      resourceId: item.resourceId as string | undefined
     };
   }
 
@@ -454,10 +449,7 @@ export class AppsAdminService {
     const allowedHosts = new Set(readAllowedAppEmbedHosts(this.configService));
 
     for (const item of items) {
-      if (
-        (item.kind !== 'external-link' && item.kind !== 'report') ||
-        item.openMode !== 'iframe'
-      ) {
+      if (item.kind !== 'external-link' || item.openMode !== 'iframe') {
         continue;
       }
 

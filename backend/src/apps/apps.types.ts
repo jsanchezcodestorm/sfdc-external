@@ -70,11 +70,6 @@ export interface AppExternalLinkItemConfig extends AppItemBase {
 
 export interface AppReportItemConfig extends AppItemBase {
   kind: 'report';
-  url: string;
-  openMode: AppEmbedOpenMode;
-  iframeTitle?: string;
-  height?: number;
-  providerLabel?: string;
 }
 
 export type AppItemConfig =
@@ -147,11 +142,6 @@ export interface AvailableAppExternalLinkItem extends AvailableAppItemBase {
 
 export interface AvailableAppReportItem extends AvailableAppItemBase {
   kind: 'report';
-  url: string;
-  openMode: AppEmbedOpenMode;
-  iframeTitle?: string;
-  height?: number;
-  providerLabel?: string;
 }
 
 export type AvailableAppItem =

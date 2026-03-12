@@ -342,7 +342,7 @@ export function AppsAdminEditorPage({ mode }: AppsAdminEditorPageProps) {
               <div>
                 <p className="text-sm font-medium text-slate-700">App Items</p>
                 <p className="mt-1 text-xs text-slate-500">
-                  Ordina la navigazione dell&apos;app e configura home, entity, pagine, link ed embed.
+                  Ordina la navigazione dell&apos;app e configura home, entity, pagine, link esterni e modulo report interno.
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -605,8 +605,8 @@ function AppItemEditorModal({
       return
     }
 
-    if ((draft.kind === 'external-link' || draft.kind === 'report') && draft.url.trim().length === 0) {
-      setError('URL obbligatoria per item esterni o report')
+    if (draft.kind === 'external-link' && draft.url.trim().length === 0) {
+      setError('URL obbligatoria per item external-link')
       return
     }
 
@@ -639,7 +639,6 @@ function AppItemEditorModal({
       url: draft.url.trim(),
       iframeTitle: draft.iframeTitle.trim(),
       height: draft.height.trim(),
-      providerLabel: draft.providerLabel.trim(),
     })
   }
 
@@ -782,7 +781,7 @@ function AppItemEditorModal({
               </label>
             ) : null}
 
-            {(draft.kind === 'external-link' || draft.kind === 'report') ? (
+            {draft.kind === 'external-link' ? (
               <div className="grid gap-4 md:grid-cols-2">
                 <label className="text-sm font-medium text-slate-700 md:col-span-2">
                   URL
@@ -828,17 +827,12 @@ function AppItemEditorModal({
                   />
                 </label>
 
-                {draft.kind === 'report' ? (
-                  <label className="text-sm font-medium text-slate-700">
-                    Provider label
-                    <input
-                      type="text"
-                      value={draft.providerLabel}
-                      onChange={(event) => update({ providerLabel: event.target.value })}
-                      className="mt-2 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
-                    />
-                  </label>
-                ) : null}
+              </div>
+            ) : null}
+
+            {draft.kind === 'report' ? (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">
+                L&apos;item `report` apre sempre il modulo report interno dell&apos;app. La configurazione operativa di folder, sharing e report builder avviene nel runtime workspace, non qui.
               </div>
             ) : null}
           </div>
@@ -880,7 +874,7 @@ function describeItemTarget(item: AppItemDraft): string {
     case 'external-link':
       return item.url.trim() || 'URL da configurare'
     case 'report':
-      return item.url.trim() || 'Report URL da configurare'
+      return 'Modulo report interno'
   }
 }
 
@@ -897,11 +891,7 @@ function describeItemConfig(item: AppItemDraft): string {
         item.height.trim() ? `${item.height.trim()}px` : '',
       ])
     case 'report':
-      return summarizeValues([
-        item.openMode === 'iframe' ? 'Iframe' : 'New tab',
-        item.providerLabel.trim(),
-        item.height.trim() ? `${item.height.trim()}px` : '',
-      ])
+      return 'Workspace interno'
   }
 }
 
