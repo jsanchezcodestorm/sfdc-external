@@ -16,6 +16,7 @@ export type KnownRouteId =
   | 'route:admin-acl'
   | 'route:admin-query-templates'
   | 'route:admin-visibility'
+  | 'route:admin-metadata'
   | 'route:admin-audit'
 
 export type AdminRouteId = Exclude<KnownRouteId, 'route:home'>

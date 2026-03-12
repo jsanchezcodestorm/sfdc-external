@@ -34,6 +34,7 @@ import {
   ADMIN_APPS_ROUTE_ID,
   ADMIN_AUDIT_ROUTE_ID,
   ADMIN_ENTITY_CONFIG_ROUTE_ID,
+  ADMIN_METADATA_ROUTE_ID,
   ADMIN_QUERY_TEMPLATES_ROUTE_ID,
   ADMIN_VISIBILITY_ROUTE_ID,
 } from '../features/route-access/route-access-registry'
@@ -127,6 +128,7 @@ function buildAdminSidebarModules(
     buildAclModule(pathname, allowedRouteIdSet),
     buildQueryTemplatesModule(pathname, allowedRouteIdSet),
     buildVisibilityModule(pathname, allowedRouteIdSet),
+    buildMetadataModule(pathname, allowedRouteIdSet),
     buildAuditModule(pathname, search, allowedRouteIdSet),
   ].filter((module): module is WorkspaceSidebarModule => module !== null)
 }
@@ -510,6 +512,34 @@ function buildAuditModule(
         to: `${buildAuditListPath()}${buildAuditSearch('query')}`,
         caption: AUDIT_TAB_COPY.query.description,
         isActive: activeStream === 'query',
+      },
+    ],
+  }
+}
+
+function buildMetadataModule(
+  pathname: string,
+  allowedRouteIdSet: ReadonlySet<AdminRouteId>,
+): WorkspaceSidebarModule | null {
+  if (!allowedRouteIdSet.has(ADMIN_METADATA_ROUTE_ID)) {
+    return null
+  }
+
+  const isActive = pathname.startsWith('/admin/metadata')
+
+  return {
+    id: 'metadata',
+    label: 'Metadata',
+    to: '/admin/metadata',
+    description: 'Package zip YAML per retrieve, preview e deploy.',
+    isActive,
+    items: [
+      {
+        id: 'metadata-packages',
+        label: 'Packages',
+        to: '/admin/metadata',
+        caption: 'Export zip, diff preview e deploy batch',
+        isActive,
       },
     ],
   }

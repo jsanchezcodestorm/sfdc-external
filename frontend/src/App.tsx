@@ -27,6 +27,7 @@ import { EntityRelatedListPage } from './features/entities/pages/EntityRelatedLi
 import { EntityRuntimePage } from './features/entities/pages/EntityRuntimePage'
 import { EntityRouteFallbackPage } from './features/entities/pages/EntityRouteFallbackPage'
 import { EntityAdminConfigPage } from './features/entities-admin/pages/EntityAdminConfigPage'
+import { MetadataAdminPage } from './features/metadata-admin/pages/MetadataAdminPage'
 import { QueryTemplateAdminLayout } from './features/query-template-admin/pages/QueryTemplateAdminLayout'
 import { QueryTemplateDetailPage } from './features/query-template-admin/pages/QueryTemplateDetailPage'
 import { QueryTemplateEditorPage } from './features/query-template-admin/pages/QueryTemplateEditorPage'
@@ -54,6 +55,7 @@ import {
   ADMIN_ENTITY_CONFIG_ROUTE_ID,
   ADMIN_QUERY_TEMPLATES_ROUTE_ID,
   ADMIN_VISIBILITY_ROUTE_ID,
+  ADMIN_METADATA_ROUTE_ID,
   HOME_ROUTE_ID,
 } from './features/route-access/route-access-registry'
 import { HomePage } from './pages/HomePage'
@@ -193,6 +195,10 @@ const router = createHashRouter(
                   />
                   <Route path="debug" element={<VisibilityDebugPage />} />
                 </Route>
+              </Route>
+
+              <Route element={<RequireRouteAccess routeId={ADMIN_METADATA_ROUTE_ID} />}>
+                <Route path="metadata" element={<MetadataAdminPage />} />
               </Route>
 
               <Route element={<RequireRouteAccess routeId={ADMIN_AUDIT_ROUTE_ID} />}>

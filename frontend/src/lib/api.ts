@@ -180,6 +180,47 @@ export async function apiFetch<T = unknown>(
   return (await response.text()) as T
 }
 
+export async function apiFetchBlob(
+  path: string,
+  options: ApiRequestOptions = {},
+): Promise<{ blob: Blob; headers: Headers }> {
+  const { body, headers, ...init } = options
+  const method = (init.method ?? 'GET').toUpperCase()
+  const requiresCsrf = isUnsafeMethod(method)
+  const serializeAsJson = shouldSerializeAsJson(body)
+  const requestHeaders = new Headers(headers)
+
+  if ((requiresCsrf || serializeAsJson) && !requestHeaders.has('Content-Type')) {
+    requestHeaders.set('Content-Type', 'application/json')
+  }
+
+  if (requiresCsrf) {
+    requestHeaders.set(CSRF_HEADER_NAME, await getCsrfToken())
+  }
+
+  const requestBody: BodyInit | undefined = serializeAsJson
+    ? JSON.stringify(body)
+    : (body as BodyInit | undefined)
+
+  const response = await fetch(buildUrl(path), {
+    ...init,
+    method,
+    headers: requestHeaders,
+    credentials: 'include',
+    body: requestBody,
+  })
+
+  if (!response.ok) {
+    const message = await parseError(response)
+    throw new ApiError(response.status, message)
+  }
+
+  return {
+    blob: await response.blob(),
+    headers: response.headers,
+  }
+}
+
 export type HealthCheckResponse = {
   status: string
   timestamp: string

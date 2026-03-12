@@ -4,6 +4,7 @@ import {
 import { buildAuditListPath, buildAuditSearch } from '../audit-admin/audit-admin-utils'
 import { buildAppsAdminListPath } from '../apps-admin/apps-admin-utils'
 import { buildEntityCatalogPath } from '../entities-admin/entity-admin-routing'
+import { buildMetadataAdminPath } from '../metadata-admin/metadata-admin-utils'
 import { buildQueryTemplateListPath } from '../query-template-admin/query-template-admin-utils'
 
 import type { AdminRouteId, KnownRouteDefinition, KnownRouteId } from './route-access-types'
@@ -15,6 +16,7 @@ export const ADMIN_APPS_ROUTE_ID: AdminRouteId = 'route:admin-apps'
 export const ADMIN_ACL_ROUTE_ID: AdminRouteId = 'route:admin-acl'
 export const ADMIN_QUERY_TEMPLATES_ROUTE_ID: AdminRouteId = 'route:admin-query-templates'
 export const ADMIN_VISIBILITY_ROUTE_ID: AdminRouteId = 'route:admin-visibility'
+export const ADMIN_METADATA_ROUTE_ID: AdminRouteId = 'route:admin-metadata'
 export const ADMIN_AUDIT_ROUTE_ID: AdminRouteId = 'route:admin-audit'
 
 const KNOWN_ROUTE_DEFINITIONS: readonly KnownRouteDefinition[] = [
@@ -73,6 +75,14 @@ const KNOWN_ROUTE_DEFINITIONS: readonly KnownRouteDefinition[] = [
     description: 'Cones, rules, assignments e debug.',
     isAdmin: true,
     sortOrder: 50,
+  },
+  {
+    id: ADMIN_METADATA_ROUTE_ID,
+    path: buildMetadataAdminPath(),
+    label: 'Metadata',
+    description: 'Export, preview e deploy package zip versionabili.',
+    isAdmin: true,
+    sortOrder: 55,
   },
   {
     id: ADMIN_AUDIT_ROUTE_ID,
