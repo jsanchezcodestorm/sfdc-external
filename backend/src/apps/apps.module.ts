@@ -17,6 +17,6 @@ import { AppsService } from './apps.service';
   imports: [PrismaModule, AuthModule, AclModule, VisibilityModule, AuditModule, SalesforceModule],
   controllers: [AppsController],
   providers: [AppsAdminConfigRepository, AppsAdminService, AppsService, ResourceAccessService],
-  exports: [AppsAdminConfigRepository]
+  exports: [AppsAdminConfigRepository, AppsAdminService]
 })
 export class AppsModule {}

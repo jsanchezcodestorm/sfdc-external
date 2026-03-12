@@ -505,6 +505,24 @@ export class VisibilityAdminService {
     };
   }
 
+  normalizeConeForPersistence(value: unknown): Omit<VisibilityConeDefinition, 'id'> {
+    return this.normalizeCone(undefined, value);
+  }
+
+  normalizeRuleForPersistence(value: unknown): Promise<VisibilityRuleDefinition> {
+    return this.normalizeRule(undefined, value);
+  }
+
+  normalizeAssignmentForPersistence(value: unknown): Promise<VisibilityAssignmentDefinition> {
+    return this.normalizeAssignment(undefined, value);
+  }
+
+  async invalidatePolicyForMetadata(affectedObjectApiNames: string[]): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      await this.bumpPolicyVersionAndInvalidateCaches(tx, affectedObjectApiNames);
+    });
+  }
+
   async evaluateDebug(payload: {
     objectApiName: string;
     contactId: string;
@@ -624,11 +642,8 @@ export class VisibilityAdminService {
     ruleId: string | undefined,
     value: unknown,
   ): Promise<VisibilityRuleDefinition> {
-    if (ruleId) {
-      this.assertUuid(ruleId, 'ruleId');
-    }
-
     const rule = this.requireObject(value, 'rule payload must be an object');
+    const persistedRuleId = this.resolvePersistedUuid(ruleId, rule.id, 'rule.id');
     const coneId = this.requireString(rule.coneId, 'rule.coneId is required');
     this.assertUuid(coneId, 'rule.coneId');
     await this.ensureConeExists(coneId);
@@ -638,7 +653,7 @@ export class VisibilityAdminService {
     compileVisibilityRuleNode(condition);
 
     return {
-      id: ruleId ?? randomUUID(),
+      id: persistedRuleId,
       coneId,
       objectApiName: this.requireString(rule.objectApiName, 'rule.objectApiName is required'),
       description: this.asOptionalString(rule.description),
@@ -654,11 +669,12 @@ export class VisibilityAdminService {
     assignmentId: string | undefined,
     value: unknown,
   ): Promise<VisibilityAssignmentDefinition> {
-    if (assignmentId) {
-      this.assertUuid(assignmentId, 'assignmentId');
-    }
-
     const assignment = this.requireObject(value, 'assignment payload must be an object');
+    const persistedAssignmentId = this.resolvePersistedUuid(
+      assignmentId,
+      assignment.id,
+      'assignment.id',
+    );
     const coneId = this.requireString(assignment.coneId, 'assignment.coneId is required');
     this.assertUuid(coneId, 'assignment.coneId');
     await this.ensureConeExists(coneId);
@@ -692,7 +708,7 @@ export class VisibilityAdminService {
     }
 
     return {
-      id: assignmentId ?? randomUUID(),
+      id: persistedAssignmentId,
       coneId,
       contactId,
       permissionCode,
@@ -1160,6 +1176,28 @@ export class VisibilityAdminService {
     if (!UUID_PATTERN.test(value)) {
       throw new BadRequestException(`${fieldName} must be a valid UUID`);
     }
+  }
+
+  private resolvePersistedUuid(
+    routeId: string | undefined,
+    value: unknown,
+    fieldName: string,
+  ): string {
+    const normalizedRouteId = this.asOptionalString(routeId);
+    if (normalizedRouteId) {
+      this.assertUuid(normalizedRouteId, fieldName === 'rule.id' ? 'ruleId' : 'assignmentId');
+    }
+
+    const normalizedValue = this.asOptionalString(value);
+    if (normalizedValue) {
+      this.assertUuid(normalizedValue, fieldName);
+    }
+
+    if (normalizedRouteId && normalizedValue && normalizedRouteId !== normalizedValue) {
+      throw new BadRequestException(`${fieldName} must match route id`);
+    }
+
+    return normalizedRouteId ?? normalizedValue ?? randomUUID();
   }
 
   private rethrowUniqueConflict(error: unknown, message: string): never {

@@ -43,9 +43,11 @@ import { LocalLoginRateLimiterService } from './local-login-rate-limiter.service
   ],
   exports: [
     AuthService,
+    AuthProviderAdminRepository,
     CsrfService,
     JwtAuthGuard,
     CsrfGuard,
+    LocalCredentialAdminService,
     LocalCredentialPasswordService,
     LocalCredentialProvisioningService,
     LocalCredentialRepository

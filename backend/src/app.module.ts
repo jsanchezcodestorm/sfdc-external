@@ -8,6 +8,7 @@ import { AuthModule } from './auth/auth.module';
 import { EntitiesModule } from './entities/entities.module';
 import { GlobalSearchModule } from './global-search/global-search.module';
 import { HealthModule } from './health/health.module';
+import { MetadataModule } from './metadata/metadata.module';
 import { NavigationModule } from './navigation/navigation.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { QueryModule } from './query/query.module';
@@ -33,7 +34,8 @@ import { VisibilityModule } from './visibility/visibility.module';
     QueryModule,
     NavigationModule,
     GlobalSearchModule,
-    HealthModule
+    HealthModule,
+    MetadataModule
   ]
 })
 export class AppModule {}

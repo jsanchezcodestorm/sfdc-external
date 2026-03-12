@@ -24,6 +24,6 @@ import { EntityQueryCursorService } from './services/entity-query-cursor.service
     EntityAdminConfigService,
     ResourceAccessService
   ],
-  exports: [EntitiesService]
+  exports: [EntitiesService, EntityAdminConfigRepository, EntityAdminConfigService]
 })
 export class EntitiesModule {}

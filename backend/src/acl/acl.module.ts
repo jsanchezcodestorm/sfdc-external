@@ -24,6 +24,14 @@ import { AclService } from './acl.service';
     AclContactPermissionsRepository,
     AclContactPermissionsAdminService
   ],
-  exports: [AclService, AclGuard, AclConfigRepository, AclContactPermissionsRepository]
+  exports: [
+    AclService,
+    AclGuard,
+    AclConfigRepository,
+    AclAdminConfigRepository,
+    AclAdminConfigService,
+    AclContactPermissionsRepository,
+    AclContactPermissionsAdminService
+  ]
 })
 export class AclModule {}

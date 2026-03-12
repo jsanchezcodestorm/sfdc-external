@@ -51,6 +51,7 @@ flowchart LR
 - launcher home che mostra le app disponibili per l utente autenticato
 - routing protetto e navigazione dinamica guidata da ACL tramite `GET /navigation`
 - backoffice `/#/admin/apps` per il catalogo app e integrazione ACL
+- backoffice `/#/admin/metadata` per retrieve/preview/deploy di package zip YAML versionabili
 - consumo endpoint backend senza accesso diretto a Salesforce
 
 ### PostgreSQL (Prisma)
@@ -138,6 +139,11 @@ Launcher utente:
 ACL admin permission:
 - mutation permission -> `{ permission: { code, label?, description?, aliases? }, appIds: string[] }`
 - detail permission -> `appIds[]` e `appCount`
+
+Metadata admin:
+- `POST /metadata/admin/export` -> `application/zip`
+- `POST /metadata/admin/preview` -> summary diff del package zip
+- `POST /metadata/admin/deploy` -> apply batch `upsert` con `packageHash` e `targetFingerprint`
 
 ## 12) Confini e non-obiettivi
 - Salesforce resta system of record business

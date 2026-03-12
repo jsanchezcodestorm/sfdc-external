@@ -97,6 +97,10 @@ export class QueryAdminTemplateService {
     });
   }
 
+  normalizeTemplateForPersistence(value: unknown): QueryTemplate {
+    return this.normalizeTemplate(value);
+  }
+
   private normalizeTemplate(value: unknown): QueryTemplate {
     const payload = this.requireObject(value, 'Query template payload must be an object');
     const id = this.requireString(payload.id, 'template.id is required');

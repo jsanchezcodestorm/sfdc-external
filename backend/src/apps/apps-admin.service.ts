@@ -96,6 +96,13 @@ export class AppsAdminService {
     });
   }
 
+  normalizeAppForPersistence(
+    routeAppId: string | undefined,
+    value: unknown
+  ): Promise<AppConfig> {
+    return this.normalizeApp(routeAppId, value);
+  }
+
   private async normalizeApp(routeAppId: string | undefined, value: unknown): Promise<AppConfig> {
     const payload = this.requireObject(value, 'app payload must be an object');
     const id = this.requireString(payload.id, 'app.id is required');
