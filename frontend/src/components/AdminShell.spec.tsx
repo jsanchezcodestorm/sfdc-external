@@ -45,6 +45,7 @@ function renderAdminShell(
               <Route path="auth/providers/:providerId/edit" element={<div>Auth provider edit</div>} />
               <Route path="entity-config/:entityId/edit/detail/:detailArea" element={<div>Detail page</div>} />
               <Route path="entity-config/:entityId/edit/form/:formArea" element={<div>Form page</div>} />
+              <Route path="query-templates" element={<div>Query templates page</div>} />
             </Route>
           </Routes>
         </AdminNavigationContext.Provider>
@@ -69,9 +70,11 @@ describe('AdminShell', () => {
 
     expect(screen.getAllByText('Apps').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Query Templates').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Modello & App').length).toBeGreaterThan(0)
+    expect(screen.queryByText('Accesso')).toBeNull()
     expect(screen.queryByText('ACL')).toBeNull()
-    expect(screen.queryByText('Visibility')).toBeNull()
-    expect(screen.queryByText('Audit')).toBeNull()
+    expect(screen.queryByText('Sicurezza')).toBeNull()
+    expect(screen.queryByText('Operazioni')).toBeNull()
   })
 
   it('keeps detail section active on nested detail editor routes', () => {
@@ -91,7 +94,7 @@ describe('AdminShell', () => {
     )
 
     expect(detailLink).not.toBeNull()
-    expect(detailLink?.className).toContain('bg-slate-900')
+    expect(detailLink?.getAttribute('aria-current')).toBe('page')
   })
 
   it('keeps form section active on nested form editor routes', () => {
@@ -111,7 +114,7 @@ describe('AdminShell', () => {
     )
 
     expect(formLink).not.toBeNull()
-    expect(formLink?.className).toContain('bg-slate-900')
+    expect(formLink?.getAttribute('aria-current')).toBe('page')
   })
 
   it('keeps auth providers active on nested provider editor routes', () => {
@@ -132,7 +135,26 @@ describe('AdminShell', () => {
 
     expect(providerLinks.length).toBeGreaterThan(0)
     expect(
-      providerLinks.some((link) => link.className.includes('bg-slate-900')),
+      providerLinks.some((link) => link.getAttribute('aria-current') === 'page'),
     ).toBe(true)
+  })
+
+  it('keeps single-destination modules compact without duplicate child links', () => {
+    const { container } = renderAdminShell(
+      '/admin/query-templates',
+      createRouteAccessValue({
+        allowedRouteIds: ['route:admin-query-templates'],
+        allowedAdminRouteIds: ['route:admin-query-templates'],
+        firstAllowedAdminRouteId: 'route:admin-query-templates',
+        firstAllowedAdminPath: '/admin/query-templates',
+        hasRoute: (routeId: string) => routeId === 'route:admin-query-templates',
+      }),
+    )
+
+    const queryTemplateLinks = container.querySelectorAll('a[href="/admin/query-templates"]')
+
+    expect(queryTemplateLinks).toHaveLength(2)
+    expect(Array.from(queryTemplateLinks).every((link) => link.getAttribute('aria-current') === 'page')).toBe(true)
+    expect(screen.queryByText('Lista, view ed edit')).toBeNull()
   })
 })
