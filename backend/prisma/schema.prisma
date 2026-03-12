@@ -45,6 +45,14 @@ enum AuthProviderType {
   LOCAL
 }
 
+enum AppItemKind {
+  HOME
+  ENTITY
+  CUSTOM_PAGE
+  EXTERNAL_LINK
+  REPORT
+}
+
 model VisibilityPolicyMeta {
   id            Int      @id @default(1)
   policyVersion BigInt   @default(1)
@@ -344,7 +352,7 @@ model EntityConfigRecord {
   listConfig     EntityListConfigRecord?
   detailConfig   EntityDetailConfigRecord?
   formConfig     EntityFormConfigRecord?
-  appAssignments AppEntityAssignmentRecord[]
+  appItems       AppItemRecord[]
 
   @@map("entity_configs")
 }
@@ -474,26 +482,34 @@ model AppConfigRecord {
   sortOrder   Int                           @default(0)
   createdAt   DateTime                      @default(now())
   updatedAt   DateTime                      @updatedAt
-  entities    AppEntityAssignmentRecord[]
+  items       AppItemRecord[]
   permissions AppPermissionAssignmentRecord[]
 
   @@index([sortOrder, label])
   @@map("app_configs")
 }
 
-model AppEntityAssignmentRecord {
-  appId     String             @db.VarChar(64)
-  entityId  String             @db.VarChar(64)
-  sortOrder Int
-  createdAt DateTime           @default(now())
-  updatedAt DateTime           @updatedAt
-  app       AppConfigRecord    @relation(fields: [appId], references: [id], onDelete: Cascade)
-  entity    EntityConfigRecord @relation(fields: [entityId], references: [id], onDelete: Cascade)
+model AppItemRecord {
+  appId       String             @db.VarChar(64)
+  itemId      String             @db.VarChar(64)
+  kind        AppItemKind
+  label       String             @db.VarChar(128)
+  description String?            @db.VarChar(512)
+  sortOrder   Int
+  entityId    String?            @db.VarChar(64)
+  resourceId  String?            @db.VarChar(128)
+  configJson  Json?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  app         AppConfigRecord    @relation(fields: [appId], references: [id], onDelete: Cascade)
+  entity      EntityConfigRecord? @relation(fields: [entityId], references: [id], onDelete: Cascade)
 
-  @@id([appId, entityId])
-  @@index([appId, sortOrder])
+  @@id([appId, itemId])
+  @@unique([appId, sortOrder])
+  @@index([appId, kind, sortOrder])
   @@index([entityId])
-  @@map("app_entity_assignments")
+  @@index([resourceId])
+  @@map("app_item_records")
 }
 
 model AppPermissionAssignmentRecord {

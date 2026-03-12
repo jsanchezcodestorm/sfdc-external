@@ -5,13 +5,23 @@ import { BadRequestException } from '@nestjs/common';
 
 import { AppsAdminService } from './apps-admin.service';
 
-test('createApp rejects duplicate entity ids', async () => {
+function createService(overrides?: {
+  repository?: Record<string, unknown>;
+  configService?: Record<string, unknown>;
+  auditWriteService?: Record<string, unknown>;
+}) {
   const repository = {
     async hasApp() {
       return false;
     },
     async assertEntityIdsExist() {},
+    async assertResourceIdsExist() {},
     async assertPermissionCodesExist() {},
+    async upsertApp() {},
+    async getApp() {
+      return null;
+    },
+    ...overrides?.repository,
   };
 
   const resourceAccessService = {
@@ -20,62 +30,95 @@ test('createApp rejects duplicate entity ids', async () => {
 
   const auditWriteService = {
     async recordApplicationSuccessOrThrow() {},
+    ...overrides?.auditWriteService,
   };
 
-  const service = new AppsAdminService(
+  const configService = {
+    get(_key: string, fallback = '') {
+      return fallback;
+    },
+    ...overrides?.configService,
+  };
+
+  return new AppsAdminService(
     repository as never,
     resourceAccessService as never,
     auditWriteService as never,
+    configService as never,
   );
+}
+
+test('createApp rejects duplicate item ids', async () => {
+  const service = createService();
 
   await assert.rejects(
     () =>
       service.createApp({
         id: 'sales',
         label: 'Sales',
-        entityIds: ['account', 'account'],
+        items: [
+          { id: 'home', kind: 'home', label: 'Home', page: { blocks: [] } },
+          { id: 'account', kind: 'entity', label: 'Account', entityId: 'account' },
+          { id: 'account', kind: 'custom-page', label: 'Overview', page: { blocks: [] } },
+        ],
         permissionCodes: ['PORTAL_USER'],
       }),
     (error: unknown) =>
       error instanceof BadRequestException &&
-      error.message === 'app.entityIds must not contain duplicates',
+      error.message === 'app.items must not contain duplicate ids',
   );
 });
 
-test('createApp rejects duplicate permission codes', async () => {
-  const repository = {
-    async hasApp() {
-      return false;
-    },
-    async assertEntityIdsExist() {},
-    async assertPermissionCodesExist() {},
-  };
-
-  const resourceAccessService = {
-    assertKebabCaseId() {},
-  };
-
-  const auditWriteService = {
-    async recordApplicationSuccessOrThrow() {},
-  };
-
-  const service = new AppsAdminService(
-    repository as never,
-    resourceAccessService as never,
-    auditWriteService as never,
-  );
+test('createApp rejects duplicate entity assignments', async () => {
+  const service = createService();
 
   await assert.rejects(
     () =>
       service.createApp({
         id: 'sales',
         label: 'Sales',
-        entityIds: ['account'],
-        permissionCodes: ['PORTAL_USER', 'PORTAL_USER'],
+        items: [
+          { id: 'home', kind: 'home', label: 'Home', page: { blocks: [] } },
+          { id: 'account', kind: 'entity', label: 'Account', entityId: 'account' },
+          { id: 'account-pipeline', kind: 'entity', label: 'Account Pipeline', entityId: 'account' },
+        ],
+        permissionCodes: ['PORTAL_USER'],
       }),
     (error: unknown) =>
       error instanceof BadRequestException &&
-      error.message === 'app.permissionCodes must not contain duplicates',
+      error.message === 'app.items must not contain duplicate entityId assignments',
+  );
+});
+
+test('createApp rejects iframe hosts outside APP_EMBED_ALLOWED_HOSTS', async () => {
+  const service = createService({
+    configService: {
+      get(key: string, fallback = '') {
+        return key === 'APP_EMBED_ALLOWED_HOSTS' ? 'reports.example.com' : fallback;
+      },
+    },
+  });
+
+  await assert.rejects(
+    () =>
+      service.createApp({
+        id: 'sales',
+        label: 'Sales',
+        items: [
+          { id: 'home', kind: 'home', label: 'Home', page: { blocks: [] } },
+          {
+            id: 'executive-report',
+            kind: 'report',
+            label: 'Executive Report',
+            url: 'https://other.example.com/report',
+            openMode: 'iframe',
+          },
+        ],
+        permissionCodes: ['PORTAL_USER'],
+      }),
+    (error: unknown) =>
+      error instanceof BadRequestException &&
+      error.message === 'app item executive-report iframe host must be listed in APP_EMBED_ALLOWED_HOSTS',
   );
 });
 
@@ -83,48 +126,84 @@ test('createApp persists normalized payload and records audit metadata', async (
   const storedApps = new Map<string, Record<string, unknown>>();
   const auditCalls: Array<Record<string, unknown>> = [];
 
-  const repository = {
-    async hasApp(appId: string) {
-      return storedApps.has(appId);
+  const service = createService({
+    repository: {
+      async hasApp(appId: string) {
+        return storedApps.has(appId);
+      },
+      async assertEntityIdsExist(entityIds: string[]) {
+        assert.deepEqual(entityIds, ['account']);
+      },
+      async assertResourceIdsExist(resourceIds: string[]) {
+        assert.deepEqual(resourceIds, ['route:sales-kpi']);
+      },
+      async assertPermissionCodesExist(permissionCodes: string[]) {
+        assert.deepEqual(permissionCodes, ['PORTAL_USER', 'PORTAL_OPERATIONS']);
+      },
+      async upsertApp(app: Record<string, unknown>) {
+        storedApps.set(String(app.id), app);
+      },
+      async getApp(appId: string) {
+        const value = storedApps.get(appId);
+        assert.ok(value);
+        return value;
+      },
     },
-    async assertEntityIdsExist(entityIds: string[]) {
-      assert.deepEqual(entityIds, ['account', 'opportunity']);
+    auditWriteService: {
+      async recordApplicationSuccessOrThrow(input: Record<string, unknown>) {
+        auditCalls.push(input);
+      },
     },
-    async assertPermissionCodesExist(permissionCodes: string[]) {
-      assert.deepEqual(permissionCodes, ['PORTAL_USER', 'PORTAL_OPERATIONS']);
+    configService: {
+      get(key: string, fallback = '') {
+        return key === 'APP_EMBED_ALLOWED_HOSTS' ? 'reports.example.com' : fallback;
+      },
     },
-    async upsertApp(app: Record<string, unknown>) {
-      storedApps.set(String(app.id), app);
-    },
-    async getApp(appId: string) {
-      const value = storedApps.get(appId);
-      assert.ok(value);
-      return value;
-    },
-  };
-
-  const resourceAccessService = {
-    assertKebabCaseId() {},
-  };
-
-  const auditWriteService = {
-    async recordApplicationSuccessOrThrow(input: Record<string, unknown>) {
-      auditCalls.push(input);
-    },
-  };
-
-  const service = new AppsAdminService(
-    repository as never,
-    resourceAccessService as never,
-    auditWriteService as never,
-  );
+  });
 
   const response = await service.createApp({
     id: 'sales',
     label: 'Sales',
     description: 'Commercial workspace',
     sortOrder: 3,
-    entityIds: ['account', 'opportunity'],
+    items: [
+      {
+        id: 'home',
+        kind: 'home',
+        label: 'Home',
+        page: {
+          blocks: [{ type: 'markdown', markdown: 'Welcome' }],
+        },
+      },
+      {
+        id: 'account',
+        kind: 'entity',
+        label: 'Accounts',
+        entityId: 'account',
+      },
+      {
+        id: 'sales-kpi',
+        kind: 'custom-page',
+        label: 'KPI',
+        resourceId: 'route:sales-kpi',
+        page: {
+          blocks: [
+            {
+              type: 'link-list',
+              links: [{ label: 'Accounts', targetType: 'app-item', target: 'account' }],
+            },
+          ],
+        },
+      },
+      {
+        id: 'executive-report',
+        kind: 'report',
+        label: 'Executive Report',
+        url: 'https://reports.example.com/executive',
+        openMode: 'iframe',
+        providerLabel: 'BI',
+      },
+    ],
     permissionCodes: ['PORTAL_USER', 'PORTAL_OPERATIONS'],
   });
 
@@ -133,13 +212,64 @@ test('createApp persists normalized payload and records audit metadata', async (
     label: 'Sales',
     description: 'Commercial workspace',
     sortOrder: 3,
-    entityIds: ['account', 'opportunity'],
+    items: [
+      {
+        id: 'home',
+        kind: 'home',
+        label: 'Home',
+        description: undefined,
+        page: { blocks: [{ type: 'markdown', markdown: 'Welcome' }] },
+      },
+      {
+        id: 'account',
+        kind: 'entity',
+        label: 'Accounts',
+        description: undefined,
+        resourceId: undefined,
+        entityId: 'account',
+      },
+      {
+        id: 'sales-kpi',
+        kind: 'custom-page',
+        label: 'KPI',
+        description: undefined,
+        resourceId: 'route:sales-kpi',
+        page: {
+          blocks: [
+            {
+              type: 'link-list',
+              title: undefined,
+              links: [{ label: 'Accounts', targetType: 'app-item', target: 'account', openMode: undefined }],
+            },
+          ],
+        },
+      },
+      {
+        id: 'executive-report',
+        kind: 'report',
+        label: 'Executive Report',
+        description: undefined,
+        resourceId: undefined,
+        url: 'https://reports.example.com/executive',
+        openMode: 'iframe',
+        iframeTitle: undefined,
+        height: undefined,
+        providerLabel: 'BI',
+      },
+    ],
     permissionCodes: ['PORTAL_USER', 'PORTAL_OPERATIONS'],
   });
   assert.equal(auditCalls.length, 1);
   assert.deepEqual(auditCalls[0].metadata, {
-    entityCount: 2,
+    itemCount: 4,
+    entityCount: 1,
     permissionCount: 2,
     sortOrder: 3,
+    itemsByKind: {
+      home: 1,
+      entity: 1,
+      'custom-page': 1,
+      report: 1,
+    },
   });
 });
