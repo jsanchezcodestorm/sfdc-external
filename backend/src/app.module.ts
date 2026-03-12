@@ -5,6 +5,7 @@ import { AclModule } from './acl/acl.module';
 import { AppsModule } from './apps/apps.module';
 import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
+import { DashboardsModule } from './dashboards/dashboards.module';
 import { EntitiesModule } from './entities/entities.module';
 import { GlobalSearchModule } from './global-search/global-search.module';
 import { HealthModule } from './health/health.module';
@@ -34,6 +35,7 @@ import { VisibilityModule } from './visibility/visibility.module';
     EntitiesModule,
     QueryModule,
     ReportsModule,
+    DashboardsModule,
     NavigationModule,
     GlobalSearchModule,
     HealthModule,

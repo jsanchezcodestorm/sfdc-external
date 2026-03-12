@@ -51,6 +51,7 @@ enum AppItemKind {
   CUSTOM_PAGE
   EXTERNAL_LINK
   REPORT
+  DASHBOARD
 }
 
 enum ReportFolderAccessMode {
@@ -524,6 +525,8 @@ model AppConfigRecord {
   permissions AppPermissionAssignmentRecord[]
   reportFolders ReportFolderRecord[]
   reports     ReportDefinitionRecord[]
+  dashboardFolders DashboardFolderRecord[]
+  dashboards  DashboardDefinitionRecord[]
 
   @@index([sortOrder, label])
   @@map("app_configs")
@@ -707,6 +710,7 @@ model ReportDefinitionRecord {
   updatedAt      DateTime            @updatedAt
   app            AppConfigRecord     @relation(fields: [appId], references: [id], onDelete: Cascade)
   folder         ReportFolderRecord  @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  sourceDashboards DashboardDefinitionRecord[]
   shares         ReportDefinitionShareRecord[]
 
   @@index([appId, folderId, label])
@@ -727,4 +731,77 @@ model ReportDefinitionShareRecord {
   @@index([reportId])
   @@index([subjectType, subjectId])
   @@map("report_definition_shares")
+}
+
+model DashboardFolderRecord {
+  id             String                 @id @default(uuid()) @db.Uuid
+  appId          String                 @db.VarChar(64)
+  label          String                 @db.VarChar(128)
+  description    String?                @db.VarChar(512)
+  ownerContactId String                 @db.VarChar(18)
+  accessMode     ReportFolderAccessMode @default(PERSONAL)
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  app            AppConfigRecord        @relation(fields: [appId], references: [id], onDelete: Cascade)
+  dashboards     DashboardDefinitionRecord[]
+  shares         DashboardFolderShareRecord[]
+
+  @@index([appId, label])
+  @@index([appId, ownerContactId])
+  @@map("dashboard_folders")
+}
+
+model DashboardFolderShareRecord {
+  id          String                 @id @default(uuid()) @db.Uuid
+  folderId    String                 @db.Uuid
+  subjectType ReportShareSubjectType
+  subjectId   String                 @db.VarChar(128)
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+  folder      DashboardFolderRecord  @relation(fields: [folderId], references: [id], onDelete: Cascade)
+
+  @@unique([folderId, subjectType, subjectId])
+  @@index([folderId])
+  @@index([subjectType, subjectId])
+  @@map("dashboard_folder_shares")
+}
+
+model DashboardDefinitionRecord {
+  id             String                       @id @default(uuid()) @db.Uuid
+  appId          String                       @db.VarChar(64)
+  folderId       String                       @db.Uuid
+  sourceReportId String                       @db.Uuid
+  label          String                       @db.VarChar(128)
+  description    String?                      @db.VarChar(512)
+  ownerContactId String                       @db.VarChar(18)
+  filtersJson    Json
+  widgetsJson    Json
+  layoutJson     Json
+  shareMode      ReportShareMode              @default(INHERIT)
+  createdAt      DateTime                     @default(now())
+  updatedAt      DateTime                     @updatedAt
+  app            AppConfigRecord              @relation(fields: [appId], references: [id], onDelete: Cascade)
+  folder         DashboardFolderRecord        @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  sourceReport   ReportDefinitionRecord       @relation(fields: [sourceReportId], references: [id], onDelete: Restrict)
+  shares         DashboardDefinitionShareRecord[]
+
+  @@index([appId, folderId, label])
+  @@index([appId, ownerContactId])
+  @@index([appId, sourceReportId])
+  @@map("dashboard_definitions")
+}
+
+model DashboardDefinitionShareRecord {
+  id          String                    @id @default(uuid()) @db.Uuid
+  dashboardId String                    @db.Uuid
+  subjectType ReportShareSubjectType
+  subjectId   String                    @db.VarChar(128)
+  createdAt   DateTime                  @default(now())
+  updatedAt   DateTime                  @updatedAt
+  dashboard   DashboardDefinitionRecord @relation(fields: [dashboardId], references: [id], onDelete: Cascade)
+
+  @@unique([dashboardId, subjectType, subjectId])
+  @@index([dashboardId])
+  @@index([subjectType, subjectId])
+  @@map("dashboard_definition_shares")
 }
