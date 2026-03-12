@@ -1,10 +1,10 @@
 import {
-  findEntitiesInScopeByObjectApiName,
   findEntityInScope,
-  getAppEntityBasePath,
+  findEntitiesInScopeByObjectApiName,
+  buildAppEntityBasePath,
   resolveScopedEntityBasePath,
 } from '../apps/app-workspace-routing'
-import type { AvailableAppEntity } from '../apps/app-types'
+import type { AvailableAppEntityItem } from '../apps/app-types'
 
 import type { RelatedListConfig } from './entity-types'
 
@@ -15,8 +15,9 @@ export type RelatedListNavigationTarget = {
 }
 
 export function resolveRelatedListNavigationTarget(
+  appId: string,
   relatedList: RelatedListConfig | undefined,
-  scopedEntities: AvailableAppEntity[],
+  scopedEntities: AvailableAppEntityItem[],
 ): RelatedListNavigationTarget {
   const explicitEntityId = relatedList?.entityId?.trim() ?? ''
   if (explicitEntityId) {
@@ -25,8 +26,8 @@ export function resolveRelatedListNavigationTarget(
     return {
       entityId: explicitEntityId,
       baseEntityPath: scopedEntity
-        ? getAppEntityBasePath(scopedEntity)
-        : resolveScopedEntityBasePath(explicitEntityId, scopedEntities),
+        ? buildAppEntityBasePath(appId, scopedEntity.entityId)
+        : resolveScopedEntityBasePath(appId, explicitEntityId, scopedEntities),
     }
   }
 
@@ -42,8 +43,8 @@ export function resolveRelatedListNavigationTarget(
   const matches = findEntitiesInScopeByObjectApiName(scopedEntities, objectApiName)
   if (matches.length === 1) {
     return {
-      entityId: matches[0].id,
-      baseEntityPath: getAppEntityBasePath(matches[0]),
+      entityId: matches[0].entityId,
+      baseEntityPath: buildAppEntityBasePath(appId, matches[0].entityId),
     }
   }
 

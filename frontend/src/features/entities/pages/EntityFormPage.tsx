@@ -9,10 +9,10 @@ import {
 } from '../entity-api'
 import {
   getRecordId,
-  normalizeEntityBasePath,
   renderRecordTemplate,
   toTitleCase,
 } from '../entity-helpers'
+import { buildAppEntityBasePath, buildAppHomePath } from '../../apps/app-workspace-routing'
 import type {
   EntityConfigEnvelope,
   EntityRecord,
@@ -26,7 +26,7 @@ import { EntityStatePanel } from '../components/EntityStatePanel'
 
 export function EntityFormPage() {
   const navigate = useNavigate()
-  const { entityId = '', recordId } = useParams()
+  const { appId = '', entityId = '', recordId } = useParams()
   const [searchParams] = useSearchParams()
   const mode = recordId ? 'edit' : 'create'
 
@@ -80,7 +80,7 @@ export function EntityFormPage() {
   }, [loadForm])
 
   const entityLabel = config?.entity.label ?? toTitleCase(entityId)
-  const baseEntityPath = normalizeEntityBasePath(entityId, config?.entity.navigation?.basePath)
+  const baseEntityPath = appId ? buildAppEntityBasePath(appId, entityId) : ''
 
   const sections = useMemo<FormSectionConfig[]>(() => {
     if (formResponse?.sections && formResponse.sections.length > 0) {
@@ -127,9 +127,9 @@ export function EntityFormPage() {
 
   if (!entityId) {
     return (
-      <EntityPageFrame
+        <EntityPageFrame
         title="Form non valida"
-        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Entity' }]}
+        breadcrumbs={[{ label: 'Launcher', to: '/' }, { label: 'Entity' }]}
       >
         <EntityStatePanel
           tone="error"
@@ -145,7 +145,8 @@ export function EntityFormPage() {
       title={title}
       subtitle={subtitle}
       breadcrumbs={[
-        { label: 'Home', to: '/' },
+        { label: 'Launcher', to: '/' },
+        { label: 'App', to: appId ? buildAppHomePath(appId) : undefined },
         { label: entityLabel, to: baseEntityPath },
         { label: mode === 'edit' ? 'Edit' : 'New' },
       ]}

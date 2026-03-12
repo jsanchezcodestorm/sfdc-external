@@ -68,7 +68,7 @@ export function AppsAdminListPage() {
           </p>
           <h2 className="mt-1 text-xl font-semibold text-slate-900">Apps</h2>
           <p className="mt-1 text-sm text-slate-600">
-            Raggruppamenti UI che associano permessi ACL a un set ordinato di entity.
+            Raggruppamenti UI che associano permessi ACL a un set ordinato di item navigabili.
           </p>
         </div>
 
@@ -110,6 +110,7 @@ export function AppsAdminListPage() {
                 <tr>
                   <th className="px-4 py-3 text-left">Id</th>
                   <th className="px-4 py-3 text-left">Label</th>
+                  <th className="px-4 py-3 text-left">Items</th>
                   <th className="px-4 py-3 text-left">Entity</th>
                   <th className="px-4 py-3 text-left">Permissions</th>
                   <th className="px-4 py-3 text-left">Updated</th>
@@ -122,6 +123,7 @@ export function AppsAdminListPage() {
                     <tr key={item.id} className="bg-white">
                       <td className="px-4 py-3 font-semibold text-slate-900">{item.id}</td>
                       <td className="px-4 py-3 text-slate-700">{item.label}</td>
+                      <td className="px-4 py-3 text-slate-700">{item.itemCount}</td>
                       <td className="px-4 py-3 text-slate-700">{item.entityCount}</td>
                       <td className="px-4 py-3 text-slate-700">{item.permissionCount}</td>
                       <td className="px-4 py-3 text-slate-700">
@@ -149,7 +151,7 @@ export function AppsAdminListPage() {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={6} className="px-4 py-10 text-sm text-slate-500">
+                    <td colSpan={7} className="px-4 py-10 text-sm text-slate-500">
                       {query.trim().length > 0
                         ? 'Nessuna app corrisponde al filtro.'
                         : 'Nessuna app configurata.'}

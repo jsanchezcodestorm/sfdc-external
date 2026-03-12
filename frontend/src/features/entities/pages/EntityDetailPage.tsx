@@ -11,7 +11,6 @@ import {
 import {
   formatFieldValue,
   formatFieldValueByFormat,
-  normalizeEntityBasePath,
   renderRecordTemplate,
   resolveActionTarget,
   resolveDisplayFieldValue,
@@ -19,6 +18,7 @@ import {
   toLabel,
   toTitleCase,
 } from '../entity-helpers'
+import { buildAppEntityBasePath, buildAppHomePath } from '../../apps/app-workspace-routing'
 import type {
   DetailSectionConfig,
   EntityAction,
@@ -35,7 +35,7 @@ import { EntityStatePanel } from '../components/EntityStatePanel'
 export function EntityDetailPage() {
   const { confirm } = useAppDialog()
   const navigate = useNavigate()
-  const { entityId = '', recordId = '' } = useParams()
+  const { appId = '', entityId = '', recordId = '' } = useParams()
   const [config, setConfig] = useState<EntityConfigEnvelope | null>(null)
   const [detailResponse, setDetailResponse] = useState<EntityDetailResponse | null>(null)
   const [loading, setLoading] = useState(true)
@@ -77,7 +77,7 @@ export function EntityDetailPage() {
     [detailResponse?.data, detailResponse?.record],
   )
   const entityLabel = config?.entity.label ?? toTitleCase(entityId)
-  const baseEntityPath = normalizeEntityBasePath(entityId, config?.entity.navigation?.basePath)
+  const baseEntityPath = appId ? buildAppEntityBasePath(appId, entityId) : ''
   const headerTitle =
     detailResponse?.title ?? String(record.Name ?? record.name ?? `${entityLabel} Detail`)
   const detailSections = useMemo<DetailSectionConfig[]>(() => {
@@ -114,9 +114,9 @@ export function EntityDetailPage() {
 
   if (!entityId || !recordId) {
     return (
-      <EntityPageFrame
+        <EntityPageFrame
         title="Detail non valida"
-        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Entity' }]}
+        breadcrumbs={[{ label: 'Launcher', to: '/' }, { label: 'Entity' }]}
       >
         <EntityStatePanel
           tone="error"
@@ -132,7 +132,8 @@ export function EntityDetailPage() {
       title={headerTitle}
       subtitle={`${entityLabel} - ${recordId}`}
       breadcrumbs={[
-        { label: 'Home', to: '/' },
+        { label: 'Launcher', to: '/' },
+        { label: 'App', to: appId ? buildAppHomePath(appId) : undefined },
         { label: entityLabel, to: baseEntityPath },
         { label: recordId },
       ]}

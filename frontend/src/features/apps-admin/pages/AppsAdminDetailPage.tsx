@@ -75,17 +75,14 @@ export function AppsAdminDetailPage() {
     }
   }, [appId])
 
-  const selectedEntities = useMemo(() => {
-    const entitiesById = new Map(entities.map((entity) => [entity.id, entity]))
-    return (app?.entityIds ?? []).map((entityId) => entitiesById.get(entityId)).filter(Boolean) as EntityAdminConfigSummary[]
-  }, [app?.entityIds, entities])
-
-  const selectedPermissions = useMemo(() => {
-    const permissionsByCode = new Map(permissions.map((permission) => [permission.code, permission]))
-    return (app?.permissionCodes ?? [])
-      .map((permissionCode) => permissionsByCode.get(permissionCode))
-      .filter(Boolean) as AclAdminPermissionSummary[]
-  }, [app?.permissionCodes, permissions])
+  const entitiesById = useMemo(
+    () => new Map(entities.map((entity) => [entity.id, entity])),
+    [entities],
+  )
+  const permissionsByCode = useMemo(
+    () => new Map(permissions.map((permission) => [permission.code, permission])),
+    [permissions],
+  )
 
   const removeApp = async () => {
     if (!appId) {
@@ -167,36 +164,72 @@ export function AppsAdminDetailPage() {
         <p className="mt-4 text-sm text-slate-600">Caricamento app...</p>
       ) : app ? (
         <div className="mt-5 space-y-5">
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-4">
             <DetailMetric label="Sort order" value={String(app.sortOrder)} />
-            <DetailMetric label="Entity" value={String(app.entityIds.length)} />
+            <DetailMetric label="Items" value={String(app.items.length)} />
+            <DetailMetric
+              label="Entity Items"
+              value={String(app.items.filter((item) => item.kind === 'entity').length)}
+            />
             <DetailMetric label="Permissions" value={String(app.permissionCodes.length)} />
           </div>
 
           <DetailBlock label="Label">{app.label}</DetailBlock>
           <DetailBlock label="Description">{app.description || '-'}</DetailBlock>
-          <DetailBlock label="Entity IDs">
-            {app.entityIds.length > 0 ? app.entityIds.join(', ') : '-'}
-          </DetailBlock>
           <DetailBlock label="Permission codes">
             {app.permissionCodes.length > 0 ? app.permissionCodes.join(', ') : '-'}
           </DetailBlock>
 
           <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Entity associate</p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {selectedEntities.length > 0 ? (
-                selectedEntities.map((entity) => (
-                  <span
-                    key={entity.id}
-                    className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-800"
-                  >
-                    {entity.label} ({entity.id})
-                  </span>
-                ))
-              ) : (
-                <p className="text-sm text-slate-600">Nessuna entity associata.</p>
-              )}
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Items</p>
+            <div className="mt-4 space-y-3">
+              {app.items.map((item) => (
+                <article key={item.id} className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">
+                        {item.label} ({item.id})
+                      </p>
+                      <p className="mt-1 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
+                        {item.kind}
+                      </p>
+                    </div>
+                    {'resourceId' in item && item.resourceId ? (
+                      <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-700">
+                        {item.resourceId}
+                      </span>
+                    ) : null}
+                  </div>
+
+                  {item.description ? (
+                    <p className="mt-3 text-sm text-slate-600">{item.description}</p>
+                  ) : null}
+
+                  {item.kind === 'entity' ? (
+                    <p className="mt-3 text-sm text-slate-700">
+                      Entity: {entitiesById.get(item.entityId)?.label || item.entityId}
+                    </p>
+                  ) : null}
+
+                  {(item.kind === 'home' || item.kind === 'custom-page') ? (
+                    <pre className="mt-3 overflow-x-auto rounded-xl bg-slate-950 px-4 py-3 text-xs text-slate-100">
+                      {JSON.stringify(item.page, null, 2)}
+                    </pre>
+                  ) : null}
+
+                  {(item.kind === 'external-link' || item.kind === 'report') ? (
+                    <div className="mt-3 grid gap-2 text-sm text-slate-700">
+                      <p>URL: {item.url}</p>
+                      <p>Open mode: {item.openMode}</p>
+                      {item.iframeTitle ? <p>Iframe title: {item.iframeTitle}</p> : null}
+                      {typeof item.height === 'number' ? <p>Height: {item.height}</p> : null}
+                      {item.kind === 'report' && item.providerLabel ? (
+                        <p>Provider: {item.providerLabel}</p>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </article>
+              ))}
             </div>
           </div>
 
@@ -205,24 +238,18 @@ export function AppsAdminDetailPage() {
               Permessi associati
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
-              {selectedPermissions.length > 0 ? (
-                selectedPermissions.map((permission) => (
-                  <span
-                    key={permission.code}
-                    className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800"
-                  >
-                    {permission.label || permission.code} ({permission.code})
-                  </span>
-                ))
-              ) : app.permissionCodes.length > 0 ? (
-                app.permissionCodes.map((permissionCode) => (
-                  <span
-                    key={permissionCode}
-                    className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800"
-                  >
-                    {permissionCode}
-                  </span>
-                ))
+              {app.permissionCodes.length > 0 ? (
+                app.permissionCodes.map((permissionCode) => {
+                  const permission = permissionsByCode.get(permissionCode)
+                  return (
+                    <span
+                      key={permissionCode}
+                      className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800"
+                    >
+                      {permission?.label || permissionCode} ({permissionCode})
+                    </span>
+                  )
+                })
               ) : (
                 <p className="text-sm text-slate-600">Nessuna permission associata.</p>
               )}

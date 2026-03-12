@@ -1,8 +1,54 @@
-import { normalizeEntityBasePath } from '../entities/entity-helpers'
-import type { AvailableApp, AvailableAppEntity } from './app-types'
+import type {
+  AvailableApp,
+  AvailableAppEntityItem,
+  AvailableAppHomeItem,
+  AvailableAppItem,
+} from './app-types'
 
-export function getAppEntityBasePath(entity: AvailableAppEntity): string {
-  return normalizeEntityBasePath(entity.id, entity.basePath)
+export function buildAppHomePath(appId: string): string {
+  return `/app/${encodeURIComponent(appId)}`
+}
+
+export function buildAppEntityBasePath(appId: string, entityId: string): string {
+  return `${buildAppHomePath(appId)}/entity/${encodeURIComponent(entityId)}`
+}
+
+export function buildAppItemPath(appId: string, itemId: string): string {
+  return `${buildAppHomePath(appId)}/items/${encodeURIComponent(itemId)}`
+}
+
+export function isAppRuntimePath(pathname: string): boolean {
+  return pathname.startsWith('/app/')
+}
+
+export function extractAppIdFromPathname(pathname: string): string | null {
+  const match = /^\/app\/([^/]+)/.exec(pathname)
+  if (!match) {
+    return null
+  }
+
+  const appId = decodeURIComponent(match[1] ?? '').trim()
+  return appId.length > 0 ? appId : null
+}
+
+export function extractRuntimeEntityId(pathname: string): string | null {
+  const match = /^\/app\/[^/]+\/entity\/([^/]+)/.exec(pathname)
+  if (!match) {
+    return null
+  }
+
+  const entityId = decodeURIComponent(match[1] ?? '').trim()
+  return entityId.length > 0 ? entityId : null
+}
+
+export function extractRuntimeItemId(pathname: string): string | null {
+  const match = /^\/app\/[^/]+\/items\/([^/]+)/.exec(pathname)
+  if (!match) {
+    return null
+  }
+
+  const itemId = decodeURIComponent(match[1] ?? '').trim()
+  return itemId.length > 0 ? itemId : null
 }
 
 export function isSalesforceRecordId(value: string | null | undefined): boolean {
@@ -10,35 +56,40 @@ export function isSalesforceRecordId(value: string | null | undefined): boolean 
   return /^[A-Za-z0-9]{15}(?:[A-Za-z0-9]{3})?$/.test(normalizedValue)
 }
 
-export function extractRuntimeEntityId(pathname: string): string | null {
-  const match = /^\/s\/([^/]+)/.exec(pathname)
-  if (!match) {
+export function getEntityItems(app: AvailableApp | null | undefined): AvailableAppEntityItem[] {
+  return (app?.items ?? []).filter((item): item is AvailableAppEntityItem => item.kind === 'entity')
+}
+
+export function getHomeItem(app: AvailableApp | null | undefined): AvailableAppHomeItem | null {
+  return (app?.items ?? []).find((item): item is AvailableAppHomeItem => item.kind === 'home') ?? null
+}
+
+export function findItemInApp(
+  app: AvailableApp | null | undefined,
+  itemId: string | null | undefined,
+): AvailableAppItem | null {
+  if (!app || !itemId) {
     return null
   }
 
-  const entityId = decodeURIComponent(match[1] ?? '').trim()
-  if (entityId.length === 0 || isSalesforceRecordId(entityId)) {
-    return null
-  }
-
-  return entityId
+  return app.items.find((item) => item.id === itemId) ?? null
 }
 
 export function findEntityInScope(
-  entities: AvailableAppEntity[] | null | undefined,
+  entities: AvailableAppEntityItem[] | null | undefined,
   entityId: string | null | undefined,
-): AvailableAppEntity | null {
+): AvailableAppEntityItem | null {
   if (!entities || !entityId) {
     return null
   }
 
-  return entities.find((entity) => entity.id === entityId) ?? null
+  return entities.find((entity) => entity.entityId === entityId) ?? null
 }
 
 export function findEntitiesInScopeByObjectApiName(
-  entities: AvailableAppEntity[] | null | undefined,
+  entities: AvailableAppEntityItem[] | null | undefined,
   objectApiName: string | null | undefined,
-): AvailableAppEntity[] {
+): AvailableAppEntityItem[] {
   const normalizedObjectApiName = objectApiName?.trim().toLowerCase() ?? ''
   if (!entities || !normalizedObjectApiName) {
     return []
@@ -48,9 +99,9 @@ export function findEntitiesInScopeByObjectApiName(
 }
 
 export function findEntitiesInScopeByRecordId(
-  entities: AvailableAppEntity[] | null | undefined,
+  entities: AvailableAppEntityItem[] | null | undefined,
   recordId: string | null | undefined,
-): AvailableAppEntity[] {
+): AvailableAppEntityItem[] {
   const normalizedRecordId = recordId?.trim() ?? ''
   if (!entities || !isSalesforceRecordId(normalizedRecordId)) {
     return []
@@ -61,72 +112,93 @@ export function findEntitiesInScopeByRecordId(
 }
 
 export function resolveScopedEntityBasePath(
+  appId: string,
   entityId: string,
-  entities: AvailableAppEntity[] | null | undefined,
+  entities: AvailableAppEntityItem[] | null | undefined,
 ): string {
   const scopedEntity = findEntityInScope(entities, entityId)
-  return scopedEntity ? getAppEntityBasePath(scopedEntity) : normalizeEntityBasePath(entityId)
+  return buildAppEntityBasePath(appId, scopedEntity?.entityId ?? entityId)
 }
 
-export function findEntityInApp(
-  app: AvailableApp | null | undefined,
-  entityId: string | null | undefined,
-): AvailableAppEntity | null {
-  return findEntityInScope(app?.entities, entityId)
-}
-
-export function isEntityInApp(
-  app: AvailableApp | null | undefined,
-  entityId: string | null | undefined,
-): boolean {
-  return findEntityInApp(app, entityId) !== null
-}
-
-export function getFirstAppEntityPath(app: AvailableApp | null | undefined): string | null {
-  const firstEntity = app?.entities[0]
-  return firstEntity ? getAppEntityBasePath(firstEntity) : null
-}
-
-export function getActiveRuntimeTabEntityId(
-  pathname: string,
-  selectedApp: AvailableApp | null | undefined,
+export function getAppItemInternalPath(
+  appId: string,
+  item: AvailableAppItem | null | undefined,
 ): string | null {
-  const runtimeEntityId = extractRuntimeEntityId(pathname)
-  if (!runtimeEntityId || !isEntityInApp(selectedApp, runtimeEntityId)) {
+  if (!item) {
     return null
   }
 
-  return runtimeEntityId
+  switch (item.kind) {
+    case 'home':
+      return buildAppHomePath(appId)
+    case 'entity':
+      return buildAppEntityBasePath(appId, item.entityId)
+    case 'custom-page':
+      return buildAppItemPath(appId, item.id)
+    case 'external-link':
+      return item.openMode === 'iframe' ? buildAppItemPath(appId, item.id) : null
+    case 'report':
+      return item.openMode === 'iframe' ? buildAppItemPath(appId, item.id) : null
+  }
 }
 
-export function isRuntimeEntityOutsideSelectedApp(
+export function getAppItemHref(
+  appId: string,
+  item: AvailableAppItem | null | undefined,
+): string | null {
+  if (!item) {
+    return null
+  }
+
+  const internalPath = getAppItemInternalPath(appId, item)
+  if (internalPath) {
+    return internalPath
+  }
+
+  if (item.kind === 'external-link' || item.kind === 'report') {
+    return item.url
+  }
+
+  return null
+}
+
+export function getDefaultAppPath(app: AvailableApp | null | undefined): string | null {
+  return app ? buildAppHomePath(app.id) : null
+}
+
+export function getFirstAppEntityPath(app: AvailableApp | null | undefined): string | null {
+  const firstEntity = getEntityItems(app)[0]
+  return firstEntity && app ? buildAppEntityBasePath(app.id, firstEntity.entityId) : null
+}
+
+export function getActiveRuntimeTabKey(
   pathname: string,
   selectedApp: AvailableApp | null | undefined,
-): boolean {
-  const runtimeEntityId = extractRuntimeEntityId(pathname)
-  if (!runtimeEntityId) {
-    return false
+): string | null {
+  if (!selectedApp) {
+    return null
   }
 
-  return !isEntityInApp(selectedApp, runtimeEntityId)
+  if (pathname === buildAppHomePath(selectedApp.id)) {
+    return 'home'
+  }
+
+  const itemId = extractRuntimeItemId(pathname)
+  if (itemId && findItemInApp(selectedApp, itemId)) {
+    return itemId
+  }
+
+  const entityId = extractRuntimeEntityId(pathname)
+  if (!entityId) {
+    return null
+  }
+
+  const entityItem = findEntityInScope(getEntityItems(selectedApp), entityId)
+  return entityItem?.id ?? null
 }
 
-export function resolveAppSelectionNavigationTarget(options: {
-  pathname: string
-  search: string
-  hash: string
-  nextApp: AvailableApp | null
-}): string {
-  const { pathname, search, hash, nextApp } = options
-
-  if (pathname === '/') {
-    return '/'
-  }
-
-  const runtimeEntityId = extractRuntimeEntityId(pathname)
-  if (runtimeEntityId && isEntityInApp(nextApp, runtimeEntityId)) {
-    return `${pathname}${search}${hash}`
-  }
-
-  return getFirstAppEntityPath(nextApp) ?? '/'
+export function resolveAppSelectionNavigationTarget(
+  nextApp: AvailableApp | null,
+): string {
+  return getDefaultAppPath(nextApp) ?? '/'
 }

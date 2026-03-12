@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 
-import type { AvailableApp, AvailableAppEntity } from '../features/apps/app-types'
+import type { AvailableApp, AvailableAppEntityItem, AvailableAppItem } from '../features/apps/app-types'
 import { useAdminNavigation } from './useAdminNavigation'
 import { useRuntimeNavigation } from './useRuntimeNavigation'
 import { useAuth } from '../features/auth/useAuth'
@@ -12,7 +12,8 @@ type RuntimeWorkspaceTopBarProps = {
   apps: AvailableApp[]
   selectedApp: AvailableApp | null
   selectedAppId: string | null
-  selectedEntities: AvailableAppEntity[]
+  selectedItems: AvailableAppItem[]
+  selectedEntities: AvailableAppEntityItem[]
   loading: boolean
   error: string | null
   onSelectApp: (appId: string) => void
@@ -91,7 +92,7 @@ export function AppTopBar({ runtimeWorkspace }: AppTopBarProps) {
                 {runtimeContext.error
                   ? 'Launcher non disponibile'
                   : runtimeContext.selectedApp?.description?.trim() ||
-                    `${runtimeContext.selectedEntities.length} entity attive`}
+                    `${runtimeContext.selectedItems.length} item attivi`}
               </p>
             </div>
           ) : null}

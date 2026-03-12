@@ -10,11 +10,11 @@ import {
 } from '../entity-api'
 import {
   getRecordsFromCollection,
-  normalizeEntityBasePath,
   resolveActionTarget,
   selectListView,
   toTitleCase,
 } from '../entity-helpers'
+import { buildAppEntityBasePath, buildAppHomePath } from '../../apps/app-workspace-routing'
 import type {
   EntityAction,
   EntityConfigEnvelope,
@@ -27,7 +27,7 @@ import { EntityRecordTable } from '../components/EntityRecordTable'
 import { EntityStatePanel } from '../components/EntityStatePanel'
 
 export function EntityListPage() {
-  const { entityId = '' } = useParams()
+  const { appId = '', entityId = '' } = useParams()
   const [searchParams, setSearchParams] = useSearchParams()
 
   const [config, setConfig] = useState<EntityConfigEnvelope | null>(null)
@@ -150,7 +150,7 @@ export function EntityListPage() {
   )
 
   const entityLabel = config?.entity.label ?? toTitleCase(entityId)
-  const baseEntityPath = normalizeEntityBasePath(entityId, config?.entity.navigation?.basePath)
+  const baseEntityPath = appId ? buildAppEntityBasePath(appId, entityId) : ''
   const selectedView = selectListView(config?.entity.list, listResponse?.viewId ?? requestedViewId)
   const views = config?.entity.list?.views ?? []
 
@@ -186,9 +186,9 @@ export function EntityListPage() {
 
   if (!entityId) {
     return (
-      <EntityPageFrame
+        <EntityPageFrame
         title="Entity non valida"
-        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Entity' }]}
+        breadcrumbs={[{ label: 'Launcher', to: '/' }, { label: 'Entity' }]}
       >
         <EntityStatePanel
           tone="error"
@@ -203,7 +203,11 @@ export function EntityListPage() {
     <EntityPageFrame
       title={listTitle}
       subtitle={listSubtitle}
-      breadcrumbs={[{ label: 'Home', to: '/' }, { label: entityLabel }]}
+      breadcrumbs={[
+        { label: 'Launcher', to: '/' },
+        { label: 'App', to: appId ? buildAppHomePath(appId) : undefined },
+        { label: entityLabel },
+      ]}
       actions={
         primaryAction ? (
           <ListPrimaryActionButton action={primaryAction} baseEntityPath={baseEntityPath} />

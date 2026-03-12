@@ -4,6 +4,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
+import { useLocation } from 'react-router-dom'
 
 import { useAuth } from '../auth/useAuth'
 import { fetchAvailableApps } from './app-api'
@@ -12,8 +13,9 @@ import {
   readStoredAppSelection,
   writeStoredAppSelection,
 } from './app-selection-storage'
-import type { AvailableApp, AvailableAppEntity } from './app-types'
+import type { AvailableApp, AvailableAppEntityItem, AvailableAppHomeItem, AvailableAppItem } from './app-types'
 import { AppWorkspaceContext, type AppWorkspaceContextValue } from './app-workspace-context'
+import { extractAppIdFromPathname, getEntityItems, getHomeItem } from './app-workspace-routing'
 
 type AppWorkspaceProviderProps = {
   children: ReactNode
@@ -22,12 +24,10 @@ type AppWorkspaceProviderProps = {
 
 function resetWorkspaceState(
   setApps: (value: AvailableApp[]) => void,
-  setSelectedAppId: (value: string | null) => void,
   setError: (value: string | null) => void,
   setLoadedUserSub: (value: string | null) => void,
 ) {
   setApps([])
-  setSelectedAppId(null)
   setError(null)
   setLoadedUserSub(null)
 }
@@ -36,11 +36,12 @@ export function AppWorkspaceProvider({
   children,
   enabled = true,
 }: AppWorkspaceProviderProps) {
+  const location = useLocation()
   const { user, isBootstrapping } = useAuth()
   const [apps, setApps] = useState<AvailableApp[]>([])
-  const [selectedAppId, setSelectedAppId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loadedUserSub, setLoadedUserSub] = useState<string | null>(null)
+  const routeAppId = enabled ? extractAppIdFromPathname(location.pathname) : null
 
   useEffect(() => {
     if (isBootstrapping) {
@@ -52,7 +53,7 @@ export function AppWorkspaceProvider({
     }
 
     clearStoredAppSelection()
-    resetWorkspaceState(setApps, setSelectedAppId, setError, setLoadedUserSub)
+    resetWorkspaceState(setApps, setError, setLoadedUserSub)
   }, [isBootstrapping, user])
 
   useEffect(() => {
@@ -72,28 +73,9 @@ export function AppWorkspaceProvider({
           return
         }
 
-        const nextApps = payload.items ?? []
-        const storedSelection = readStoredAppSelection()
-        const storedApp =
-          storedSelection?.userSub === user.sub
-            ? nextApps.find((app) => app.id === storedSelection.appId) ?? null
-            : null
-        const nextSelectedApp = storedApp ?? nextApps[0] ?? null
-
-        setApps(nextApps)
-        setSelectedAppId(nextSelectedApp?.id ?? null)
+        setApps(payload.items ?? [])
         setError(null)
         setLoadedUserSub(user.sub)
-
-        if (nextSelectedApp) {
-          writeStoredAppSelection({
-            userSub: user.sub,
-            appId: nextSelectedApp.id,
-          })
-          return
-        }
-
-        clearStoredAppSelection()
       })
       .catch((loadError) => {
         if (cancelled) {
@@ -106,7 +88,6 @@ export function AppWorkspaceProvider({
             : 'Errore caricamento app disponibili'
 
         setApps([])
-        setSelectedAppId(null)
         setError(message)
         setLoadedUserSub(user.sub)
       })
@@ -114,15 +95,55 @@ export function AppWorkspaceProvider({
     return () => {
       cancelled = true
     }
-  }, [enabled, isBootstrapping, loadedUserSub, user])
+  }, [enabled, isBootstrapping, loadedUserSub, routeAppId, user])
+
+  const persistedAppId = useMemo(() => {
+    if (!user) {
+      return null
+    }
+
+    const storedSelection = readStoredAppSelection()
+    const storedApp =
+      storedSelection?.userSub === user.sub
+        ? apps.find((app) => app.id === storedSelection.appId) ?? null
+        : null
+    const routeApp = routeAppId ? apps.find((app) => app.id === routeAppId) ?? null : null
+
+    return routeApp?.id ?? storedApp?.id ?? apps[0]?.id ?? null
+  }, [apps, routeAppId, user])
+
+  useEffect(() => {
+    if (!user) {
+      return
+    }
+
+    if (persistedAppId) {
+      writeStoredAppSelection({
+        userSub: user.sub,
+        appId: persistedAppId,
+      })
+    } else {
+      clearStoredAppSelection()
+    }
+  }, [persistedAppId, user])
+
+  const selectedAppId = routeAppId ?? persistedAppId
 
   const selectedApp = useMemo(
     () => apps.find((app) => app.id === selectedAppId) ?? null,
     [apps, selectedAppId],
   )
 
-  const selectedEntities = useMemo<AvailableAppEntity[]>(
-    () => selectedApp?.entities ?? [],
+  const selectedItems = useMemo<AvailableAppItem[]>(
+    () => selectedApp?.items ?? [],
+    [selectedApp],
+  )
+  const selectedEntities = useMemo<AvailableAppEntityItem[]>(
+    () => getEntityItems(selectedApp),
+    [selectedApp],
+  )
+  const homeItem = useMemo<AvailableAppHomeItem | null>(
+    () => getHomeItem(selectedApp),
     [selectedApp],
   )
   const loading = !isBootstrapping && Boolean(user) && enabled && loadedUserSub !== user?.sub
@@ -132,7 +153,9 @@ export function AppWorkspaceProvider({
       apps,
       selectedApp,
       selectedAppId,
+      selectedItems,
       selectedEntities,
+      homeItem,
       loading,
       error,
       selectApp: (appId: string) => {
@@ -145,14 +168,13 @@ export function AppWorkspaceProvider({
           return
         }
 
-        setSelectedAppId(nextApp.id)
         writeStoredAppSelection({
           userSub: user.sub,
           appId: nextApp.id,
         })
       },
     }),
-    [apps, error, loading, selectedApp, selectedAppId, selectedEntities, user],
+    [apps, error, homeItem, loading, selectedApp, selectedAppId, selectedEntities, selectedItems, user],
   )
 
   return <AppWorkspaceContext.Provider value={value}>{children}</AppWorkspaceContext.Provider>

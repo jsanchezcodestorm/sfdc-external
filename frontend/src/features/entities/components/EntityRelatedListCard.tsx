@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 
 import { useAppWorkspace } from '../../apps/useAppWorkspace'
 import { deleteEntityRecord, fetchEntityRelatedList } from '../entity-api'
@@ -27,6 +27,7 @@ export function EntityRelatedListCard({
   baseEntityPath,
   relatedList,
 }: EntityRelatedListCardProps) {
+  const { appId = '' } = useParams()
   const { selectedEntities } = useAppWorkspace()
   const [payload, setPayload] = useState<EntityRelatedListResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -53,7 +54,7 @@ export function EntityRelatedListCard({
 
   const records = getRecordsFromCollection(payload ?? {})
   const effectiveRelatedList = payload?.relatedList ?? relatedList
-  const navigationTarget = resolveRelatedListNavigationTarget(effectiveRelatedList, selectedEntities)
+  const navigationTarget = resolveRelatedListNavigationTarget(appId, effectiveRelatedList, selectedEntities)
   const relatedEntityId = navigationTarget.entityId
   const columns = payload?.columns ?? effectiveRelatedList.columns ?? []
   const rowActions = payload?.rowActions ?? relatedList.rowActions
