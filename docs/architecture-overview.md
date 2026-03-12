@@ -40,7 +40,7 @@ flowchart LR
 ### Backend (NestJS)
 - `Auth`: login OIDC multi-provider e locale, sessione JWT HttpOnly, restore session
 - `ACL`: risorse `rest:*`, `entity:*`, `query:*`, `route:*`
-- `Apps Catalog`: catalogo app, associazioni app -> entity e permission -> app
+- `Apps Catalog`: catalogo app con `items[]` tipizzati (`home`, `entity`, `custom-page`, `external-link`, `report`) e mapping permission -> app
 - `Salesforce Connector`: query/CRUD/describe/search centralizzati via `jsforce`
 - `Entities Engine`: configurazioni list/detail/form/related list guidate da JSON
 - `Query Engine`: template query DSL/SOQL con validazioni runtime
@@ -64,7 +64,7 @@ Repository unico per visibility:
 
 Repository tecnico aggiuntivo per catalogo app e ACL:
 - `app_configs`
-- `app_entity_assignments`
+- `app_item_records`
 - `app_permission_assignments`
 - `acl_contact_permissions`
 
@@ -91,11 +91,15 @@ Repository tecnico aggiuntivo per catalogo app e ACL:
 
 ### 6.4 Catalogo app e launcher
 1. Il backoffice gestisce il catalogo app tramite `/#/admin/apps`
-2. Ogni app puo associare piu entity configurate
-3. Ogni permission puo pubblicare zero o piu app tramite `appIds`
-4. La home autenticata chiama `GET /apps/available`
-5. Il backend filtra le app per permission effettive e poi per ACL `entity:<entityId>`
-6. Il frontend salva in `localStorage` l `appId` selezionato per utente e usa i path entity esistenti `/#/s/:entityId`
+2. Ogni app definisce un set ordinato di `items[]` tipizzati con una `home` obbligatoria e unica
+3. Gli item `entity` referenziano una entity configurata; gli altri item possono modellare pagine custom, link esterni e report embedded
+4. Ogni permission puo pubblicare zero o piu app tramite `appIds`
+5. Gli item diversi da `home` possono dichiarare un `resourceId` ACL opzionale per il filtro runtime
+6. La home autenticata chiama `GET /apps/available`
+7. Il backend filtra le app per permission effettive e poi filtra gli item runtime per `resourceId`; gli item `entity` richiedono anche ACL `entity:<entityId>`
+8. Gli item embedded (`external-link`/`report` con `openMode='iframe'`) accettano solo URL `https` verso host allowlisted da `APP_EMBED_ALLOWED_HOSTS`
+9. Un app resta visibile se ha la `home` accessibile o almeno un altro item accessibile
+10. Il frontend salva in `localStorage` l `appId` selezionato per utente e usa route canoniche app-scoped `/#/app/:appId`, `/#/app/:appId/entity/:entityId`, `/#/app/:appId/items/:itemId`
 
 ## 7) Modello di sicurezza
 - autenticazione OIDC multi-provider e locale + sessione cookie sicura
@@ -127,12 +131,20 @@ Repository tecnico aggiuntivo per catalogo app e ACL:
 
 ## 11) Contratti applicativi rilevanti
 Catalogo app admin:
-- `GET /apps/admin` -> `{ items: [{ id, label, description?, sortOrder, entityCount, permissionCount, updatedAt }] }`
-- `GET /apps/admin/:appId` -> `{ app: { id, label, description?, sortOrder, entityIds: string[] } }`
-- `POST|PUT /apps/admin` -> `{ app: { id, label, description?, sortOrder?, entityIds: string[] } }`
+- `GET /apps/admin` -> `{ items: [{ id, label, description?, sortOrder, itemCount, entityCount, permissionCount, updatedAt }] }`
+- `GET /apps/admin/:appId` -> `{ app: { id, label, description?, sortOrder, permissionCodes: string[], items: AppItemConfig[] } }`
+- `POST|PUT /apps/admin` -> `{ app: { id, label, description?, sortOrder?, permissionCodes: string[], items: AppItemConfig[] } }`
+
+`AppItemConfig` supporta:
+- `home` -> `{ id, kind: 'home', label, description?, page: { blocks[] } }`
+- `entity` -> `{ id, kind: 'entity', label, description?, entityId, resourceId? }`
+- `custom-page` -> `{ id, kind: 'custom-page', label, description?, resourceId?, page: { blocks[] } }`
+- `external-link` -> `{ id, kind: 'external-link', label, description?, resourceId?, url, openMode: 'new-tab' | 'iframe', iframeTitle?, height? }`
+- `report` -> `{ id, kind: 'report', label, description?, resourceId?, url, openMode: 'new-tab' | 'iframe', iframeTitle?, height?, providerLabel? }`
 
 Launcher utente:
-- `GET /apps/available` -> `{ items: [{ id, label, description?, entities: [{ id, label, description?, basePath?, objectApiName }] }] }`
+- `GET /apps/available` -> `{ items: [{ id, label, description?, items: AvailableAppItem[] }] }`
+- `AvailableAppItem` riusa i kind admin, con arricchimento runtime per `entity` -> `{ entityId, objectApiName, keyPrefix? }`
 - il launcher non introduce un nuovo enforcement applicativo oltre ad ACL e visibility gia esistenti
 - la selezione dell app resta un contesto UI persistito per utente nel browser
 
