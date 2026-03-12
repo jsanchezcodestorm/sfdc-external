@@ -6,6 +6,7 @@ type ApiRequestOptions = Omit<RequestInit, 'body' | 'headers'> & {
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api'
 const CSRF_HEADER_NAME = 'X-CSRF-Token'
 const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
+const INVALID_CSRF_ERROR_MESSAGE = 'Invalid CSRF token'
 
 let csrfToken: string | null = null
 let csrfBootstrapPromise: Promise<string> | null = null
@@ -64,6 +65,10 @@ async function parseError(response: Response): Promise<string> {
 
 function isUnsafeMethod(method: string): boolean {
   return UNSAFE_METHODS.has(method.toUpperCase())
+}
+
+function isInvalidCsrfError(status: number, message: string): boolean {
+  return status === 403 && message.includes(INVALID_CSRF_ERROR_MESSAGE)
 }
 
 function extractCsrfToken(payload: unknown): string | null {
@@ -144,25 +149,41 @@ export async function apiFetch<T = unknown>(
     requestHeaders.set('Content-Type', 'application/json')
   }
 
-  if (requiresCsrf) {
-    requestHeaders.set(CSRF_HEADER_NAME, await getCsrfToken())
-  }
-
   const requestBody: BodyInit | undefined = serializeAsJson
     ? JSON.stringify(body)
     : (body as BodyInit | undefined)
 
-  const response = await fetch(buildUrl(path), {
-    ...init,
-    method,
-    headers: requestHeaders,
-    credentials: 'include',
-    body: requestBody,
-  })
+  const requestUrl = buildUrl(path)
+  const sendRequest = async (): Promise<Response> => {
+    if (requiresCsrf) {
+      requestHeaders.set(CSRF_HEADER_NAME, await getCsrfToken())
+    }
+
+    return fetch(requestUrl, {
+      ...init,
+      method,
+      headers: requestHeaders,
+      credentials: 'include',
+      body: requestBody,
+    })
+  }
+
+  let response = await sendRequest()
 
   if (!response.ok) {
     const message = await parseError(response)
-    throw new ApiError(response.status, message)
+
+    if (requiresCsrf && isInvalidCsrfError(response.status, message)) {
+      clearCsrfToken()
+      response = await sendRequest()
+
+      if (!response.ok) {
+        const retryMessage = await parseError(response)
+        throw new ApiError(response.status, retryMessage)
+      }
+    } else {
+      throw new ApiError(response.status, message)
+    }
   }
 
   if (response.status === 204) {
@@ -202,25 +223,41 @@ export async function apiFetchBlob(
     requestHeaders.set('Content-Type', 'application/json')
   }
 
-  if (requiresCsrf) {
-    requestHeaders.set(CSRF_HEADER_NAME, await getCsrfToken())
-  }
-
   const requestBody: BodyInit | undefined = serializeAsJson
     ? JSON.stringify(body)
     : (body as BodyInit | undefined)
 
-  const response = await fetch(buildUrl(path), {
-    ...init,
-    method,
-    headers: requestHeaders,
-    credentials: 'include',
-    body: requestBody,
-  })
+  const requestUrl = buildUrl(path)
+  const sendRequest = async (): Promise<Response> => {
+    if (requiresCsrf) {
+      requestHeaders.set(CSRF_HEADER_NAME, await getCsrfToken())
+    }
+
+    return fetch(requestUrl, {
+      ...init,
+      method,
+      headers: requestHeaders,
+      credentials: 'include',
+      body: requestBody,
+    })
+  }
+
+  let response = await sendRequest()
 
   if (!response.ok) {
     const message = await parseError(response)
-    throw new ApiError(response.status, message)
+
+    if (requiresCsrf && isInvalidCsrfError(response.status, message)) {
+      clearCsrfToken()
+      response = await sendRequest()
+
+      if (!response.ok) {
+        const retryMessage = await parseError(response)
+        throw new ApiError(response.status, retryMessage)
+      }
+    } else {
+      throw new ApiError(response.status, message)
+    }
   }
 
   return {
