@@ -39,7 +39,7 @@ flowchart LR
 
 ### Backend (NestJS)
 - `Auth`: login OIDC multi-provider e locale, sessione JWT HttpOnly, restore session
-- `ACL`: risorse `rest:*`, `entity:*`, `query:*`, `route:*`
+- `ACL`: catalogo persistito in PostgreSQL per risorse `rest:*`, `entity:*`, `query:*`, `route:*`, con discovery automatica e default fail-closed
 - `Apps Catalog`: catalogo app con `items[]` tipizzati (`home`, `entity`, `custom-page`, `external-link`, `report`) e mapping permission -> app
 - `Salesforce Connector`: query/CRUD/describe/search centralizzati via `jsforce`
 - `Entities Engine`: configurazioni list/detail/form/related list guidate da JSON
@@ -50,6 +50,7 @@ flowchart LR
 - autenticazione tramite cookie di sessione backend
 - launcher home che mostra le app disponibili per l utente autenticato
 - routing protetto e navigazione dinamica guidata da ACL tramite `GET /navigation`
+- catalogo route condiviso con il backend per path, label e ordinamento delle route shell
 - backoffice `/#/admin/apps` per il catalogo app e integrazione ACL
 - backoffice `/#/admin/metadata` per retrieve/preview/deploy di package zip YAML versionabili
 - consumo endpoint backend senza accesso diretto a Salesforce
@@ -66,6 +67,8 @@ Repository tecnico aggiuntivo per catalogo app e ACL:
 - `app_configs`
 - `app_item_records`
 - `app_permission_assignments`
+- `acl_resources`
+- `acl_resource_permissions`
 - `acl_contact_permissions`
 
 ## 6) Flussi chiave
@@ -86,8 +89,9 @@ Repository tecnico aggiuntivo per catalogo app e ACL:
 6. audit decisione con motivazione
 
 ### 6.3 Configurazione dinamica
-- entita e query template sono lette da file versionati
-- modifiche funzionali (liste, colonne, filtri, template) senza toccare codice core
+- entita e query template sono persistite in PostgreSQL e caricate on-demand dal backend
+- i package metadata YAML restano il formato di export/import e deploy versionabile, non la sorgente runtime diretta
+- create, update, delete e deploy metadata riallineano automaticamente le risorse ACL system correlate
 
 ### 6.4 Catalogo app e launcher
 1. Il backoffice gestisce il catalogo app tramite `/#/admin/apps`

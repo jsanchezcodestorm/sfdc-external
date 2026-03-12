@@ -22,6 +22,12 @@ Comportamento runtime (`EntitiesService`):
 Nota operativa:
 - la validazione campi Salesforce e lazy: avviene alla prima richiesta runtime dell'entita (`getValidatedEntityConfigOrThrow`), non al bootstrap.
 
+Nota ACL:
+- create, update e delete di una entity attivano `AclResourceSyncService`
+- la risorsa `entity:<entityId>` viene scoperta automaticamente dal catalogo `entity_configs`
+- una nuova risorsa system nasce con `accessMode: disabled`, `managedBy: system`, `syncState: present`
+- gli endpoint admin entity espongono `aclResourceStatus { id, managedBy, accessMode, syncState }`
+
 ## 3) Struttura storage obbligatoria (PostgreSQL)
 ```text
 entity_configs
@@ -254,21 +260,23 @@ Conseguenza:
 - per azioni `link`, usare target relativi e placeholder espliciti (`view/{{Id}}`)
 - usare `default: true` su una sola view per entita
 - documentare ogni nuova entita anche su `docs/acl-resources-map.md`
+- dopo la creazione, verificare che `aclResourceStatus.accessMode` sia stato portato nel valore operativo atteso prima di assegnare la configurazione agli utenti
 
 ## 13) Checklist "nuova entita" (da zero)
 1. creare/aggiornare migration Prisma per inserire record in `entity_configs`
 2. inserire blocco `list` in `entity_list_configs` + almeno una view in `entity_list_view_configs`
 3. inserire blocco `detail` in `entity_detail_configs` + sezioni in `entity_detail_section_configs`
 4. inserire blocco `form` in `entity_form_configs` + sezioni in `entity_form_section_configs` (se entita editabile)
-5. aggiungere risorsa ACL `entity:<entity-id>` nello snapshot ACL PostgreSQL (UI admin ACL o migration Prisma)
-6. applicare migrazione (`prisma migrate dev|deploy`) e rigenerare client Prisma
-7. testare endpoint:
+5. applicare migrazione (`prisma migrate dev|deploy`) e rigenerare client Prisma
+6. verificare via admin entity o ACL admin che `entity:<entity-id>` sia stata scoperta con stato `disabled/system/present`
+7. assegnare permission e portare `accessMode` a `permission-bound` o `authenticated` secondo il caso d uso
+8. testare endpoint:
    - `GET /entities/:entityId/config`
    - `GET /entities/:entityId/list`
    - `GET /entities/:entityId/records/:recordId`
    - `POST/PUT /entities/:entityId/records`
-8. correggere eventuali `422` su field path invalidi
-9. aggiornare documentazione (`docs/entity-config-guide.md` se cambia il contratto)
+9. correggere eventuali `422` su field path invalidi
+10. aggiornare documentazione (`docs/entity-config-guide.md` se cambia il contratto)
 
 ## 14) Limiti attuali da considerare nel progetto nuovo
 - non esiste schema JSON hard-enforced a build time (validazione e runtime/lazy)
@@ -277,8 +285,8 @@ Conseguenza:
 
 ## 15) Admin configurazione (PostgreSQL)
 Endpoint admin (solo `PORTAL_ADMIN`):
-- `GET /entities/admin/configs`: lista entita configurate con summary (views/sezioni/related/form)
-- `GET /entities/admin/configs/:entityId`: configurazione completa entity
+- `GET /entities/admin/configs`: lista entita configurate con summary (views/sezioni/related/form) + `aclResourceStatus`
+- `GET /entities/admin/configs/:entityId`: configurazione completa entity + `aclResourceStatus`
 - `PUT /entities/admin/configs/:entityId`: upsert configurazione completa (`{ "entity": { ... } }`)
 
 UI frontend admin:
