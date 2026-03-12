@@ -125,12 +125,20 @@ export function parseDetailFormDraft(
     query.limit = queryLimit
   }
 
+  const fallbackFieldPath = pickPreferredField(queryFields)
   const sections = draft.sections
     .map((section, index) => parseDetailSectionDraft(section, index))
     .filter((section): section is DetailSectionValue => section !== null)
 
   if (sections.length === 0) {
-    throw new Error('Detail: sections deve contenere almeno una sezione')
+    if (!fallbackFieldPath) {
+      throw new Error('Detail: sections deve contenere almeno una sezione')
+    }
+
+    sections.push({
+      title: 'Section 1',
+      fields: [{ field: fallbackFieldPath }],
+    })
   }
 
   const relatedLists = draft.relatedLists
@@ -155,22 +163,31 @@ function parseDetailSectionDraft(
   section: DetailSectionDraft,
   index: number,
 ): DetailSectionValue | null {
-  const title = readRequiredString(
-    section.title,
-    `Detail section ${index + 1}: title obbligatorio`,
-  )
+  const title = readOptionalString(section.title) ?? `Section ${index + 1}`
   const fields = section.fields
     .map((field, fieldIndex) => parseDetailFieldDraft(field, index, fieldIndex))
     .filter((field): field is DetailFieldValue => field !== null)
 
   if (fields.length === 0) {
-    throw new Error(`Detail section ${index + 1}: deve contenere almeno un field`)
+    throw new Error(
+      `Detail section ${index + 1}: deve contenere almeno un field valorizzato (seleziona "Field" oppure imposta "Template")`,
+    )
   }
 
   return {
     title,
     fields,
   }
+}
+
+function pickPreferredField(fields: string[]): string | undefined {
+  const normalized = fields.map((field) => field.trim()).filter(Boolean)
+  if (normalized.length === 0) {
+    return undefined
+  }
+
+  const nameField = normalized.find((field) => field === 'Name')
+  return nameField ?? normalized[0]
 }
 
 function parseDetailFieldDraft(
@@ -351,19 +368,22 @@ function createEmptyPathStatusStepDraft(): PathStatusStepDraft {
   }
 }
 
-export function createEmptyDetailSectionDraft(title = ''): DetailSectionDraft {
+export function createEmptyDetailSectionDraft(
+  title = '',
+  preferredFieldPath?: string,
+): DetailSectionDraft {
   return {
     clientId: createDetailDraftClientId('section'),
     title,
-    fields: [createEmptyDetailFieldDraft()],
+    fields: [createEmptyDetailFieldDraft(preferredFieldPath)],
   }
 }
 
-export function createEmptyDetailFieldDraft(): DetailFieldDraft {
+export function createEmptyDetailFieldDraft(preferredFieldPath?: string): DetailFieldDraft {
   return {
     clientId: createDetailDraftClientId('field'),
     label: '',
-    field: '',
+    field: preferredFieldPath?.trim() ?? '',
     template: '',
     sourceMode: 'field',
     highlight: false,

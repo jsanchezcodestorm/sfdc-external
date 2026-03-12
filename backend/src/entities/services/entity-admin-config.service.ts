@@ -5,6 +5,7 @@ import { AclService } from '../../acl/acl.service';
 import { AuditWriteService } from '../../audit/audit-write.service';
 import { ResourceAccessService } from '../../common/services/resource-access.service';
 import { SalesforceService } from '../../salesforce/salesforce.service';
+import { VisibilityAdminService } from '../../visibility/visibility-admin.service';
 import {
   EntityActionConfig,
   EntityConfig,
@@ -112,6 +113,7 @@ export class EntityAdminConfigService {
   constructor(
     private readonly aclAdminConfigService: AclAdminConfigService,
     private readonly aclService: AclService,
+    private readonly visibilityAdminService: VisibilityAdminService,
     private readonly auditWriteService: AuditWriteService,
     private readonly resourceAccessService: ResourceAccessService,
     private readonly repository: EntityAdminConfigRepository,
@@ -146,6 +148,10 @@ export class EntityAdminConfigService {
     }
 
     await this.aclAdminConfigService.ensureEntityResource(entity.id);
+    await this.visibilityAdminService.ensureEntityBootstrapPolicy({
+      entityId: entity.id,
+      objectApiName: entity.objectApiName
+    });
     await this.repository.upsertEntityConfig(entity);
     await this.auditWriteService.recordApplicationSuccessOrThrow({
       action: 'ENTITY_CONFIG_CREATE',
@@ -315,7 +321,7 @@ export class EntityAdminConfigService {
   ): EntityAdminBootstrapPreviewResponse {
     const normalizedFields = this.normalizeBootstrapFields(describedFields);
     const warnings: string[] = [
-      `Configura manualmente la risorsa ACL entity:${entity.id} prima di esporre la nuova entity.`
+      `Al salvataggio viene auto-creata la risorsa ACL entity:${entity.id}; assegna manualmente i permessi ACL e i visibility assignments per abilitarne l uso.`
     ];
     const listPreset = this.buildBootstrapListPreset(entity, normalizedFields, warnings);
     const detailPreset = this.buildBootstrapDetailConfig(

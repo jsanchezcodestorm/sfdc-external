@@ -16,7 +16,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { describeDetailSectionPreviewFields } from '../../entities-admin-preview'
 import { SalesforceFieldSingleInput } from '../SalesforceFieldSingleInput'
@@ -29,12 +29,14 @@ import type { DetailFieldDraft, DetailSectionDraft } from './detail-form.types'
 type DetailSectionsEditorProps = {
   objectApiName: string
   sections: DetailSectionDraft[]
+  preferredFields: string[]
   onChange: (value: DetailSectionDraft[]) => void
 }
 
 export function DetailSectionsEditor({
   objectApiName,
   sections,
+  preferredFields,
   onChange,
 }: DetailSectionsEditorProps) {
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(
@@ -68,9 +70,76 @@ export function DetailSectionsEditor({
     () => selectedSection?.fields.map((field) => field.clientId) ?? [],
     [selectedSection],
   )
+  const defaultFieldPath = useMemo(
+    () => pickDefaultDetailField(preferredFields),
+    [preferredFields],
+  )
+  const showMissingFieldHint = Boolean(
+    selectedSection &&
+      selectedSection.fields.every(
+        (field) =>
+          field.field.trim().length === 0 &&
+          field.template.trim().length === 0 &&
+          field.label.trim().length === 0,
+      ),
+  )
+
+  useEffect(() => {
+    if (!defaultFieldPath) {
+      return
+    }
+
+    let touched = false
+    const nextSections = sections.map((section) => {
+      const hasConfiguredField = section.fields.some(
+        (field) =>
+          field.field.trim().length > 0 ||
+          field.template.trim().length > 0 ||
+          field.label.trim().length > 0 ||
+          field.highlight ||
+          field.format.length > 0,
+      )
+
+      if (hasConfiguredField) {
+        return section
+      }
+
+      if (section.fields.length === 0) {
+        touched = true
+        return {
+          ...section,
+          fields: [createEmptyDetailFieldDraft(defaultFieldPath)],
+        }
+      }
+
+      const firstField = section.fields[0]
+      if (firstField.field.trim().length > 0) {
+        return section
+      }
+
+      touched = true
+      return {
+        ...section,
+        fields: [
+          {
+            ...firstField,
+            field: defaultFieldPath,
+          },
+          ...section.fields.slice(1),
+        ],
+      }
+    })
+
+    if (touched) {
+      onChange(nextSections)
+    }
+  }, [defaultFieldPath, onChange, sections])
 
   const addSection = () => {
-    const nextSection = createEmptyDetailSectionDraft(`Section ${sections.length + 1}`)
+    const nextSection = createEmptyDetailSectionDraft(
+      `Section ${sections.length + 1}`,
+      defaultFieldPath,
+    )
     setSelectedSectionId(nextSection.clientId)
     setExpandedFieldIds((current) => ({
       ...current,
@@ -113,7 +182,7 @@ export function DetailSectionsEditor({
   }
 
   const addField = (sectionId: string) => {
-    const nextField = createEmptyDetailFieldDraft()
+    const nextField = createEmptyDetailFieldDraft(defaultFieldPath)
     setExpandedFieldIds((current) => ({
       ...current,
       [nextField.clientId]: true,
@@ -306,6 +375,11 @@ export function DetailSectionsEditor({
             </label>
 
             <div className="mt-5">
+              {showMissingFieldHint && !defaultFieldPath ? (
+                <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  Prima seleziona almeno un campo in <strong>Header &amp; Query / Query Fields</strong>, poi questa section verrà precompilata automaticamente.
+                </p>
+              ) : null}
               {selectedSection.fields.length > 0 ? (
                 <DndContext
                   sensors={sensors}
@@ -372,6 +446,16 @@ export function DetailSectionsEditor({
       </section>
     </div>
   )
+}
+
+function pickDefaultDetailField(preferredFields: string[]): string | undefined {
+  const normalized = preferredFields.map((entry) => entry.trim()).filter(Boolean)
+  if (normalized.length === 0) {
+    return undefined
+  }
+
+  const nameField = normalized.find((field) => field === 'Name')
+  return nameField ?? normalized[0]
 }
 
 type SortableSectionListItemProps = {

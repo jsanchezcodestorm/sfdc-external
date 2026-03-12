@@ -12,6 +12,6 @@ import { VisibilityService } from './visibility.service';
   imports: [AuthModule, AclModule, SalesforceModule],
   controllers: [VisibilityController],
   providers: [VisibilityService, VisibilityAdminService],
-  exports: [VisibilityService]
+  exports: [VisibilityService, VisibilityAdminService]
 })
 export class VisibilityModule {}

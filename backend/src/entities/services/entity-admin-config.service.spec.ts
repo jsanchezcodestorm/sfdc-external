@@ -34,6 +34,7 @@ function createField(field: TestField) {
 function createService(fields: ReturnType<typeof createField>[]) {
   const counters = {
     ensureAclResourceCalls: 0,
+    ensureVisibilityBootstrapCalls: 0,
     assertKebabCaseIdCalls: 0,
     repositoryCalls: 0,
     auditCalls: 0,
@@ -49,6 +50,11 @@ function createService(fields: ReturnType<typeof createField>[]) {
     {
       hasResource() {
         return false;
+      },
+    } as never,
+    {
+      async ensureEntityBootstrapPolicy() {
+        counters.ensureVisibilityBootstrapCalls += 1;
       },
     } as never,
     {
@@ -376,6 +382,11 @@ test('createEntityConfig auto-provisions entity ACL resource before persistence'
       },
     } as never,
     {
+      async ensureEntityBootstrapPolicy(input: { entityId: string; objectApiName: string }) {
+        calls.push(`visibility:${input.entityId}:${input.objectApiName}`);
+      },
+    } as never,
+    {
       async recordApplicationSuccessOrThrow() {
         calls.push('audit');
       },
@@ -419,5 +430,11 @@ test('createEntityConfig auto-provisions entity ACL resource before persistence'
     },
   });
 
-  assert.deepEqual(calls, ['assert:account', 'ensure:account', 'upsert', 'audit']);
+  assert.deepEqual(calls, [
+    'assert:account',
+    'ensure:account',
+    'visibility:account:Account',
+    'upsert',
+    'audit',
+  ]);
 });

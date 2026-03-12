@@ -133,6 +133,7 @@ export function EntityAdminConfigPage() {
   )
   const [loadingBootstrapPreview, setLoadingBootstrapPreview] = useState(false)
   const [bootstrapPreviewError, setBootstrapPreviewError] = useState<string | null>(null)
+  const [basePathAutoSyncEnabled, setBasePathAutoSyncEnabled] = useState(true)
 
   const selectedEntitySummary = useMemo(
     () => entities.find((entity) => entity.id === selectedEntityId) ?? null,
@@ -280,6 +281,7 @@ export function EntityAdminConfigPage() {
       setObjectApiNameSearchInput('')
       setObjectApiNameSuggestions([])
       setObjectApiNameSuggestionsError(null)
+      setBasePathAutoSyncEnabled(isCreateRoute)
       return
     }
 
@@ -293,7 +295,8 @@ export function EntityAdminConfigPage() {
     setObjectApiNameSearchInput('')
     setObjectApiNameSuggestions([])
     setObjectApiNameSuggestionsError(null)
-  }, [selectedEntityConfig])
+    setBasePathAutoSyncEnabled(isCreateRoute)
+  }, [isCreateRoute, selectedEntityConfig])
 
   useEffect(() => {
     setSelectedListViewIndex((current) => {
@@ -496,10 +499,27 @@ export function EntityAdminConfigPage() {
   }, [navigate])
 
   const updateBaseDraftField = (field: BaseFormDraftKey, value: string) => {
-    setBaseFormDraft((current) => ({
-      ...current,
-      [field]: value,
-    }))
+    if (field === 'basePath') {
+      setBasePathAutoSyncEnabled(false)
+    }
+
+    setBaseFormDraft((current) => {
+      const nextDraft = {
+        ...current,
+        [field]: value,
+      }
+
+      if (field === 'objectApiName' || field === 'id') {
+        const nextObjectApiName = field === 'objectApiName' ? value : current.objectApiName
+        const nextEntityId = field === 'id' ? value : current.id
+
+        if (basePathAutoSyncEnabled) {
+          nextDraft.basePath = buildSuggestedEntityBasePath(nextEntityId, nextObjectApiName)
+        }
+      }
+
+      return nextDraft
+    })
 
     if (field === 'objectApiName') {
       setObjectApiNameSearchInput(value)
@@ -581,9 +601,24 @@ export function EntityAdminConfigPage() {
       }
 
       const nextViews = [...current.views]
+      const currentView = nextViews[index]
+      const normalizedQueryFields = value
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.length > 0)
       nextViews[index] = {
-        ...nextViews[index],
+        ...currentView,
         [field]: value,
+      }
+
+      if (field === 'queryFields') {
+        const currentColumnsCount = countConfiguredColumns(currentView.columns)
+
+        if (normalizedQueryFields.length === 0) {
+          nextViews[index].columns = ''
+          nextViews[index].searchFields = []
+        } else if (currentColumnsCount === 0) {
+          nextViews[index].columns = pickDefaultListColumn(normalizedQueryFields)
+        }
       }
 
       return {
@@ -1395,6 +1430,42 @@ function createBaseDraftFingerprint(baseDraft: BaseFormDraft): string {
     objectApiName: baseDraft.objectApiName.trim(),
     basePath: baseDraft.basePath.trim(),
   })
+}
+
+function toSuggestedEntityId(rawValue: string): string {
+  return rawValue
+    .trim()
+    .replace(/__(c|r)$/i, '')
+    .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
+    .replace(/[_\s]+/g, '-')
+    .replace(/[^a-zA-Z0-9-]/g, '-')
+    .toLowerCase()
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
+function buildSuggestedEntityBasePath(entityId: string, objectApiName: string): string {
+  const normalizedEntityId = toSuggestedEntityId(entityId)
+  const normalizedObjectApiName = toSuggestedEntityId(objectApiName)
+  const pathId = normalizedEntityId || normalizedObjectApiName
+
+  if (!pathId) {
+    return ''
+  }
+
+  return `/s/${pathId}`
+}
+
+function countConfiguredColumns(columnsDraft: string): number {
+  return columnsDraft
+    .split('\n')
+    .map((row) => row.trim())
+    .filter((row) => row.length > 0).length
+}
+
+function pickDefaultListColumn(queryFields: string[]): string {
+  const preferred = queryFields.find((field) => field === 'Name')
+  return preferred ?? queryFields[0] ?? 'Id'
 }
 
 function readLocationSaveInfo(state: unknown): string | null {

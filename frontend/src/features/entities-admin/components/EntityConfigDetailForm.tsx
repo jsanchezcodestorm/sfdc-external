@@ -196,6 +196,7 @@ export function EntityConfigDetailForm({
         <DetailSectionsEditor
           objectApiName={baseObjectApiName}
           sections={value.sections}
+          preferredFields={value.queryFields}
           onChange={(nextSections) => updateField('sections', nextSections)}
         />
       ),

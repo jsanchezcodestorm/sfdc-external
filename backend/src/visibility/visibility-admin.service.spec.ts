@@ -129,6 +129,79 @@ function createInvalidationHarness() {
   };
 }
 
+function createEnsureEntityBootstrapHarness(options?: {
+  existingConeId?: string;
+  hasRule?: boolean;
+}) {
+  const coneCreateCalls: Array<Record<string, unknown>> = [];
+  const ruleCreateCalls: Array<Record<string, unknown>> = [];
+  const policyMetaUpsertCalls: Array<Record<string, unknown>> = [];
+  const objectVersionUpsertCalls: Array<Record<string, unknown>> = [];
+  const userScopeDeleteManyCalls: Array<Record<string, unknown>> = [];
+  const definitionDeleteManyCalls: Array<Record<string, unknown>> = [];
+
+  const tx = {
+    visibilityCone: {
+      async findUnique() {
+        return options?.existingConeId ? { id: options.existingConeId } : null;
+      },
+      async create(input: Record<string, unknown>) {
+        coneCreateCalls.push(input);
+        return { id: 'cone-created-id' };
+      },
+    },
+    visibilityRule: {
+      async findFirst() {
+        return options?.hasRule ? { id: 'existing-rule-id' } : null;
+      },
+      async create(input: Record<string, unknown>) {
+        ruleCreateCalls.push(input);
+        return { id: 'rule-created-id' };
+      },
+    },
+    visibilityPolicyMeta: {
+      async upsert(input: Record<string, unknown>) {
+        policyMetaUpsertCalls.push(input);
+      },
+    },
+    visibilityObjectPolicyVersion: {
+      async upsert(input: Record<string, unknown>) {
+        objectVersionUpsertCalls.push(input);
+      },
+    },
+    visibilityUserScopeCache: {
+      async deleteMany(input: Record<string, unknown>) {
+        userScopeDeleteManyCalls.push(input);
+      },
+    },
+    visibilityPolicyDefinitionCache: {
+      async deleteMany(input: Record<string, unknown>) {
+        definitionDeleteManyCalls.push(input);
+      },
+    },
+  };
+
+  const prisma = {
+    async $transaction<T>(handler: (value: typeof tx) => Promise<T>) {
+      return handler(tx);
+    },
+  };
+
+  const service = new VisibilityAdminService(prisma as never, {} as never, {} as never);
+
+  return {
+    service,
+    calls: {
+      coneCreateCalls,
+      ruleCreateCalls,
+      policyMetaUpsertCalls,
+      objectVersionUpsertCalls,
+      userScopeDeleteManyCalls,
+      definitionDeleteManyCalls,
+    },
+  };
+}
+
 test('previewDebug executes a scoped query and flattens preview records', async () => {
   const { service, calls } = createVisibilityAdminService({
     applyFieldVisibility: (fields) => fields.filter((field) => field !== 'Secret__c'),
@@ -357,6 +430,43 @@ test('normalizeRule keeps a trimmed optional description and drops whitespace-on
   });
 
   assert.equal(normalizedWithoutDescription.description, undefined);
+});
+
+test('ensureEntityBootstrapPolicy creates cone and ALLOW rule when missing', async () => {
+  const { service, calls } = createEnsureEntityBootstrapHarness();
+
+  const response = await service.ensureEntityBootstrapPolicy({
+    entityId: 'account',
+    objectApiName: 'Account',
+  });
+
+  assert.deepEqual(response, { coneCreated: true, ruleCreated: true });
+  assert.equal(calls.coneCreateCalls.length, 1);
+  assert.equal(calls.ruleCreateCalls.length, 1);
+  assert.equal(calls.policyMetaUpsertCalls.length, 1);
+  assert.equal(calls.objectVersionUpsertCalls.length, 1);
+  assert.equal(calls.userScopeDeleteManyCalls.length, 1);
+  assert.equal(calls.definitionDeleteManyCalls.length, 1);
+});
+
+test('ensureEntityBootstrapPolicy is idempotent when cone and rule already exist', async () => {
+  const { service, calls } = createEnsureEntityBootstrapHarness({
+    existingConeId: 'existing-cone-id',
+    hasRule: true,
+  });
+
+  const response = await service.ensureEntityBootstrapPolicy({
+    entityId: 'account',
+    objectApiName: 'Account',
+  });
+
+  assert.deepEqual(response, { coneCreated: false, ruleCreated: false });
+  assert.equal(calls.coneCreateCalls.length, 0);
+  assert.equal(calls.ruleCreateCalls.length, 0);
+  assert.equal(calls.policyMetaUpsertCalls.length, 0);
+  assert.equal(calls.objectVersionUpsertCalls.length, 0);
+  assert.equal(calls.userScopeDeleteManyCalls.length, 0);
+  assert.equal(calls.definitionDeleteManyCalls.length, 0);
 });
 
 test('listRules includes optional description in summary responses', async () => {
