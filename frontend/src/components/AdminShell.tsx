@@ -2,17 +2,22 @@ import { useEffect, useMemo } from 'react'
 import { Outlet, matchPath, useLocation } from 'react-router-dom'
 
 import {
-  buildAuthAdminProviderCreatePath,
   buildAuthAdminLocalCredentialsPath,
+  buildAuthAdminProviderCreatePath,
   buildAuthAdminProvidersPath,
 } from '../features/auth-admin/auth-admin-utils'
 import {
+  AUDIT_TAB_COPY,
+  buildAuditListPath,
+  buildAuditSearch,
+  parseAuditTab,
+} from '../features/audit-admin/audit-admin-utils'
+import {
   buildAppsAdminCreatePath,
-  buildAppsAdminListPath,
   buildAppsAdminEditPath,
+  buildAppsAdminListPath,
   buildAppsAdminViewPath,
 } from '../features/apps-admin/apps-admin-utils'
-import { AUDIT_TAB_COPY, buildAuditListPath, buildAuditSearch, parseAuditTab } from '../features/audit-admin/audit-admin-utils'
 import {
   buildEntityCatalogPath,
   buildEntityCreatePath,
@@ -26,17 +31,12 @@ import {
   buildMetadataAdminPath,
   buildMetadataAdminPreviewPath,
 } from '../features/metadata-admin/metadata-admin-utils'
+import { buildQueryTemplateListPath } from '../features/query-template-admin/query-template-admin-utils'
 import {
-  WorkspaceSidebar,
-  type WorkspaceSidebarItem,
-  type WorkspaceSidebarModule,
-} from './WorkspaceSidebar'
-import { useAdminNavigation } from './useAdminNavigation'
-import {
-  ADMIN_AUTH_ROUTE_ID,
   ADMIN_ACL_ROUTE_ID,
   ADMIN_APPS_ROUTE_ID,
   ADMIN_AUDIT_ROUTE_ID,
+  ADMIN_AUTH_ROUTE_ID,
   ADMIN_ENTITY_CONFIG_ROUTE_ID,
   ADMIN_METADATA_ROUTE_ID,
   ADMIN_QUERY_TEMPLATES_ROUTE_ID,
@@ -44,6 +44,30 @@ import {
 } from '../features/route-access/route-access-registry'
 import type { AdminRouteId } from '../features/route-access/route-access-types'
 import { useRouteAccess } from '../features/route-access/useRouteAccess'
+
+import {
+  AdminSidebar,
+  type AdminSidebarItem,
+  type AdminSidebarModule,
+  type AdminSidebarSection,
+} from './AdminSidebar'
+import { useAdminNavigation } from './useAdminNavigation'
+
+type AdminSidebarSectionKey = 'access' | 'model-apps' | 'security' | 'operations'
+
+type AdminSidebarModuleDefinition = AdminSidebarModule & {
+  sectionId: AdminSidebarSectionKey
+}
+
+const ADMIN_SIDEBAR_SECTIONS: ReadonlyArray<{
+  id: AdminSidebarSectionKey
+  label: string
+}> = [
+  { id: 'access', label: 'Accesso' },
+  { id: 'model-apps', label: 'Modello & App' },
+  { id: 'security', label: 'Sicurezza' },
+  { id: 'operations', label: 'Operazioni' },
+] as const
 
 export function AdminShell() {
   const location = useLocation()
@@ -67,13 +91,13 @@ export function AdminShell() {
     }
   }, [closeSidebar, isSidebarOpen])
 
-  const modules = useMemo(
-    () => buildAdminSidebarModules(location.pathname, location.search, allowedAdminRouteIds),
+  const sections = useMemo(
+    () => buildAdminSidebarSections(location.pathname, location.search, allowedAdminRouteIds),
     [allowedAdminRouteIds, location.pathname, location.search],
   )
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,_#f8fafc_0%,_#eef2ff_100%)] text-slate-900">
+    <div className="min-h-screen bg-[linear-gradient(180deg,_#f8fafc_0%,_#f1f5f9_100%)] text-slate-900">
       <div
         className={`fixed inset-x-0 bottom-0 top-[57px] z-40 lg:hidden ${
           isSidebarOpen ? 'pointer-events-auto' : 'pointer-events-none'
@@ -81,51 +105,52 @@ export function AdminShell() {
       >
         <div
           aria-hidden={!isSidebarOpen}
-          className={`absolute inset-0 bg-slate-950/35 transition ${
+          className={`absolute inset-0 bg-slate-950/45 transition ${
             isSidebarOpen ? 'opacity-100' : 'pointer-events-none opacity-0'
           }`}
           onClick={closeSidebar}
         />
 
         <div
-          className={`absolute left-0 top-0 h-full w-[min(20rem,calc(100vw-1.5rem))] transform transition ${
+          className={`absolute left-0 top-0 h-full w-[min(19rem,calc(100vw-1.5rem))] transform transition ${
             isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
           }`}
         >
-          <WorkspaceSidebar
+          <AdminSidebar
             eyebrow="Admin"
             title="Backoffice"
-            modules={modules}
+            description="Navigazione operativa per configurazione, sicurezza e strumenti di controllo."
+            sections={sections}
             onNavigate={closeSidebar}
           />
         </div>
       </div>
 
       <div className="hidden lg:block">
-        <div className="fixed left-0 top-[57px] h-[calc(100vh-57px)] w-80">
-          <WorkspaceSidebar
+        <div className="fixed left-0 top-[57px] h-[calc(100vh-57px)] w-72">
+          <AdminSidebar
             eyebrow="Admin"
             title="Backoffice"
-            modules={modules}
+            description="Navigazione operativa per configurazione, sicurezza e strumenti di controllo."
+            sections={sections}
           />
         </div>
       </div>
 
-      <main className="min-h-screen px-4 py-6 sm:px-6 lg:pl-[21rem]">
+      <main className="min-h-screen px-4 py-5 sm:px-6 lg:pl-[19rem] lg:pr-8">
         <Outlet />
       </main>
     </div>
   )
 }
 
-function buildAdminSidebarModules(
+function buildAdminSidebarSections(
   pathname: string,
   search: string,
   allowedAdminRouteIds: readonly AdminRouteId[],
-): WorkspaceSidebarModule[] {
+): AdminSidebarSection[] {
   const allowedRouteIdSet = new Set(allowedAdminRouteIds)
-
-  return [
+  const modules = [
     buildAuthModule(pathname, allowedRouteIdSet),
     buildEntityConfigModule(pathname, allowedRouteIdSet),
     buildAppsModule(pathname, allowedRouteIdSet),
@@ -134,13 +159,32 @@ function buildAdminSidebarModules(
     buildVisibilityModule(pathname, allowedRouteIdSet),
     buildMetadataModule(pathname, allowedRouteIdSet),
     buildAuditModule(pathname, search, allowedRouteIdSet),
-  ].filter((module): module is WorkspaceSidebarModule => module !== null)
+  ].filter((module): module is AdminSidebarModuleDefinition => module !== null)
+
+  return ADMIN_SIDEBAR_SECTIONS.map((section) => ({
+    id: section.id,
+    label: section.label,
+    modules: modules
+      .filter((module) => module.sectionId === section.id)
+      .map(stripSectionId),
+  })).filter((section) => section.modules.length > 0)
+}
+
+function stripSectionId(module: AdminSidebarModuleDefinition): AdminSidebarModule {
+  return {
+    id: module.id,
+    label: module.label,
+    to: module.to,
+    description: module.description,
+    isActive: module.isActive,
+    items: module.items,
+  }
 }
 
 function buildAuthModule(
   pathname: string,
   allowedRouteIdSet: ReadonlySet<AdminRouteId>,
-): WorkspaceSidebarModule | null {
+): AdminSidebarModuleDefinition | null {
   if (!allowedRouteIdSet.has(ADMIN_AUTH_ROUTE_ID)) {
     return null
   }
@@ -152,12 +196,13 @@ function buildAuthModule(
     matchPath('/admin/auth/providers/:providerId/edit', pathname) !== null
   const isLocalCredentialsRoute = pathname === buildAuthAdminLocalCredentialsPath()
   const providersCaption = matchPath('/admin/auth/providers/:providerId/edit', pathname)
-    ? 'Editor provider'
+    ? 'Editor configurazione'
     : pathname === buildAuthAdminProviderCreatePath()
-      ? 'Nuova configurazione'
-      : 'Registry runtime + override admin'
+      ? 'Nuovo provider'
+      : 'Registry runtime e override admin'
 
   return {
+    sectionId: 'access',
     id: 'auth',
     label: 'Auth',
     to: buildAuthAdminProvidersPath(),
@@ -185,7 +230,7 @@ function buildAuthModule(
 function buildEntityConfigModule(
   pathname: string,
   allowedRouteIdSet: ReadonlySet<AdminRouteId>,
-): WorkspaceSidebarModule | null {
+): AdminSidebarModuleDefinition | null {
   if (!allowedRouteIdSet.has(ADMIN_ENTITY_CONFIG_ROUTE_ID)) {
     return null
   }
@@ -199,14 +244,15 @@ function buildEntityConfigModule(
   const entityId = editMatch?.entityId
     ? editMatch.entityId
     : viewMatch?.params.entityId
-    ? decodeURIComponent(viewMatch.params.entityId)
-    : null
-  const items: WorkspaceSidebarItem[] = [
+      ? decodeURIComponent(viewMatch.params.entityId)
+      : null
+
+  const items: AdminSidebarItem[] = [
     {
       id: 'entity-catalog',
       label: 'Catalogo',
       to: buildEntityCatalogPath(),
-      caption: 'Lista entita',
+      caption: 'Lista entity',
       isActive: isCatalogRoute,
     },
   ]
@@ -223,19 +269,19 @@ function buildEntityConfigModule(
       {
         id: 'entity-list',
         label: 'List',
-        caption: 'Disponibile dopo il primo save',
+        caption: 'Disponibile dopo il primo salvataggio',
         isDisabled: true,
       },
       {
         id: 'entity-detail',
         label: 'Detail',
-        caption: 'Disponibile dopo il primo save',
+        caption: 'Disponibile dopo il primo salvataggio',
         isDisabled: true,
       },
       {
         id: 'entity-form',
         label: 'Form',
-        caption: 'Disponibile dopo il primo save',
+        caption: 'Disponibile dopo il primo salvataggio',
         isDisabled: true,
       },
     )
@@ -244,7 +290,7 @@ function buildEntityConfigModule(
       id: 'entity-overview',
       label: 'Overview',
       to: buildEntityViewPath(entityId),
-      caption: 'Vista readonly',
+      caption: 'Vista in sola lettura',
       isActive: Boolean(viewMatch),
     })
 
@@ -260,6 +306,7 @@ function buildEntityConfigModule(
   }
 
   return {
+    sectionId: 'model-apps',
     id: 'entity-config',
     label: 'Entity Config',
     to: buildEntityCatalogPath(),
@@ -272,7 +319,7 @@ function buildEntityConfigModule(
 function buildAppsModule(
   pathname: string,
   allowedRouteIdSet: ReadonlySet<AdminRouteId>,
-): WorkspaceSidebarModule | null {
+): AdminSidebarModuleDefinition | null {
   if (!allowedRouteIdSet.has(ADMIN_APPS_ROUTE_ID)) {
     return null
   }
@@ -285,10 +332,10 @@ function buildAppsModule(
   const appId = editMatch?.params.appId
     ? decodeURIComponent(editMatch.params.appId)
     : viewMatch?.params.appId
-    ? decodeURIComponent(viewMatch.params.appId)
-    : null
+      ? decodeURIComponent(viewMatch.params.appId)
+      : null
 
-  const items: WorkspaceSidebarItem[] = [
+  const items: AdminSidebarItem[] = [
     {
       id: 'apps-catalog',
       label: 'Catalogo',
@@ -303,7 +350,7 @@ function buildAppsModule(
       id: 'apps-create',
       label: 'Nuova app',
       to: buildAppsAdminCreatePath(),
-      caption: 'Create flow',
+      caption: 'Flusso di creazione',
       isActive: true,
     })
   } else if (appId) {
@@ -312,7 +359,7 @@ function buildAppsModule(
         id: 'apps-overview',
         label: 'Overview',
         to: buildAppsAdminViewPath(appId),
-        caption: 'Dettaglio readonly',
+        caption: 'Dettaglio in sola lettura',
         isActive: Boolean(viewMatch),
       },
       {
@@ -326,6 +373,7 @@ function buildAppsModule(
   }
 
   return {
+    sectionId: 'model-apps',
     id: 'apps',
     label: 'Apps',
     to: buildAppsAdminListPath(),
@@ -338,7 +386,7 @@ function buildAppsModule(
 function buildAclModule(
   pathname: string,
   allowedRouteIdSet: ReadonlySet<AdminRouteId>,
-): WorkspaceSidebarModule | null {
+): AdminSidebarModuleDefinition | null {
   if (!allowedRouteIdSet.has(ADMIN_ACL_ROUTE_ID)) {
     return null
   }
@@ -346,10 +394,11 @@ function buildAclModule(
   const isActive = pathname.startsWith('/admin/acl')
 
   return {
+    sectionId: 'security',
     id: 'acl',
     label: 'ACL',
     to: '/admin/acl/permissions',
-    description: 'Permessi, defaults, assegnazioni Contact e risorse ACL.',
+    description: 'Permessi, default, assegnazioni Contact e risorse ACL.',
     isActive,
     items: [
       {
@@ -363,7 +412,7 @@ function buildAclModule(
         id: 'acl-defaults',
         label: 'Defaults',
         to: '/admin/acl/defaults',
-        caption: 'Default permissions',
+        caption: 'Default permissions globali',
         isActive: pathname.startsWith('/admin/acl/defaults'),
       },
       {
@@ -377,7 +426,7 @@ function buildAclModule(
         id: 'acl-resources',
         label: 'Resources',
         to: '/admin/acl/resources',
-        caption: 'ACL resources',
+        caption: 'Risorse ACL',
         isActive: pathname.startsWith('/admin/acl/resources'),
       },
     ],
@@ -387,7 +436,7 @@ function buildAclModule(
 function buildQueryTemplatesModule(
   pathname: string,
   allowedRouteIdSet: ReadonlySet<AdminRouteId>,
-): WorkspaceSidebarModule | null {
+): AdminSidebarModuleDefinition | null {
   if (!allowedRouteIdSet.has(ADMIN_QUERY_TEMPLATES_ROUTE_ID)) {
     return null
   }
@@ -395,27 +444,20 @@ function buildQueryTemplatesModule(
   const isActive = pathname.startsWith('/admin/query-templates')
 
   return {
+    sectionId: 'model-apps',
     id: 'query-templates',
     label: 'Query Templates',
-    to: '/admin/query-templates',
+    to: buildQueryTemplateListPath(),
     description: 'Catalogo template query.',
     isActive,
-    items: [
-      {
-        id: 'query-templates-catalog',
-        label: 'Catalogo',
-        to: '/admin/query-templates',
-        caption: 'Lista, view ed edit',
-        isActive,
-      },
-    ],
+    items: [],
   }
 }
 
 function buildVisibilityModule(
   pathname: string,
   allowedRouteIdSet: ReadonlySet<AdminRouteId>,
-): WorkspaceSidebarModule | null {
+): AdminSidebarModuleDefinition | null {
   if (!allowedRouteIdSet.has(ADMIN_VISIBILITY_ROUTE_ID)) {
     return null
   }
@@ -423,6 +465,7 @@ function buildVisibilityModule(
   const isActive = pathname.startsWith('/admin/visibility')
 
   return {
+    sectionId: 'security',
     id: 'visibility',
     label: 'Visibility',
     to: '/admin/visibility/cones',
@@ -461,11 +504,49 @@ function buildVisibilityModule(
   }
 }
 
+function buildMetadataModule(
+  pathname: string,
+  allowedRouteIdSet: ReadonlySet<AdminRouteId>,
+): AdminSidebarModuleDefinition | null {
+  if (!allowedRouteIdSet.has(ADMIN_METADATA_ROUTE_ID)) {
+    return null
+  }
+
+  const isPackagesRoute = pathname === buildMetadataAdminPath()
+  const isPreviewRoute = pathname === buildMetadataAdminPreviewPath()
+  const isActive = pathname.startsWith(buildMetadataAdminPath())
+
+  return {
+    sectionId: 'operations',
+    id: 'metadata',
+    label: 'Metadata',
+    to: buildMetadataAdminPath(),
+    description: 'Package zip YAML per retrieve, preview e deploy.',
+    isActive,
+    items: [
+      {
+        id: 'metadata-packages',
+        label: 'Packages',
+        to: buildMetadataAdminPath(),
+        caption: 'Export zip e selezione package',
+        isActive: isPackagesRoute,
+      },
+      {
+        id: 'metadata-preview',
+        label: 'Preview',
+        to: buildMetadataAdminPreviewPath(),
+        caption: 'Diff package, blocker e deploy',
+        isActive: isPreviewRoute,
+      },
+    ],
+  }
+}
+
 function buildAuditModule(
   pathname: string,
   search: string,
   allowedRouteIdSet: ReadonlySet<AdminRouteId>,
-): WorkspaceSidebarModule | null {
+): AdminSidebarModuleDefinition | null {
   if (!allowedRouteIdSet.has(ADMIN_AUDIT_ROUTE_ID)) {
     return null
   }
@@ -483,6 +564,7 @@ function buildAuditModule(
       : parseAuditTab(new URLSearchParams(search).get('tab'))
 
   return {
+    sectionId: 'operations',
     id: 'audit',
     label: 'Audit',
     to: `${buildAuditListPath()}${buildAuditSearch('security')}`,
@@ -516,43 +598,6 @@ function buildAuditModule(
         to: `${buildAuditListPath()}${buildAuditSearch('query')}`,
         caption: AUDIT_TAB_COPY.query.description,
         isActive: activeStream === 'query',
-      },
-    ],
-  }
-}
-
-function buildMetadataModule(
-  pathname: string,
-  allowedRouteIdSet: ReadonlySet<AdminRouteId>,
-): WorkspaceSidebarModule | null {
-  if (!allowedRouteIdSet.has(ADMIN_METADATA_ROUTE_ID)) {
-    return null
-  }
-
-  const isPackagesRoute = pathname === buildMetadataAdminPath()
-  const isPreviewRoute = pathname === buildMetadataAdminPreviewPath()
-  const isActive = pathname.startsWith(buildMetadataAdminPath())
-
-  return {
-    id: 'metadata',
-    label: 'Metadata',
-    to: buildMetadataAdminPath(),
-    description: 'Package zip YAML per retrieve, preview e deploy.',
-    isActive,
-    items: [
-      {
-        id: 'metadata-packages',
-        label: 'Packages',
-        to: buildMetadataAdminPath(),
-        caption: 'Export zip e selezione package',
-        isActive: isPackagesRoute,
-      },
-      {
-        id: 'metadata-preview',
-        label: 'Preview',
-        to: buildMetadataAdminPreviewPath(),
-        caption: 'Diff package, blocker e deploy',
-        isActive: isPreviewRoute,
       },
     ],
   }
