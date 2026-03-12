@@ -62,8 +62,11 @@ Permission -> app assignments:
 - ogni permission puo pubblicare zero o piu app nel launcher frontend
 - il mapping e gestito nel contratto admin delle permission tramite `appIds`
 - `GET /apps/available` restituisce solo le app raggiunte da almeno una permission effettiva dell utente
-- per ogni app, il backend include solo le entity che passano il controllo ACL `entity:<entityId>`
-- un app senza entity visibili non viene restituita al frontend
+- per ogni app, il backend include solo gli item runtime autorizzati
+- gli item con `resourceId` richiedono una risorsa ACL esistente e almeno una permission che la pubblichi
+- gli item `entity` richiedono anche il controllo ACL `entity:<entityId>`
+- la `home` dell app non ha un gate ACL aggiuntivo oltre alla pubblicazione dell app stessa
+- un app viene restituita se ha la `home` accessibile o almeno un altro item accessibile
 
 Resource types supportati:
 - `rest`

@@ -463,7 +463,7 @@ export function AclPermissionEditorPage({ mode }: AclPermissionEditorPageProps) 
                       <p className="font-semibold text-slate-950">{app.label}</p>
                       <p className="mt-1 font-mono text-xs text-slate-500">{app.id}</p>
                       <p className="mt-1 text-xs text-slate-500">
-                        {app.entityCount} entity associate
+                        {app.itemCount} item, {app.entityCount} entity
                       </p>
                     </div>
                   </label>

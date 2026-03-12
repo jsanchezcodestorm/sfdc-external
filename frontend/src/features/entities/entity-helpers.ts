@@ -238,7 +238,7 @@ export function resolveActionTarget(
   },
 ): string {
   const actionBasePath = action.entityId
-    ? normalizeEntityBasePath(action.entityId)
+    ? resolveEntityActionBasePath(action.entityId, options.baseEntityPath)
     : normalizeActionBasePath(options.baseEntityPath)
 
   const fallbackPath = toActionPath(options.fallbackPath, actionBasePath)
@@ -267,6 +267,17 @@ export function buildRowActions(actions: EntityAction[] | undefined): EntityActi
   }
 
   return actions.filter((action) => ACTION_TYPES.has(action.type))
+}
+
+function resolveEntityActionBasePath(entityId: string, currentBaseEntityPath: string | null | undefined): string {
+  const normalizedCurrentBase = normalizeActionBasePath(currentBaseEntityPath)
+  const appScopedMatch = /^\/app\/([^/]+)\/entity\/[^/]+$/.exec(normalizedCurrentBase)
+
+  if (appScopedMatch) {
+    return `/app/${appScopedMatch[1]}/entity/${entityId}`
+  }
+
+  return normalizeEntityBasePath(entityId)
 }
 
 function toActionPath(target: string | null | undefined, baseEntityPath: string): string {

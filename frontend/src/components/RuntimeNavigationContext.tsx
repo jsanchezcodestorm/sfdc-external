@@ -5,9 +5,10 @@ import {
   RuntimeNavigationContext,
   type RuntimeNavigationContextValue,
 } from './runtime-navigation-context'
+import { isAppRuntimePath } from '../features/apps/app-workspace-routing'
 
 function isRuntimeWorkspacePath(pathname: string): boolean {
-  return pathname === '/' || pathname.startsWith('/s/')
+  return isAppRuntimePath(pathname)
 }
 
 export function RuntimeNavigationProvider({ children }: { children: ReactNode }) {

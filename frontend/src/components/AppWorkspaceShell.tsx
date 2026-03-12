@@ -3,12 +3,11 @@ import { Link, useLocation } from 'react-router-dom'
 
 import { AvailableAppsLauncher } from '../features/apps/components/AvailableAppsLauncher'
 import {
-  getActiveRuntimeTabEntityId,
-  getAppEntityBasePath,
-  getFirstAppEntityPath,
-  isRuntimeEntityOutsideSelectedApp,
+  getActiveRuntimeTabKey,
+  getAppItemHref,
 } from '../features/apps/app-workspace-routing'
 import { useAppWorkspace } from '../features/apps/useAppWorkspace'
+import type { AvailableAppItem } from '../features/apps/app-types'
 import { useRuntimeNavigation } from './useRuntimeNavigation'
 
 type AppWorkspaceShellProps = {
@@ -21,7 +20,7 @@ export function AppWorkspaceShell({
   onSelectApp,
 }: AppWorkspaceShellProps) {
   const location = useLocation()
-  const { apps, error, loading, selectedApp, selectedAppId, selectedEntities } = useAppWorkspace()
+  const { apps, error, loading, selectedApp, selectedAppId, selectedItems } = useAppWorkspace()
   const { closeDrawer, isDrawerOpen } = useRuntimeNavigation()
   const [isLauncherOpen, setIsLauncherOpen] = useState(false)
   const launcherRef = useRef<HTMLDivElement | null>(null)
@@ -61,9 +60,7 @@ export function AppWorkspaceShell({
     }
   }, [isLauncherOpen])
 
-  const activeEntityId = getActiveRuntimeTabEntityId(location.pathname, selectedApp)
-  const isOutOfContext = isRuntimeEntityOutsideSelectedApp(location.pathname, selectedApp)
-  const fallbackEntityPath = getFirstAppEntityPath(selectedApp)
+  const activeTabKey = getActiveRuntimeTabKey(location.pathname, selectedApp)
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#dbeafe_0%,_#f8fafc_42%,_#ffffff_100%)] text-slate-900">
@@ -80,31 +77,22 @@ export function AppWorkspaceShell({
             </button>
 
             {loading ? (
-              <p className="shrink-0 text-sm text-slate-500">Caricamento entity tabs...</p>
+              <p className="shrink-0 text-sm text-slate-500">Caricamento navigazione app...</p>
             ) : error ? (
               <p className="shrink-0 text-sm text-rose-700">Launcher non disponibile.</p>
-            ) : selectedEntities.length === 0 ? (
+            ) : selectedItems.length === 0 ? (
               <p className="shrink-0 text-sm text-slate-500">
-                Nessuna entity disponibile per l app attiva.
+                Nessun item disponibile per l app attiva.
               </p>
             ) : (
-              selectedEntities.map((entity) => {
-                const isActive = entity.id === activeEntityId
-
-                return (
-                  <Link
-                    key={entity.id}
-                    to={getAppEntityBasePath(entity)}
-                    className={`shrink-0 rounded-full px-4 py-2 text-sm font-medium transition ${
-                      isActive
-                        ? 'bg-slate-900 text-white'
-                        : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950'
-                    }`}
-                  >
-                    {entity.label}
-                  </Link>
-                )
-              })
+              selectedItems.map((item) => (
+                <WorkspaceNavItem
+                  key={item.id}
+                  appId={selectedApp?.id}
+                  item={item}
+                  isActive={item.kind === 'home' ? activeTabKey === 'home' : activeTabKey === item.id}
+                />
+              ))
             )}
           </div>
 
@@ -115,7 +103,7 @@ export function AppWorkspaceShell({
                   App Launcher
                 </p>
                 <p className="mt-2 text-sm text-slate-600">
-                  Cambia il contesto di lavoro senza uscire dal workspace corrente.
+                  Cambia il contesto di lavoro e atterra sempre sulla home dell app selezionata.
                 </p>
               </div>
 
@@ -181,42 +169,27 @@ export function AppWorkspaceShell({
             <section className="mt-5 flex-1 rounded-3xl border border-slate-200 bg-white/90 p-4 shadow-sm">
               <div className="flex items-center justify-between gap-3">
                 <h3 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-600">
-                  Entity
+                  Navigation
                 </h3>
                 <span className="text-xs font-medium text-slate-500">
-                  {selectedEntities.length}
+                  {selectedItems.length}
                 </span>
               </div>
 
-              {selectedEntities.length === 0 ? (
-                <p className="mt-4 text-sm text-slate-500">Nessuna entity disponibile.</p>
+              {selectedItems.length === 0 ? (
+                <p className="mt-4 text-sm text-slate-500">Nessun item disponibile.</p>
               ) : (
-                <nav className="mt-4 space-y-2" aria-label="Entity navigation">
-                  {selectedEntities.map((entity) => {
-                    const isActive = entity.id === activeEntityId
-
-                    return (
-                      <Link
-                        key={entity.id}
-                        to={getAppEntityBasePath(entity)}
-                        onClick={closeDrawer}
-                        className={`block rounded-2xl px-4 py-3 transition ${
-                          isActive
-                            ? 'bg-slate-900 text-white'
-                            : 'bg-slate-50 text-slate-700 hover:bg-slate-100 hover:text-slate-950'
-                        }`}
-                      >
-                        <span className="block text-sm font-semibold">{entity.label}</span>
-                        <span
-                          className={`mt-1 block text-xs ${
-                            isActive ? 'text-slate-300' : 'text-slate-500'
-                          }`}
-                        >
-                          {entity.objectApiName}
-                        </span>
-                      </Link>
-                    )
-                  })}
+                <nav className="mt-4 space-y-2" aria-label="App navigation">
+                  {selectedItems.map((item) => (
+                    <WorkspaceNavItem
+                      key={item.id}
+                      appId={selectedApp?.id}
+                      item={item}
+                      isActive={item.kind === 'home' ? activeTabKey === 'home' : activeTabKey === item.id}
+                      compact
+                      onNavigate={closeDrawer}
+                    />
+                  ))}
                 </nav>
               )}
             </section>
@@ -225,39 +198,97 @@ export function AppWorkspaceShell({
       </div>
 
       <main className="mx-auto flex w-full max-w-7xl flex-col gap-5 px-4 py-6 sm:px-6">
-        {isOutOfContext ? (
-          <section className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-amber-900 shadow-sm">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className="text-sm font-semibold">Entity fuori dall app attiva</p>
-                <p className="mt-1 text-sm text-amber-900/85">
-                  La route corrente resta aperta, ma non appartiene ai tab dell app selezionata.
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Link
-                  to="/"
-                  className="rounded-lg border border-amber-300 px-3 py-2 text-sm font-medium transition hover:bg-amber-100"
-                >
-                  Dashboard app
-                </Link>
-                {fallbackEntityPath ? (
-                  <Link
-                    to={fallbackEntityPath}
-                    className="rounded-lg bg-amber-900 px-3 py-2 text-sm font-semibold text-white transition hover:bg-amber-800"
-                  >
-                    Prima entity attiva
-                  </Link>
-                ) : null}
-              </div>
-            </div>
-          </section>
-        ) : null}
-
         {children}
       </main>
     </div>
   )
+}
+
+type WorkspaceNavItemProps = {
+  appId: string | undefined
+  item: AvailableAppItem
+  isActive: boolean
+  compact?: boolean
+  onNavigate?: () => void
+}
+
+function WorkspaceNavItem({
+  appId,
+  item,
+  isActive,
+  compact = false,
+  onNavigate,
+}: WorkspaceNavItemProps) {
+  const href = appId ? getAppItemHref(appId, item) : null
+  const baseClassName = compact
+    ? `block rounded-2xl px-4 py-3 transition ${
+        isActive
+          ? 'bg-slate-900 text-white'
+          : 'bg-slate-50 text-slate-700 hover:bg-slate-100 hover:text-slate-950'
+      }`
+    : `shrink-0 rounded-full px-4 py-2 text-sm font-medium transition ${
+        isActive
+          ? 'bg-slate-900 text-white'
+          : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950'
+      }`
+
+  const content = compact ? (
+    <>
+      <span className="block text-sm font-semibold">{item.label}</span>
+      <span
+        className={`mt-1 block text-xs ${
+          isActive ? 'text-slate-300' : 'text-slate-500'
+        }`}
+      >
+        {describeItem(item)}
+      </span>
+    </>
+  ) : (
+    item.label
+  )
+
+  if (!href) {
+    return (
+      <span className={`${baseClassName} opacity-60`}>
+        {content}
+      </span>
+    )
+  }
+
+  if ((item.kind === 'external-link' || item.kind === 'report') && item.openMode === 'new-tab') {
+    return (
+      <a
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+        onClick={onNavigate}
+        className={baseClassName}
+      >
+        {content}
+      </a>
+    )
+  }
+
+  return (
+    <Link to={href} onClick={onNavigate} className={baseClassName}>
+      {content}
+    </Link>
+  )
+}
+
+function describeItem(item: AvailableAppItem): string {
+  switch (item.kind) {
+    case 'home':
+      return 'Home'
+    case 'entity':
+      return item.objectApiName
+    case 'custom-page':
+      return 'Custom page'
+    case 'external-link':
+      return item.openMode === 'iframe' ? 'Embed esterno' : 'Nuova tab'
+    case 'report':
+      return item.providerLabel?.trim() || 'Report'
+  }
 }
 
 function LauncherGlyph() {

@@ -22,7 +22,7 @@ vi.mock('../entity-api', () => ({
 }))
 
 function renderPage(
-  initialEntry = '/s/account/001000000000001/related/contacts',
+  initialEntry = '/app/sales/entity/account/001000000000001/related/contacts',
 ) {
   return render(
     <AppWorkspaceContext.Provider
@@ -30,7 +30,9 @@ function renderPage(
         apps: [],
         selectedApp: null,
         selectedAppId: null,
+        selectedItems: [],
         selectedEntities: [],
+        homeItem: null,
         loading: false,
         error: null,
         selectApp() {},
@@ -39,7 +41,7 @@ function renderPage(
       <MemoryRouter initialEntries={[initialEntry]}>
         <Routes>
           <Route
-            path="/s/:entityId/:recordId/related/:relatedListId"
+            path="/app/:appId/entity/:entityId/:recordId/related/:relatedListId"
             element={<EntityRelatedListPage />}
           />
         </Routes>
@@ -122,7 +124,7 @@ describe('EntityRelatedListPage', () => {
         nextCursor: null,
       } as never)
 
-    renderPage('/s/account/001000000000001/related/contacts?cursor=stale')
+    renderPage('/app/sales/entity/account/001000000000001/related/contacts?cursor=stale')
 
     await screen.findByText('Recovered')
     expect(

@@ -67,7 +67,7 @@ export function AvailableAppsLauncher({
                   isSelected ? 'bg-sky-100 text-sky-800' : 'bg-slate-100 text-slate-700'
                 }`}
               >
-                {app.entities.length}
+                {app.items.length}
               </span>
             </div>
           </button>

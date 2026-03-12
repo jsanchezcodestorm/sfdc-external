@@ -20,11 +20,13 @@ import { AuditAdminPage } from './features/audit-admin/pages/AuditAdminPage'
 import { AppsAdminDetailPage } from './features/apps-admin/pages/AppsAdminDetailPage'
 import { AppsAdminEditorPage } from './features/apps-admin/pages/AppsAdminEditorPage'
 import { AppsAdminListPage } from './features/apps-admin/pages/AppsAdminListPage'
+import { AppRuntimeHomePage } from './features/apps/pages/AppRuntimeHomePage'
+import { AppRuntimeItemPage } from './features/apps/pages/AppRuntimeItemPage'
 
 import { EntityDetailPage } from './features/entities/pages/EntityDetailPage'
 import { EntityFormPage } from './features/entities/pages/EntityFormPage'
+import { EntityListPage } from './features/entities/pages/EntityListPage'
 import { EntityRelatedListPage } from './features/entities/pages/EntityRelatedListPage'
-import { EntityRuntimePage } from './features/entities/pages/EntityRuntimePage'
 import { EntityRouteFallbackPage } from './features/entities/pages/EntityRouteFallbackPage'
 import { EntityAdminConfigPage } from './features/entities-admin/pages/EntityAdminConfigPage'
 import { MetadataAdminPage } from './features/metadata-admin/pages/MetadataAdminPage'
@@ -76,15 +78,17 @@ const router = createHashRouter(
           </Route>
 
           <Route element={<RequireAuth />}>
-            <Route path="/s/:entityId" element={<EntityRuntimePage />} />
-            <Route path="/s/:entityId/new" element={<EntityFormPage />} />
-            <Route path="/s/:entityId/:recordId" element={<EntityDetailPage />} />
-            <Route path="/s/:entityId/:recordId/edit" element={<EntityFormPage />} />
+            <Route path="/app/:appId" element={<AppRuntimeHomePage />} />
+            <Route path="/app/:appId/items/:itemId" element={<AppRuntimeItemPage />} />
+            <Route path="/app/:appId/entity/:entityId" element={<EntityListPage />} />
+            <Route path="/app/:appId/entity/:entityId/new" element={<EntityFormPage />} />
+            <Route path="/app/:appId/entity/:entityId/:recordId" element={<EntityDetailPage />} />
+            <Route path="/app/:appId/entity/:entityId/:recordId/edit" element={<EntityFormPage />} />
             <Route
-              path="/s/:entityId/:recordId/related/:relatedListId"
+              path="/app/:appId/entity/:entityId/:recordId/related/:relatedListId"
               element={<EntityRelatedListPage />}
             />
-            <Route path="/s/:entityId/*" element={<EntityRouteFallbackPage />} />
+            <Route path="/app/:appId/entity/:entityId/*" element={<EntityRouteFallbackPage />} />
 
             <Route path="/admin" element={<AdminShell />}>
               <Route index element={<AdminIndexRedirect />} />

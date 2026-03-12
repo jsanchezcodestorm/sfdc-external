@@ -10,10 +10,10 @@ import {
 } from '../entity-api'
 import {
   getRecordsFromCollection,
-  normalizeEntityBasePath,
   resolveActionTarget,
   toTitleCase,
 } from '../entity-helpers'
+import { buildAppEntityBasePath, buildAppHomePath } from '../../apps/app-workspace-routing'
 import type {
   EntityAction,
   EntityConfigEnvelope,
@@ -28,7 +28,7 @@ import { EntityRecordTable } from '../components/EntityRecordTable'
 import { EntityStatePanel } from '../components/EntityStatePanel'
 
 export function EntityRelatedListPage() {
-  const { entityId = '', recordId = '', relatedListId = '' } = useParams()
+  const { appId = '', entityId = '', recordId = '', relatedListId = '' } = useParams()
   const [searchParams, setSearchParams] = useSearchParams()
   const { selectedEntities } = useAppWorkspace()
   const [config, setConfig] = useState<EntityConfigEnvelope | null>(null)
@@ -111,10 +111,10 @@ export function EntityRelatedListPage() {
   )
 
   const relatedList = relatedPayload?.relatedList ?? configRelatedList
-  const navigationTarget = resolveRelatedListNavigationTarget(relatedList, selectedEntities)
+  const navigationTarget = resolveRelatedListNavigationTarget(appId, relatedList, selectedEntities)
   const relatedEntityId = navigationTarget.entityId
   const entityLabel = config?.entity.label ?? toTitleCase(entityId)
-  const baseEntityPath = normalizeEntityBasePath(entityId, config?.entity.navigation?.basePath)
+  const baseEntityPath = appId ? buildAppEntityBasePath(appId, entityId) : ''
   const title =
     relatedPayload?.title ??
     relatedList?.label ??
@@ -132,7 +132,7 @@ export function EntityRelatedListPage() {
     return (
       <EntityPageFrame
         title="Related list non valida"
-        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Entity' }]}
+        breadcrumbs={[{ label: 'Launcher', to: '/' }, { label: 'Entity' }]}
       >
         <EntityStatePanel
           tone="error"
@@ -148,7 +148,8 @@ export function EntityRelatedListPage() {
       title={title}
       subtitle={`${entityLabel} - ${recordId}`}
       breadcrumbs={[
-        { label: 'Home', to: '/' },
+        { label: 'Launcher', to: '/' },
+        { label: 'App', to: appId ? buildAppHomePath(appId) : undefined },
         { label: entityLabel, to: baseEntityPath },
         { label: recordId, to: `${baseEntityPath}/${recordId}` },
         { label: 'Related List' },

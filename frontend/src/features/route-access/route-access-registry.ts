@@ -48,7 +48,7 @@ const KNOWN_ROUTE_DEFINITIONS: readonly KnownRouteDefinition[] = [
     id: ADMIN_APPS_ROUTE_ID,
     path: buildAppsAdminListPath(),
     label: 'Apps',
-    description: 'Catalogo app e associazioni entity.',
+    description: 'Catalogo app e workspace items.',
     isAdmin: true,
     sortOrder: 20,
   },

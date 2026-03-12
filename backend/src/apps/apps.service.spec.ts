@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { AppsService } from './apps.service';
 
-test('listAvailableApps keeps only entities allowed by ACL, drops empty apps, and adds keyPrefix', async () => {
+test('listAvailableApps keeps only items allowed by ACL and adds entity keyPrefix', async () => {
   const repository = {
     async listAvailableApps(permissionCodes: string[]) {
       assert.deepEqual(permissionCodes, ['PORTAL_USER', 'PORTAL_OPERATIONS']);
@@ -12,15 +12,47 @@ test('listAvailableApps keeps only entities allowed by ACL, drops empty apps, an
         {
           id: 'sales',
           label: 'Sales',
-          entities: [
-            { id: 'account', label: 'Account', objectApiName: 'Account', basePath: '/sales/account' },
-            { id: 'opportunity', label: 'Opportunity', objectApiName: 'Opportunity' },
+          items: [
+            {
+              id: 'home',
+              kind: 'home',
+              label: 'Home',
+              page: { blocks: [] },
+            },
+            {
+              id: 'account',
+              kind: 'entity',
+              label: 'Account',
+              entityId: 'account',
+              objectApiName: 'Account',
+            },
+            {
+              id: 'sales-kpi',
+              kind: 'custom-page',
+              label: 'KPI',
+              resourceId: 'route:sales-kpi',
+              page: { blocks: [] },
+            },
           ],
         },
         {
           id: 'hr',
           label: 'HR',
-          entities: [{ id: 'employee', label: 'Employee', objectApiName: 'Contact' }],
+          items: [
+            {
+              id: 'home',
+              kind: 'home',
+              label: 'Home',
+              page: { blocks: [] },
+            },
+            {
+              id: 'employee',
+              kind: 'entity',
+              label: 'Employee',
+              entityId: 'employee',
+              objectApiName: 'Contact',
+            },
+          ],
         },
       ];
     },
@@ -32,7 +64,7 @@ test('listAvailableApps keeps only entities allowed by ACL, drops empty apps, an
     },
     canAccess(permissionCodes: string[], resourceId: string) {
       assert.deepEqual(permissionCodes, ['PORTAL_USER', 'PORTAL_OPERATIONS']);
-      return resourceId === 'entity:account' || resourceId === 'entity:opportunity';
+      return resourceId === 'entity:account' || resourceId === 'route:sales-kpi';
     },
   };
   const salesforceService = {
@@ -41,7 +73,7 @@ test('listAvailableApps keeps only entities allowed by ACL, drops empty apps, an
         return { keyPrefix: '001' };
       }
 
-      return { keyPrefix: '006' };
+      return { keyPrefix: '003' };
     },
   };
 
@@ -57,21 +89,46 @@ test('listAvailableApps keeps only entities allowed by ACL, drops empty apps, an
     {
       id: 'sales',
       label: 'Sales',
-      entities: [
+      items: [
+        {
+          id: 'home',
+          kind: 'home',
+          label: 'Home',
+          page: { blocks: [] },
+        },
         {
           id: 'account',
+          kind: 'entity',
           label: 'Account',
+          entityId: 'account',
           objectApiName: 'Account',
-          basePath: '/sales/account',
           keyPrefix: '001',
         },
-        { id: 'opportunity', label: 'Opportunity', objectApiName: 'Opportunity', keyPrefix: '006' },
+        {
+          id: 'sales-kpi',
+          kind: 'custom-page',
+          label: 'KPI',
+          resourceId: 'route:sales-kpi',
+          page: { blocks: [] },
+        },
+      ],
+    },
+    {
+      id: 'hr',
+      label: 'HR',
+      items: [
+        {
+          id: 'home',
+          kind: 'home',
+          label: 'Home',
+          page: { blocks: [] },
+        },
       ],
     },
   ]);
 });
 
-test('listAvailableApps deduplicates describe lookups by objectApiName across visible entities', async () => {
+test('listAvailableApps deduplicates describe lookups by objectApiName across visible entity items', async () => {
   const describeCalls: string[] = [];
   const repository = {
     async listAvailableApps() {
@@ -79,9 +136,22 @@ test('listAvailableApps deduplicates describe lookups by objectApiName across vi
         {
           id: 'sales',
           label: 'Sales',
-          entities: [
-            { id: 'account', label: 'Account', objectApiName: 'Account' },
-            { id: 'account-archive', label: 'Archived Account', objectApiName: 'Account' },
+          items: [
+            { id: 'home', kind: 'home', label: 'Home', page: { blocks: [] } },
+            {
+              id: 'account',
+              kind: 'entity',
+              label: 'Account',
+              entityId: 'account',
+              objectApiName: 'Account',
+            },
+            {
+              id: 'account-archive',
+              kind: 'entity',
+              label: 'Archived Account',
+              entityId: 'account-archive',
+              objectApiName: 'Account',
+            },
           ],
         },
       ];
@@ -112,8 +182,16 @@ test('listAvailableApps deduplicates describe lookups by objectApiName across vi
 
   assert.equal(describeCalls.length, 1);
   assert.equal(describeCalls[0], 'Account');
-  assert.deepEqual(response.items[0]?.entities, [
-    { id: 'account', label: 'Account', objectApiName: 'Account', keyPrefix: '001' },
-    { id: 'account-archive', label: 'Archived Account', objectApiName: 'Account', keyPrefix: '001' },
+  assert.deepEqual(response.items[0]?.items, [
+    { id: 'home', kind: 'home', label: 'Home', page: { blocks: [] } },
+    { id: 'account', kind: 'entity', label: 'Account', entityId: 'account', objectApiName: 'Account', keyPrefix: '001' },
+    {
+      id: 'account-archive',
+      kind: 'entity',
+      label: 'Archived Account',
+      entityId: 'account-archive',
+      objectApiName: 'Account',
+      keyPrefix: '001',
+    },
   ]);
 });

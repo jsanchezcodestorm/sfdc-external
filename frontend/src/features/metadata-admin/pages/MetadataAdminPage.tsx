@@ -21,7 +21,7 @@ const SECTION_OPTIONS: SectionOption[] = [
   {
     id: 'apps',
     label: 'Apps',
-    caption: 'Catalogo app e associazioni entity/permission.',
+    caption: 'Catalogo app, items e permission codes.',
     deployable: true,
   },
   {

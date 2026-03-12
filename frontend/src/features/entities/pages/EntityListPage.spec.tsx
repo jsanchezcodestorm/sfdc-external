@@ -20,11 +20,11 @@ vi.mock('../entity-api', () => ({
     error.message.includes('Invalid or expired entity cursor'),
 }))
 
-function renderPage(initialEntry = '/s/account?viewId=pipeline') {
+function renderPage(initialEntry = '/app/sales/entity/account?viewId=pipeline') {
   return render(
     <MemoryRouter initialEntries={[initialEntry]}>
       <Routes>
-        <Route path="/s/:entityId" element={<EntityListPage />} />
+        <Route path="/app/:appId/entity/:entityId" element={<EntityListPage />} />
       </Routes>
     </MemoryRouter>,
   )
@@ -119,7 +119,7 @@ describe('EntityListPage', () => {
       } as never
     })
 
-    renderPage('/s/account?viewId=pipeline&cursor=cursor-2&search=Acme')
+    renderPage('/app/sales/entity/account?viewId=pipeline&cursor=cursor-2&search=Acme')
 
     await screen.findByDisplayValue('Acme')
     fireEvent.change(screen.getByPlaceholderText('Search records'), {
@@ -149,7 +149,7 @@ describe('EntityListPage', () => {
         nextCursor: null,
       } as never)
 
-    renderPage('/s/account?viewId=pipeline&cursor=stale')
+    renderPage('/app/sales/entity/account?viewId=pipeline&cursor=stale')
 
     await screen.findByText('Recovered')
     expect(vi.mocked(fetchEntityList).mock.calls.map((call) => call[1]?.cursor ?? null)).toEqual([

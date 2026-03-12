@@ -5,7 +5,12 @@ import type { SessionUser } from '../auth/session-user.interface';
 import { SalesforceService } from '../salesforce/salesforce.service';
 
 import { AppsAdminConfigRepository } from './apps-admin-config.repository';
-import type { AppsAvailableResponse, AvailableApp, AvailableAppEntity } from './apps.types';
+import type {
+  AppsAvailableResponse,
+  AvailableApp,
+  AvailableAppEntityItem,
+  AvailableAppItem
+} from './apps.types';
 
 @Injectable()
 export class AppsService {
@@ -23,15 +28,30 @@ export class AppsService {
     const visibleApps = items
       .map((app) => ({
         ...app,
-        entities: app.entities.filter((entity) =>
-          this.aclService.canAccess(user.permissions, `entity:${entity.id}`)
-        )
+        items: app.items.filter((item) => this.canAccessAppItem(user.permissions, item))
       }))
-      .filter((app) => app.entities.length > 0);
+      .filter((app) => app.items.length > 0);
 
     return {
       items: await this.attachEntityKeyPrefixes(visibleApps)
     };
+  }
+
+  private canAccessAppItem(userPermissions: string[], item: AvailableAppItem): boolean {
+    if (item.kind === 'home') {
+      return true;
+    }
+
+    const passesItemResource = !item.resourceId || this.aclService.canAccess(userPermissions, item.resourceId);
+    if (!passesItemResource) {
+      return false;
+    }
+
+    if (item.kind !== 'entity') {
+      return true;
+    }
+
+    return this.aclService.canAccess(userPermissions, `entity:${item.entityId}`);
   }
 
   private async attachEntityKeyPrefixes(apps: AvailableApp[]): Promise<AvailableApp[]> {
@@ -39,7 +59,11 @@ export class AppsService {
     const objectApiNames = [
       ...new Set(
         apps
-          .flatMap((app) => app.entities.map((entity) => entity.objectApiName.trim()))
+          .flatMap((app) =>
+            app.items
+              .filter((item): item is AvailableAppEntityItem => item.kind === 'entity')
+              .map((item) => item.objectApiName.trim())
+          )
           .filter((objectApiName) => objectApiName.length > 0)
       )
     ];
@@ -55,22 +79,24 @@ export class AppsService {
 
     return apps.map((app) => ({
       ...app,
-      entities: app.entities.map((entity) =>
-        this.attachKeyPrefixToEntity(entity, keyPrefixesByObjectApiName.get(entity.objectApiName.trim()))
+      items: app.items.map((item) =>
+        item.kind === 'entity'
+          ? this.attachKeyPrefixToEntity(item, keyPrefixesByObjectApiName.get(item.objectApiName.trim()))
+          : item
       )
     }));
   }
 
   private attachKeyPrefixToEntity(
-    entity: AvailableAppEntity,
+    item: AvailableAppEntityItem,
     keyPrefix: string | undefined
-  ): AvailableAppEntity {
+  ): AvailableAppEntityItem {
     if (!keyPrefix) {
-      return entity;
+      return item;
     }
 
     return {
-      ...entity,
+      ...item,
       keyPrefix
     };
   }

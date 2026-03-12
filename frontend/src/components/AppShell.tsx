@@ -6,6 +6,7 @@ import { AppWorkspaceShell } from './AppWorkspaceShell'
 import { AppTopBar } from './AppTopBar'
 import { RuntimeNavigationProvider } from './RuntimeNavigationContext'
 import {
+  isAppRuntimePath,
   resolveAppSelectionNavigationTarget,
 } from '../features/apps/app-workspace-routing'
 import { AppWorkspaceProvider } from '../features/apps/AppWorkspaceContext'
@@ -13,21 +14,21 @@ import { useAppWorkspace } from '../features/apps/useAppWorkspace'
 import { useAuth } from '../features/auth/useAuth'
 import { RouteAccessProvider } from '../features/route-access/RouteAccessContext'
 
-function isRuntimeWorkspacePath(pathname: string): boolean {
-  return pathname === '/' || pathname.startsWith('/s/')
+function isWorkspaceDataPath(pathname: string): boolean {
+  return pathname === '/' || isAppRuntimePath(pathname)
 }
 
 export function AppShell() {
   const location = useLocation()
   const { user } = useAuth()
-  const isRuntimeRoute = isRuntimeWorkspacePath(location.pathname)
+  const isWorkspacePath = isWorkspaceDataPath(location.pathname)
 
   return (
     <RouteAccessProvider>
       <AdminNavigationProvider>
         <RuntimeNavigationProvider>
-          <AppWorkspaceProvider enabled={Boolean(user) && isRuntimeRoute}>
-            <AppShellLayout isRuntimeRoute={isRuntimeRoute} />
+          <AppWorkspaceProvider enabled={Boolean(user) && isWorkspacePath}>
+            <AppShellLayout />
           </AppWorkspaceProvider>
         </RuntimeNavigationProvider>
       </AdminNavigationProvider>
@@ -35,14 +36,22 @@ export function AppShell() {
   )
 }
 
-function AppShellLayout({ isRuntimeRoute }: { isRuntimeRoute: boolean }) {
+function AppShellLayout() {
   const location = useLocation()
   const navigate = useNavigate()
   const { user } = useAuth()
-  const { apps, error, loading, selectApp, selectedApp, selectedAppId, selectedEntities } =
-    useAppWorkspace()
+  const {
+    apps,
+    error,
+    loading,
+    selectApp,
+    selectedApp,
+    selectedAppId,
+    selectedEntities,
+    selectedItems,
+  } = useAppWorkspace()
 
-  const isRuntimeWorkspaceActive = Boolean(user) && isRuntimeRoute
+  const isRuntimeWorkspaceActive = Boolean(user) && isAppRuntimePath(location.pathname)
 
   const handleSelectApp = useCallback(
     (appId: string) => {
@@ -52,20 +61,9 @@ function AppShellLayout({ isRuntimeRoute }: { isRuntimeRoute: boolean }) {
       }
 
       selectApp(nextApp.id)
-
-      const nextTarget = resolveAppSelectionNavigationTarget({
-        pathname: location.pathname,
-        search: location.search,
-        hash: location.hash,
-        nextApp,
-      })
-      const currentTarget = `${location.pathname}${location.search}${location.hash}`
-
-      if (nextTarget !== currentTarget) {
-        navigate(nextTarget)
-      }
+      navigate(resolveAppSelectionNavigationTarget(nextApp))
     },
-    [apps, location.hash, location.pathname, location.search, navigate, selectApp, selectedAppId],
+    [apps, navigate, selectApp, selectedAppId],
   )
 
   return (
@@ -81,6 +79,7 @@ function AppShellLayout({ isRuntimeRoute }: { isRuntimeRoute: boolean }) {
                 selectedApp,
                 selectedAppId,
                 selectedEntities,
+                selectedItems,
               }
             : undefined
         }
