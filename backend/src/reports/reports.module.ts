@@ -21,6 +21,6 @@ import { ReportSoqlBuilderService } from './services/report-soql-builder.service
     ReportSoqlBuilderService,
     ResourceAccessService
   ],
-  exports: [ReportsService]
+  exports: [ReportsService, ReportSoqlBuilderService]
 })
 export class ReportsModule {}

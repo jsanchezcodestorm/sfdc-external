@@ -11,6 +11,7 @@ import type {
 } from '../reports.types';
 
 const SOQL_IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_.]*$/;
+const AGGREGATE_OPERATIONS = new Set(['COUNT', 'SUM', 'AVG', 'MIN', 'MAX']);
 
 @Injectable()
 export class ReportSoqlBuilderService {
@@ -71,6 +72,149 @@ export class ReportSoqlBuilderService {
       visibleColumns,
       visibleGroupings
     };
+  }
+
+  buildAggregateQuery(
+    report: Pick<ReportDefinition, 'objectApiName' | 'filters'>,
+    visibility: VisibilityEvaluation,
+    input: {
+      metricOperation: 'COUNT' | 'SUM' | 'AVG' | 'MIN' | 'MAX';
+      metricField?: string;
+      dimensionField?: string;
+      runtimeFilters?: ReportFilter[];
+      limit?: number;
+      sortDirection?: 'ASC' | 'DESC';
+    }
+  ): {
+    soql: string;
+    baseWhere?: string;
+    finalWhere?: string;
+    selectedFields: string[];
+    dimensionField?: string;
+    metricField?: string;
+  } {
+    const operation = input.metricOperation.toUpperCase();
+    if (!AGGREGATE_OPERATIONS.has(operation)) {
+      throw new BadRequestException(`Unsupported aggregate operation ${input.metricOperation}`);
+    }
+
+    const requestedFields = this.uniqueValues([
+      ...(input.dimensionField ? [input.dimensionField] : []),
+      ...(input.metricField ? [input.metricField] : [])
+    ]);
+    const visibleFields = this.applyFieldVisibility(requestedFields, visibility);
+    const visibleFieldSet = new Set(visibleFields);
+
+    if (input.dimensionField && !visibleFieldSet.has(input.dimensionField)) {
+      throw new ForbiddenException(`Visibility denied dashboard dimension field ${input.dimensionField}`);
+    }
+
+    if (operation !== 'COUNT') {
+      if (!input.metricField) {
+        throw new BadRequestException(`Aggregate operation ${operation} requires metricField`);
+      }
+      if (!visibleFieldSet.has(input.metricField)) {
+        throw new ForbiddenException(`Visibility denied dashboard metric field ${input.metricField}`);
+      }
+    }
+
+    const objectApiName = this.toSoqlIdentifier(report.objectApiName);
+    const whereContext = this.buildWhereContext(report.filters, input.runtimeFilters ?? [], visibility);
+    const whereClause = whereContext.finalWhere ? ` WHERE ${whereContext.finalWhere}` : '';
+    const dimensionIdentifier = input.dimensionField ? this.toSoqlIdentifier(input.dimensionField) : undefined;
+    const aggregateExpression =
+      operation === 'COUNT'
+        ? 'COUNT(Id)'
+        : `${operation}(${this.toSoqlIdentifier(input.metricField as string)})`;
+    const metricExpression = `${aggregateExpression} metricValue`;
+    const selectSegments = dimensionIdentifier ? [dimensionIdentifier, metricExpression] : [metricExpression];
+    const groupByClause = dimensionIdentifier ? ` GROUP BY ${dimensionIdentifier}` : '';
+    const orderByClause = dimensionIdentifier
+      ? ` ORDER BY ${aggregateExpression} ${input.sortDirection === 'ASC' ? 'ASC' : 'DESC'}, ${dimensionIdentifier} ASC`
+      : '';
+    const limitClause = this.buildLimitClause(input.limit);
+
+    return {
+      soql: `SELECT ${selectSegments.join(', ')} FROM ${objectApiName}${whereClause}${groupByClause}${orderByClause}${limitClause}`,
+      baseWhere: whereContext.baseWhere,
+      finalWhere: whereContext.finalWhere,
+      selectedFields: requestedFields,
+      dimensionField: input.dimensionField,
+      metricField: input.metricField
+    };
+  }
+
+  buildDistinctValueQuery(
+    report: Pick<ReportDefinition, 'objectApiName' | 'filters'>,
+    visibility: VisibilityEvaluation,
+    input: {
+      field: string;
+      runtimeFilters?: ReportFilter[];
+      limit?: number;
+    }
+  ): {
+    soql: string;
+    baseWhere?: string;
+    finalWhere?: string;
+    selectedFields: string[];
+  } {
+    const visibleFields = this.applyFieldVisibility([input.field], visibility);
+    if (!visibleFields.includes(input.field)) {
+      throw new ForbiddenException(`Visibility denied dashboard filter field ${input.field}`);
+    }
+
+    const objectApiName = this.toSoqlIdentifier(report.objectApiName);
+    const field = this.toSoqlIdentifier(input.field);
+    const whereContext = this.buildWhereContext(report.filters, input.runtimeFilters ?? [], visibility);
+    const whereClause = whereContext.finalWhere ? ` WHERE ${whereContext.finalWhere}` : '';
+    const limitClause = this.buildLimitClause(input.limit);
+
+    return {
+      soql: `SELECT ${field}, COUNT(Id) optionCount FROM ${objectApiName}${whereClause} GROUP BY ${field} ORDER BY ${field} ASC${limitClause}`,
+      baseWhere: whereContext.baseWhere,
+      finalWhere: whereContext.finalWhere,
+      selectedFields: [input.field]
+    };
+  }
+
+  buildRowsQuery(
+    report: Pick<ReportDefinition, 'objectApiName' | 'filters' | 'sort'>,
+    visibility: VisibilityEvaluation,
+    input: {
+      columns: ReportColumn[];
+      runtimeFilters?: ReportFilter[];
+      limit?: number;
+    }
+  ): {
+    soql: string;
+    baseWhere?: string;
+    finalWhere?: string;
+    selectedFields: string[];
+    visibleColumns: ReportColumn[];
+  } {
+    const compiled = this.buildReportQueries(
+      {
+        objectApiName: report.objectApiName,
+        columns: input.columns,
+        filters: [...report.filters, ...(input.runtimeFilters ?? [])],
+        groupings: [],
+        sort: report.sort,
+        pageSize: input.limit ?? 50
+      },
+      visibility
+    );
+
+    return {
+      soql: `${compiled.soql}${this.buildLimitClause(input.limit)}`,
+      baseWhere: compiled.baseWhere,
+      finalWhere: compiled.finalWhere,
+      selectedFields: compiled.selectedFields,
+      visibleColumns: compiled.visibleColumns
+    };
+  }
+
+  filterVisibleFieldNames(fieldNames: string[], visibility: VisibilityEvaluation): string[] {
+    return this.applyFieldVisibility(fieldNames, visibility);
   }
 
   private buildCountQuery(
@@ -166,6 +310,36 @@ export class ReportSoqlBuilderService {
     }
 
     return this.uniqueValues(filtered);
+  }
+
+  private buildWhereContext(
+    staticFilters: ReportFilter[],
+    runtimeFilters: ReportFilter[],
+    visibility: VisibilityEvaluation
+  ): {
+    baseWhere?: string;
+    finalWhere?: string;
+  } {
+    const whereConditions = [...staticFilters, ...runtimeFilters].map((filter) => this.compileFilter(filter));
+    const baseWhere = whereConditions.length > 0 ? whereConditions.join(' AND ') : undefined;
+    const finalWhere = this.composeWhere(baseWhere, visibility.compiledPredicate);
+
+    return {
+      baseWhere,
+      finalWhere
+    };
+  }
+
+  private buildLimitClause(limit: number | undefined): string {
+    if (!limit) {
+      return '';
+    }
+
+    if (!Number.isInteger(limit) || limit < 1) {
+      throw new BadRequestException('limit must be a positive integer');
+    }
+
+    return ` LIMIT ${limit}`;
   }
 
   private serializeSoqlValue(value: ReportScalarValue): string {
