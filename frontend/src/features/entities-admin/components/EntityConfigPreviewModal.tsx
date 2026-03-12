@@ -487,6 +487,8 @@ function FormPreviewFieldCard({ field, values }: FormPreviewFieldCardProps) {
   const formattedValue = formatFieldValue(rawValue);
   const controlValue = formattedValue === "-" ? "" : formattedValue;
   const showTextarea = field.inputType === "textarea";
+  const showCheckbox = field.inputType === "checkbox";
+  const showLookup = field.inputType === "lookup";
 
   return (
     <div className={showTextarea ? "lg:col-span-2" : undefined}>
@@ -515,9 +517,27 @@ function FormPreviewFieldCard({ field, values }: FormPreviewFieldCardProps) {
             rows={4}
             className="mt-2 block w-full resize-none rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none"
           />
+        ) : showCheckbox ? (
+          <label className="mt-2 flex items-center gap-3 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={Boolean(rawValue)}
+              readOnly
+              className="h-4 w-4 rounded border border-slate-300 text-sky-600"
+            />
+            Valore booleano
+          </label>
+        ) : showLookup ? (
+          <input
+            type="text"
+            value={controlValue}
+            readOnly
+            placeholder={field.placeholder ?? "Lookup runtime"}
+            className="mt-2 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none"
+          />
         ) : (
           <input
-            type={field.inputType === "date" ? "date" : field.inputType}
+            type={field.inputType === "date" ? "date" : field.inputType === "number" ? "number" : field.inputType}
             value={controlValue}
             readOnly
             placeholder={field.placeholder}

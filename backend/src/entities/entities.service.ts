@@ -4,19 +4,27 @@ import { AuditWriteService } from '../audit/audit-write.service';
 import { QueryAuditService } from '../audit/query-audit.service';
 import type { SessionUser } from '../auth/session-user.interface';
 import { ResourceAccessService } from '../common/services/resource-access.service';
-import { SalesforceService } from '../salesforce/salesforce.service';
+import {
+  SalesforceService,
+  type SalesforceFieldSummary,
+  type SalesforcePicklistValueSummary,
+} from '../salesforce/salesforce.service';
 import { VisibilityService } from '../visibility/visibility.service';
 import type { VisibilityEvaluation } from '../visibility/visibility.types';
 
 import type { GetEntityListDto } from './dto/get-entity-list.dto';
 import type { GetEntityRelatedListDto } from './dto/get-entity-related-list.dto';
+import type { SearchEntityFormLookupDto } from './dto/search-entity-form-lookup.dto';
 import type {
   EntityActionConfig,
   EntityColumnConfig,
   EntityConfig,
   EntityFormFieldConfig,
+  EntityLookupCondition,
+  EntityLookupOrderBy,
   EntityListSearchConfig,
   EntityListViewConfig,
+  EntityQueryOperator,
   EntityPathStatusConfig,
   EntityQueryConfig,
   EntityQueryWhere,
@@ -52,20 +60,51 @@ const ENTITY_UPDATE_QUERY_KIND = 'ENTITY_UPDATE';
 const ENTITY_DELETE_QUERY_KIND = 'ENTITY_DELETE';
 const ENTITY_UPDATE_PREFLIGHT_QUERY_KIND = 'ENTITY_UPDATE_PREFLIGHT';
 const ENTITY_DELETE_PREFLIGHT_QUERY_KIND = 'ENTITY_DELETE_PREFLIGHT';
+const ENTITY_FORM_LOOKUP_QUERY_KIND = 'ENTITY_FORM_LOOKUP';
+const ENTITY_FORM_LOOKUP_LIMIT = 8;
+const SYSTEM_MANAGED_FIELD_NAMES = new Set([
+  'id',
+  'ownerid',
+  'recordtypeid',
+  'createdbyid',
+  'lastmodifiedbyid',
+  'createddate',
+  'lastmodifieddate',
+  'systemmodstamp',
+]);
 
-type FormInputType = 'text' | 'email' | 'tel' | 'date' | 'textarea';
+type FormInputType =
+  | 'text'
+  | 'email'
+  | 'tel'
+  | 'date'
+  | 'textarea'
+  | 'number'
+  | 'checkbox'
+  | 'select'
+  | 'multiselect'
+  | 'lookup';
 type WriteMode = 'create' | 'update';
 
-interface SalesforceFieldSummary {
-  name: string;
+type LookupSearchContext = Record<string, string | number | boolean | null | undefined>;
+
+interface EntityFieldOption {
+  value: string;
   label: string;
-  type: string;
-  nillable: boolean;
-  createable: boolean;
-  updateable: boolean;
-  filterable: boolean;
-  relationshipName?: string;
-  referenceTo?: string[];
+  default?: boolean;
+}
+
+interface EntityFieldLookupMetadata {
+  referenceTo: string[];
+  searchField: string;
+  where?: EntityLookupCondition[];
+  orderBy?: EntityLookupOrderBy[];
+  prefill?: boolean;
+}
+
+interface ResolvedLookupMetadata extends EntityFieldLookupMetadata {
+  displayField: string;
+  relationshipName: string;
 }
 
 interface EntityFieldDefinition {
@@ -78,6 +117,8 @@ interface EntityFieldDefinition {
   filterable: boolean;
   inputType: FormInputType;
   required: boolean;
+  options?: EntityFieldOption[];
+  lookup?: EntityFieldLookupMetadata;
 }
 
 interface SoqlBuildOptions {
@@ -125,7 +166,8 @@ interface EntityFormSectionResponse {
     inputType: FormInputType;
     required: boolean;
     placeholder?: string;
-    lookup?: EntityFormFieldConfig['lookup'];
+    options?: EntityFieldOption[];
+    lookup?: EntityFieldLookupMetadata;
   }>;
 }
 
@@ -151,6 +193,15 @@ interface EntityRelatedListResponse {
   pageSize: number;
   nextCursor: string | null;
   visibility: VisibilityEvaluation;
+}
+
+interface EntityFormLookupSearchResult {
+  items: Array<{
+    id: string;
+    label: string;
+    objectApiName: string;
+    subtitle?: string;
+  }>;
 }
 
 interface EntityCursorExecutionInput {
@@ -379,6 +430,7 @@ export class EntitiesService {
 
   async getEntityForm(user: SessionUser, entityId: string, recordId?: string): Promise<EntityFormResponse> {
     const entityConfig = await this.loadEntityConfig(entityId);
+    const mode: WriteMode = recordId ? 'update' : 'create';
 
     const formConfig = entityConfig.form;
     if (!formConfig || !formConfig.sections || formConfig.sections.length === 0) {
@@ -389,7 +441,7 @@ export class EntitiesService {
       this.assertSalesforceRecordId(recordId);
     }
 
-    const sections = this.resolveFormSections(formConfig.sections);
+    const sections = await this.resolveFormSections(formConfig.sections, entityConfig.objectApiName, mode);
     const visibility = await this.resourceAccessService.authorizeObjectAccess(
       user,
       `entity:${entityId}`,
@@ -406,7 +458,12 @@ export class EntitiesService {
       .filter((section) => section.fields.length > 0);
     const visibleFormFields = this.collectFormFieldNames(visibleSections);
     this.ensureVisibleFields(visibleFormFields, visibility, 'No visible form field available');
-    const fieldDefinitions = await this.buildFieldDefinitions(entityConfig.objectApiName, visibleFormFields);
+    const fieldDefinitions = await this.buildFormFieldDefinitions(
+      entityConfig.objectApiName,
+      formConfig.sections,
+      visibleFormFields,
+      mode,
+    );
     const formTitle = recordId ? formConfig.title?.edit : formConfig.title?.create;
     const title = formTitle && formTitle.trim().length > 0 ? formTitle : `${recordId ? 'Edit' : 'New'} ${entityConfig.label ?? entityConfig.id}`;
 
@@ -433,6 +490,7 @@ export class EntitiesService {
     const scopedQuery = await this.buildSoqlFromQueryConfig(formConfig.query, {
       context: { id: recordId, recordId },
       forcedLimit: 1,
+      extraFields: await this.resolveLookupProjectionFields(entityConfig.objectApiName, visibleFormFields),
       visibility
     });
     const rawQueryResult = await this.queryAuditService.executeReadOnlyQueryWithAudit({
@@ -468,6 +526,133 @@ export class EntitiesService {
       fieldDefinitions,
       visibility
     };
+  }
+
+  async searchEntityFormLookup(
+    user: SessionUser,
+    entityId: string,
+    fieldName: string,
+    payload: SearchEntityFormLookupDto,
+  ): Promise<EntityFormLookupSearchResult> {
+    const entityConfig = await this.loadEntityConfig(entityId);
+    const formConfig = entityConfig.form;
+    if (!formConfig || !formConfig.sections || formConfig.sections.length === 0) {
+      throw new NotFoundException(`Form is not configured for ${entityId}`);
+    }
+
+    const normalizedFieldName = fieldName.trim();
+    if (!WRITE_FIELD_API_NAME_PATTERN.test(normalizedFieldName)) {
+      throw new BadRequestException(`Invalid lookup field: ${fieldName}`);
+    }
+
+    const configuredField = this.findConfiguredFormField(formConfig.sections, normalizedFieldName);
+    if (!configuredField) {
+      throw new NotFoundException(`Lookup field ${normalizedFieldName} is not configured for ${entityId}`);
+    }
+
+    const sourceDescribeMap = await this.getDescribeFieldMap(entityConfig.objectApiName);
+    const sourceDescribe = sourceDescribeMap.get(normalizedFieldName);
+    if (!sourceDescribe) {
+      throw new NotFoundException(`Lookup field ${normalizedFieldName} is not available on ${entityConfig.objectApiName}`);
+    }
+
+    const lookupMetadata = await this.buildLookupMetadata(configuredField, sourceDescribe);
+    if (!lookupMetadata) {
+      throw new BadRequestException(`Lookup search is not supported for ${normalizedFieldName}`);
+    }
+
+    const limit = this.clamp(payload.limit ?? ENTITY_FORM_LOOKUP_LIMIT, 1, ENTITY_FORM_LOOKUP_LIMIT);
+    const search = payload.q?.trim();
+    const context = this.normalizeLookupSearchContext(payload.context);
+    const items: EntityFormLookupSearchResult['items'] = [];
+    const seen = new Set<string>();
+
+    for (const targetObjectApiName of lookupMetadata.referenceTo) {
+      let visibility: VisibilityEvaluation;
+
+      try {
+        visibility = await this.resourceAccessService.authorizeObjectAccess(
+          user,
+          `entity:${entityId}`,
+          targetObjectApiName,
+          {
+            queryKind: ENTITY_FORM_LOOKUP_QUERY_KIND,
+          },
+        );
+      } catch (error) {
+        if (error instanceof ForbiddenException) {
+          continue;
+        }
+
+        throw error;
+      }
+
+      if (!this.isFieldVisible(lookupMetadata.displayField, visibility)) {
+        continue;
+      }
+
+      const query = this.buildLookupQueryConfig(targetObjectApiName, lookupMetadata, context);
+      const scopedQuery = await this.buildSoqlFromQueryConfig(query, {
+        context,
+        forcedLimit: limit,
+        search,
+        searchConfig: search
+          ? {
+              fields: [lookupMetadata.searchField],
+              minLength: 1,
+            }
+          : undefined,
+        visibility,
+      });
+
+      const rawQueryResult = await this.queryAuditService.executeReadOnlyQueryWithAudit({
+        contactId: user.sub,
+        queryKind: ENTITY_FORM_LOOKUP_QUERY_KIND,
+        targetId: `${entityId}:${normalizedFieldName}:${targetObjectApiName}`,
+        objectApiName: targetObjectApiName,
+        resolvedSoql: scopedQuery.soql,
+        visibility,
+        baseWhere: scopedQuery.baseWhere,
+        finalWhere: scopedQuery.finalWhere,
+        metadata: {
+          entityId,
+          fieldName: normalizedFieldName,
+          targetObjectApiName,
+          selectedFields: scopedQuery.selectFields,
+        },
+      });
+      const { records } = this.extractRecords(rawQueryResult);
+
+      for (const record of records) {
+        const id = this.readRecordStringValue(record, 'Id');
+        const label = this.readRecordStringValue(record, lookupMetadata.displayField);
+        if (!id || !label) {
+          continue;
+        }
+
+        const dedupeKey = `${targetObjectApiName}:${id}`;
+        if (seen.has(dedupeKey)) {
+          continue;
+        }
+
+        seen.add(dedupeKey);
+        items.push({
+          id,
+          label,
+          objectApiName: targetObjectApiName,
+          subtitle:
+            lookupMetadata.searchField !== lookupMetadata.displayField
+              ? this.readRecordStringValue(record, lookupMetadata.searchField)
+              : undefined,
+        });
+
+        if (items.length >= limit) {
+          return { items };
+        }
+      }
+    }
+
+    return { items };
   }
 
   async getEntityRelatedList(
@@ -1372,41 +1557,63 @@ export class EntitiesService {
     );
   }
 
-  private resolveFormSections(formSections: NonNullable<NonNullable<EntityConfig['form']>['sections']>): EntityFormSectionResponse[] {
-    return formSections
-      .map((section, index) => {
-        const fields = (section.fields ?? [])
-          .map((fieldConfig) => this.resolveFormField(fieldConfig))
-          .filter((field): field is EntityFormSectionResponse['fields'][number] => field !== null);
+  private async resolveFormSections(
+    formSections: NonNullable<NonNullable<EntityConfig['form']>['sections']>,
+    objectApiName: string,
+    mode: WriteMode,
+  ): Promise<EntityFormSectionResponse[]> {
+    const describeMap = await this.getDescribeFieldMap(objectApiName);
+    const sections: EntityFormSectionResponse[] = [];
 
-        if (fields.length === 0) {
-          return null;
+    for (const [index, section] of formSections.entries()) {
+      const fields: EntityFormSectionResponse['fields'] = [];
+
+      for (const fieldConfig of section.fields ?? []) {
+        const field = await this.resolveFormField(fieldConfig, describeMap, mode);
+        if (field) {
+          fields.push(field);
         }
+      }
 
-        const sectionTitle = section.title && section.title.trim().length > 0 ? section.title : `Section ${index + 1}`;
-        return {
-          title: sectionTitle,
-          fields
-        };
-      })
-      .filter((section): section is EntityFormSectionResponse => section !== null);
+      if (fields.length === 0) {
+        continue;
+      }
+
+      const sectionTitle = section.title && section.title.trim().length > 0 ? section.title : `Section ${index + 1}`;
+      sections.push({
+        title: sectionTitle,
+        fields,
+      });
+    }
+
+    return sections;
   }
 
-  private resolveFormField(fieldConfig: EntityFormFieldConfig): EntityFormSectionResponse['fields'][number] | null {
+  private async resolveFormField(
+    fieldConfig: EntityFormFieldConfig,
+    describeMap: Map<string, SalesforceFieldSummary>,
+    mode: WriteMode,
+  ): Promise<EntityFormSectionResponse['fields'][number] | null> {
     const fieldName = fieldConfig.field?.trim() ?? '';
-    if (!fieldName || !WRITE_FIELD_API_NAME_PATTERN.test(fieldName) || fieldName === 'Id') {
+    if (!fieldName || !WRITE_FIELD_API_NAME_PATTERN.test(fieldName)) {
       return null;
     }
 
-    const label = fieldConfig.label?.trim() || this.toFieldLabel(fieldName);
+    const describe = describeMap.get(fieldName);
+    if (!describe || this.shouldExcludeFormField(fieldName, describe, mode)) {
+      return null;
+    }
+
+    const lookup = await this.buildLookupMetadata(fieldConfig, describe);
 
     return {
       field: fieldName,
-      label,
-      inputType: this.normalizeFormInputType(fieldConfig.inputType) ?? 'text',
-      required: fieldConfig.required === true,
+      label: describe.label || this.toFieldLabel(fieldName),
+      inputType: this.mapRuntimeFormInputType(describe.type),
+      required: this.isRequiredFieldForMode(describe, mode),
       placeholder: fieldConfig.placeholder,
-      lookup: fieldConfig.lookup
+      options: this.toFieldOptions(describe.picklistValues),
+      lookup: lookup ? this.toPublicLookupMetadata(lookup) : undefined,
     };
   }
 
@@ -1486,10 +1693,174 @@ export class EntitiesService {
         createable: describe?.createable ?? false,
         updateable: describe?.updateable ?? false,
         filterable: describe?.filterable ?? false,
-        inputType: this.mapFormInputType(type),
-        required: describe ? !describe.nillable : false
+        inputType: this.mapRuntimeFormInputType(type),
+        required: describe ? !describe.nillable : false,
+        options: this.toFieldOptions(describe?.picklistValues),
       };
     });
+  }
+
+  private async buildFormFieldDefinitions(
+    objectApiName: string,
+    configuredSections: NonNullable<NonNullable<EntityConfig['form']>['sections']>,
+    fields: string[],
+    mode: WriteMode,
+  ): Promise<EntityFieldDefinition[]> {
+    const describeMap = await this.getDescribeFieldMap(objectApiName);
+    const fieldConfigMap = this.buildConfiguredFormFieldMap(configuredSections);
+    const normalizedFields = this.uniqueValues(fields).filter((field) => field.length > 0);
+    const definitions: EntityFieldDefinition[] = [];
+
+    for (const fieldName of normalizedFields) {
+      const describe = describeMap.get(fieldName);
+      if (!describe) {
+        continue;
+      }
+
+      const fieldConfig = fieldConfigMap.get(fieldName);
+      const lookup = fieldConfig ? await this.buildLookupMetadata(fieldConfig, describe) : null;
+
+      definitions.push({
+        field: fieldName,
+        label: describe.label || this.toFieldLabel(fieldName),
+        type: describe.type,
+        nillable: describe.nillable,
+        createable: describe.createable,
+        updateable: describe.updateable,
+        filterable: describe.filterable,
+        inputType: this.mapRuntimeFormInputType(describe.type),
+        required: this.isRequiredFieldForMode(describe, mode),
+        options: this.toFieldOptions(describe.picklistValues),
+        lookup: lookup ? this.toPublicLookupMetadata(lookup) : undefined,
+      });
+    }
+
+    return definitions;
+  }
+
+  private findConfiguredFormField(
+    sections: NonNullable<NonNullable<EntityConfig['form']>['sections']>,
+    fieldName: string,
+  ): EntityFormFieldConfig | null {
+    for (const section of sections) {
+      for (const field of section.fields ?? []) {
+        if (field.field?.trim() === fieldName) {
+          return field;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  private normalizeLookupSearchContext(value: unknown): LookupSearchContext {
+    if (!this.isObjectRecord(value)) {
+      return {};
+    }
+
+    const context: LookupSearchContext = {};
+    for (const [key, entry] of Object.entries(value)) {
+      if (entry === null || entry === undefined) {
+        context[key] = entry;
+        continue;
+      }
+
+      if (typeof entry === 'string' || typeof entry === 'number' || typeof entry === 'boolean') {
+        context[key] = entry;
+        continue;
+      }
+
+      context[key] = String(entry);
+    }
+
+    return context;
+  }
+
+  private buildLookupQueryConfig(
+    objectApiName: string,
+    lookup: ResolvedLookupMetadata,
+    context: LookupSearchContext,
+  ): EntityQueryConfig {
+    return {
+      object: objectApiName,
+      fields: this.uniqueValues([
+        'Id',
+        lookup.displayField,
+        ...(lookup.searchField !== lookup.displayField ? [lookup.searchField] : []),
+      ]),
+      where: this.resolveLookupQueryConditions(lookup.where ?? [], context),
+      orderBy:
+        lookup.orderBy && lookup.orderBy.length > 0
+          ? lookup.orderBy
+          : [
+              {
+                field: lookup.displayField,
+                direction: 'ASC',
+              },
+            ],
+      limit: ENTITY_FORM_LOOKUP_LIMIT,
+    };
+  }
+
+  private resolveLookupQueryConditions(
+    conditions: EntityLookupCondition[],
+    context: LookupSearchContext,
+  ): EntityQueryWhere[] {
+    const resolved: EntityQueryWhere[] = [];
+    const contextParentRel = String(context.parentRel ?? '').trim();
+
+    for (const condition of conditions) {
+      const conditionParentRel = condition.parentRel?.trim();
+      if (conditionParentRel && conditionParentRel !== contextParentRel) {
+        continue;
+      }
+
+      const normalizedField = condition.field?.trim();
+      if (!normalizedField) {
+        continue;
+      }
+
+      if (normalizedField.toLowerCase() === 'parentrel') {
+        const expectedParentRel =
+          typeof condition.value === 'string'
+            ? this.renderTemplate(condition.value, context).trim()
+            : String(condition.value ?? '').trim();
+        if (!expectedParentRel || expectedParentRel !== contextParentRel) {
+          continue;
+        }
+
+        continue;
+      }
+
+      let resolvedValue = condition.value;
+      if (typeof condition.value === 'string') {
+        const hasTemplate = /\{\{[^}]+\}\}/.test(condition.value);
+        const rendered = this.renderTemplate(condition.value, context).trim();
+        if (hasTemplate && rendered.length === 0) {
+          continue;
+        }
+
+        resolvedValue = rendered;
+      }
+
+      resolved.push({
+        field: normalizedField,
+        operator: this.normalizeLookupConditionOperator(condition.operator),
+        value: resolvedValue ?? null,
+      });
+    }
+
+    return resolved;
+  }
+
+  private readRecordStringValue(record: Record<string, unknown>, fieldPath: string): string | undefined {
+    const value = this.resolveRecordValue(record, fieldPath);
+    if (typeof value !== 'string') {
+      return undefined;
+    }
+
+    const normalized = value.trim();
+    return normalized.length > 0 ? normalized : undefined;
   }
 
   private async normalizeWritePayload(
@@ -1501,15 +1872,16 @@ export class EntitiesService {
       throw new BadRequestException('Request body must be a JSON object');
     }
 
-    const writableFields = this.resolveWritableFieldSet(entityConfig);
+    const writableFields = this.resolveConfiguredWriteFieldSet(entityConfig);
     if (writableFields.size === 0) {
       throw new BadRequestException('Form writable fields are not configured for this entity');
     }
 
     const describeMap = await this.getDescribeFieldMap(entityConfig.objectApiName);
     const normalized: Record<string, unknown> = {};
+    const missingRequiredFields: string[] = [];
 
-    for (const [fieldName, rawValue] of Object.entries(payload)) {
+    for (const fieldName of Object.keys(payload)) {
       if (fieldName === 'Id' || fieldName === 'attributes') {
         continue;
       }
@@ -1517,25 +1889,30 @@ export class EntitiesService {
       if (!WRITE_FIELD_API_NAME_PATTERN.test(fieldName)) {
         throw new BadRequestException(`Invalid field name in payload: ${fieldName}`);
       }
+    }
 
-      if (!writableFields.has(fieldName)) {
-        continue;
-      }
-
+    for (const fieldName of writableFields) {
       const describe = describeMap.get(fieldName);
-      if (!describe) {
+      if (!describe || this.shouldExcludeFormField(fieldName, describe, mode) || !this.isWritableFieldInMode(describe, mode)) {
         continue;
       }
 
-      if (mode === 'create' && !describe.createable) {
-        continue;
-      }
-
-      if (mode === 'update' && !describe.updateable) {
+      const rawValue = payload[fieldName];
+      const hasOwnValue = Object.prototype.hasOwnProperty.call(payload, fieldName);
+      if (!hasOwnValue || !this.hasProvidedFieldValue(rawValue, describe.type)) {
+        if (this.isRequiredFieldForMode(describe, mode)) {
+          missingRequiredFields.push(describe.label || fieldName);
+        } else if (hasOwnValue) {
+          normalized[fieldName] = null;
+        }
         continue;
       }
 
       normalized[fieldName] = this.normalizeFieldValue(rawValue, describe.type, fieldName);
+    }
+
+    if (missingRequiredFields.length > 0) {
+      throw new BadRequestException(`Missing required fields: ${missingRequiredFields.join(', ')}`);
     }
 
     if (Object.keys(normalized).length === 0) {
@@ -1545,7 +1922,7 @@ export class EntitiesService {
     return normalized;
   }
 
-  private resolveWritableFieldSet(entityConfig: EntityConfig): Set<string> {
+  private resolveConfiguredWriteFieldSet(entityConfig: EntityConfig): Set<string> {
     const formFields = (entityConfig.form?.sections ?? [])
       .flatMap((section) => section.fields ?? [])
       .map((field) => field.field)
@@ -1554,7 +1931,9 @@ export class EntitiesService {
     const pathStatusField = entityConfig.detail?.pathStatus?.field;
     const fields = pathStatusField ? [...formFields, pathStatusField] : formFields;
 
-    return new Set(fields.filter((fieldName) => fieldName !== 'Id'));
+    return new Set(
+      fields.filter((fieldName) => !this.isSystemManagedFieldName(fieldName))
+    );
   }
 
   private normalizeFieldValue(value: unknown, fieldType: string, fieldName: string): string | number | boolean | null {
@@ -1645,6 +2024,192 @@ export class EntitiesService {
     return new Map(typedFields.map((field) => [field.name, field]));
   }
 
+  private buildConfiguredFormFieldMap(
+    sections: NonNullable<NonNullable<EntityConfig['form']>['sections']>,
+  ): Map<string, EntityFormFieldConfig> {
+    const fieldConfigMap = new Map<string, EntityFormFieldConfig>();
+
+    for (const section of sections) {
+      for (const fieldConfig of section.fields ?? []) {
+        const fieldName = fieldConfig.field?.trim() ?? '';
+        if (!fieldName || fieldConfigMap.has(fieldName)) {
+          continue;
+        }
+
+        fieldConfigMap.set(fieldName, fieldConfig);
+      }
+    }
+
+    return fieldConfigMap;
+  }
+
+  private async buildLookupMetadata(
+    fieldConfig: EntityFormFieldConfig,
+    describe: SalesforceFieldSummary,
+  ): Promise<ResolvedLookupMetadata | null> {
+    if (describe.type.toLowerCase() !== 'reference') {
+      return null;
+    }
+
+    const relationshipName = describe.relationshipName?.trim() ?? '';
+    const referenceTargets = (describe.referenceTo ?? [])
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
+    if (!relationshipName || referenceTargets.length === 0) {
+      return null;
+    }
+
+    const displayField = await this.resolveLookupDisplayFieldAcrossTargets(referenceTargets);
+    if (!displayField) {
+      return null;
+    }
+
+    const searchField = await this.resolveLookupSearchFieldAcrossTargets(
+      fieldConfig.lookup?.searchField,
+      displayField,
+      referenceTargets,
+    );
+
+    return {
+      referenceTo: referenceTargets,
+      searchField,
+      where: fieldConfig.lookup?.where,
+      orderBy: fieldConfig.lookup?.orderBy,
+      prefill: fieldConfig.lookup?.prefill,
+      displayField,
+      relationshipName,
+    };
+  }
+
+  private async resolveLookupSearchFieldAcrossTargets(
+    requestedFieldName: string | undefined,
+    fallbackFieldName: string,
+    targetObjectApiNames: string[],
+  ): Promise<string> {
+    const normalizedRequestedFieldName = requestedFieldName?.trim();
+    if (
+      normalizedRequestedFieldName &&
+      await this.isLookupSearchFieldSupportedAcrossTargets(
+        normalizedRequestedFieldName,
+        targetObjectApiNames,
+      )
+    ) {
+      return normalizedRequestedFieldName;
+    }
+
+    return fallbackFieldName;
+  }
+
+  private async isLookupSearchFieldSupportedAcrossTargets(
+    fieldName: string,
+    targetObjectApiNames: string[],
+  ): Promise<boolean> {
+    if (!WRITE_FIELD_API_NAME_PATTERN.test(fieldName)) {
+      return false;
+    }
+
+    for (const targetObjectApiName of targetObjectApiNames) {
+      const describeMap = await this.getDescribeFieldMap(targetObjectApiName);
+      const fieldDescribe = describeMap.get(fieldName);
+      if (!fieldDescribe || !fieldDescribe.filterable) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  private toPublicLookupMetadata(lookup: ResolvedLookupMetadata): EntityFieldLookupMetadata {
+    return {
+      referenceTo: lookup.referenceTo,
+      searchField: lookup.searchField,
+      where: lookup.where,
+      orderBy: lookup.orderBy,
+      prefill: lookup.prefill,
+    };
+  }
+
+  private toFieldOptions(
+    picklistValues: SalesforcePicklistValueSummary[] | undefined,
+  ): EntityFieldOption[] | undefined {
+    if (!Array.isArray(picklistValues) || picklistValues.length === 0) {
+      return undefined;
+    }
+
+    const options = picklistValues
+      .map((entry) => ({
+        value: entry.value.trim(),
+        label: entry.label.trim() || entry.value.trim(),
+        default: entry.defaultValue ? true : undefined,
+      }))
+      .filter((entry) => entry.value.length > 0);
+
+    return options.length > 0 ? options : undefined;
+  }
+
+  private isRequiredFieldForMode(describe: SalesforceFieldSummary, mode: WriteMode): boolean {
+    if (mode === 'create') {
+      return (
+        describe.createable &&
+        !describe.nillable &&
+        !describe.defaultedOnCreate &&
+        !describe.calculated &&
+        !describe.autoNumber
+      );
+    }
+
+    return describe.updateable && !describe.nillable && !describe.calculated && !describe.autoNumber;
+  }
+
+  private isWritableFieldInMode(describe: SalesforceFieldSummary, mode: WriteMode): boolean {
+    return mode === 'create' ? describe.createable : describe.updateable;
+  }
+
+  private shouldExcludeFormField(
+    fieldName: string,
+    describe: SalesforceFieldSummary,
+    mode: WriteMode,
+  ): boolean {
+    if (!WRITE_FIELD_API_NAME_PATTERN.test(fieldName)) {
+      return true;
+    }
+
+    return (
+      this.isSystemManagedFieldName(fieldName) ||
+      describe.calculated ||
+      describe.autoNumber ||
+      !this.isWritableFieldInMode(describe, mode)
+    );
+  }
+
+  private isSystemManagedFieldName(fieldName: string): boolean {
+    return SYSTEM_MANAGED_FIELD_NAMES.has(fieldName.trim().toLowerCase());
+  }
+
+  private hasProvidedFieldValue(value: unknown, fieldType: string): boolean {
+    if (value === null || value === undefined) {
+      return false;
+    }
+
+    if (Array.isArray(value)) {
+      return value.length > 0;
+    }
+
+    if (typeof value === 'string') {
+      return value.trim().length > 0;
+    }
+
+    if (typeof value === 'number') {
+      return Number.isFinite(value);
+    }
+
+    if (fieldType.toLowerCase() === 'boolean') {
+      return typeof value === 'boolean' || typeof value === 'string';
+    }
+
+    return true;
+  }
+
   private extractRecords(result: unknown): { records: Array<Record<string, unknown>>; totalSize: number } {
     if (!this.isObjectRecord(result)) {
       return { records: [], totalSize: 0 };
@@ -1694,6 +2259,28 @@ export class EntitiesService {
     return value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
   }
 
+  private normalizeLookupConditionOperator(value: string | undefined): EntityQueryOperator {
+    if (!value || value.trim().length === 0) {
+      return '=';
+    }
+
+    const normalized = value.trim().replace(/\s+/g, ' ').toUpperCase();
+    switch (normalized) {
+      case '=':
+      case '!=':
+      case '<':
+      case '<=':
+      case '>':
+      case '>=':
+      case 'IN':
+      case 'NOT IN':
+      case 'LIKE':
+        return normalized;
+      default:
+        throw new BadRequestException(`Unsupported lookup operator: ${value}`);
+    }
+  }
+
   private toSoqlIdentifier(identifier: string): string {
     if (!SOQL_IDENTIFIER_PATTERN.test(identifier)) {
       throw new BadRequestException(`Invalid SOQL identifier: ${identifier}`);
@@ -1702,7 +2289,7 @@ export class EntitiesService {
     return identifier;
   }
 
-  private mapFormInputType(salesforceType: string): FormInputType {
+  private mapRuntimeFormInputType(salesforceType: string): FormInputType {
     const normalizedType = salesforceType.toLowerCase();
 
     if (normalizedType === 'email') {
@@ -1721,15 +2308,27 @@ export class EntitiesService {
       return 'textarea';
     }
 
-    return 'text';
-  }
-
-  private normalizeFormInputType(inputType: string | undefined): FormInputType | undefined {
-    if (inputType === 'text' || inputType === 'email' || inputType === 'tel' || inputType === 'date' || inputType === 'textarea') {
-      return inputType;
+    if (NUMERIC_SEARCH_TYPES.has(normalizedType)) {
+      return 'number';
     }
 
-    return undefined;
+    if (normalizedType === 'boolean') {
+      return 'checkbox';
+    }
+
+    if (normalizedType === 'picklist') {
+      return 'select';
+    }
+
+    if (normalizedType === 'multipicklist') {
+      return 'multiselect';
+    }
+
+    if (normalizedType === 'reference') {
+      return 'lookup';
+    }
+
+    return 'text';
   }
 
   private toFieldLabel(fieldName: string): string {

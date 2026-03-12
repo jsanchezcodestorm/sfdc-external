@@ -17,6 +17,7 @@ import {
   EntityListViewConfig,
   EntityRelatedListConfig
 } from '../entities.types';
+import { normalizeEntityFormFieldConfig } from '../entity-form-config.validation';
 import { normalizeEntityQueryConfig } from '../entity-query-config.validation';
 
 import { EntityAdminConfigRepository, EntityAdminConfigSummary } from './entity-admin-config.repository';
@@ -65,6 +66,9 @@ interface SalesforceFieldDescribe {
   createable: boolean;
   updateable: boolean;
   filterable: boolean;
+  defaultedOnCreate?: boolean;
+  calculated?: boolean;
+  autoNumber?: boolean;
   relationshipName?: string;
   referenceTo?: string[];
 }
@@ -93,7 +97,6 @@ const TEXT_SEARCH_TYPES = new Set([
   'multipicklist'
 ]);
 
-const SAFE_TEXT_INPUT_SOURCE_TYPES = new Set(['string', 'id', 'url', 'encryptedstring']);
 const DETAIL_FORMAT_FIELD_TYPES = new Set(['date', 'datetime']);
 const MAX_LIST_DISPLAY_FIELDS = 5;
 const MAX_DETAIL_EXTRA_FIELDS = 6;
@@ -557,7 +560,7 @@ export class EntityAdminConfigService {
     warnings: string[]
   ): EntityFormConfig | undefined {
     const writableFields = this.rankBootstrapFields(fields, 'form')
-      .filter((field) => field.name !== 'Id' && (field.createable || field.updateable))
+      .filter((field) => (field.createable || field.updateable) && !this.isBootstrapManagedFormField(field))
       .slice(0, MAX_FORM_FIELDS);
 
     if (writableFields.length === 0) {
@@ -565,17 +568,6 @@ export class EntityAdminConfigService {
         'Preset form: nessun campo Salesforce createable/updateable disponibile, la sezione Form viene omessa.'
       );
       return undefined;
-    }
-
-    const fallbackTextFields = writableFields.filter((field) =>
-      this.usesBootstrapTextFallback(field)
-    );
-    if (fallbackTextFields.length > 0) {
-      warnings.push(
-        `Preset form: input text di fallback per ${this.formatWarningFieldList(
-          fallbackTextFields
-        )}.`
-      );
     }
 
     const sections = this.chunkFields(writableFields, MAX_FORM_SECTION_FIELDS).map(
@@ -849,53 +841,18 @@ export class EntityAdminConfigService {
     field: SalesforceFieldDescribe
   ): NonNullable<EntityFormSectionConfig['fields']>[number] {
     return {
-      field: field.name,
-      label: field.label || field.name,
-      inputType: this.mapBootstrapFormInputType(field.type),
-      required: field.nillable ? undefined : true
+      field: field.name
     };
   }
 
-  private mapBootstrapFormInputType(type: string): string {
-    const normalizedType = type.toLowerCase();
-
-    if (normalizedType === 'email') {
-      return 'email';
-    }
-
-    if (normalizedType === 'phone') {
-      return 'tel';
-    }
-
-    if (normalizedType === 'date') {
-      return 'date';
-    }
-
-    if (
-      normalizedType === 'textarea' ||
-      normalizedType === 'longtextarea' ||
-      normalizedType === 'richtextarea'
-    ) {
-      return 'textarea';
-    }
-
-    return 'text';
-  }
-
-  private usesBootstrapTextFallback(field: SalesforceFieldDescribe): boolean {
+  private isBootstrapManagedFormField(field: SalesforceFieldDescribe): boolean {
     return (
-      this.mapBootstrapFormInputType(field.type) === 'text' &&
-      !SAFE_TEXT_INPUT_SOURCE_TYPES.has(field.type.toLowerCase())
+      field.name === 'Id' ||
+      this.isBootstrapSystemField(field.name.toLowerCase()) ||
+      this.isBootstrapAuditField(field.name.toLowerCase()) ||
+      field.calculated === true ||
+      field.autoNumber === true
     );
-  }
-
-  private formatWarningFieldList(fields: SalesforceFieldDescribe[]): string {
-    const visibleFields = fields.slice(0, 5).map((field) => `${field.name} (${field.type})`);
-    if (fields.length <= 5) {
-      return visibleFields.join(', ');
-    }
-
-    return `${visibleFields.join(', ')} e altri ${fields.length - 5}`;
   }
 
   private chunkFields<T>(items: T[], size: number): T[][] {
@@ -1072,9 +1029,9 @@ export class EntityAdminConfigService {
     const section = this.requireObject(value, `entity.form.sections[${index}] must be an object`);
     const fields = this.requireArray(section.fields, `entity.form.sections[${index}].fields must be an array`)
       .map((entry, fieldIndex) =>
-        this.requireObject(
+        normalizeEntityFormFieldConfig(
           entry,
-          `entity.form.sections[${index}].fields[${fieldIndex}] must be an object`
+          `entity.form.sections[${index}].fields[${fieldIndex}]`
         )
       );
 
@@ -1084,7 +1041,7 @@ export class EntityAdminConfigService {
 
     return {
       title: this.asOptionalString(section.title),
-      fields: fields as unknown as EntityFormSectionConfig['fields']
+      fields
     };
   }
 

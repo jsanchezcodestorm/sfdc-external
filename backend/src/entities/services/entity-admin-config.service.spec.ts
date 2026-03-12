@@ -13,6 +13,9 @@ type TestField = {
   createable?: boolean;
   updateable?: boolean;
   filterable?: boolean;
+  defaultedOnCreate?: boolean;
+  calculated?: boolean;
+  autoNumber?: boolean;
   relationshipName?: string;
   referenceTo?: string[];
 };
@@ -26,6 +29,9 @@ function createField(field: TestField) {
     createable: field.createable ?? false,
     updateable: field.updateable ?? false,
     filterable: field.filterable ?? false,
+    defaultedOnCreate: field.defaultedOnCreate ?? false,
+    calculated: field.calculated ?? false,
+    autoNumber: field.autoNumber ?? false,
     relationshipName: field.relationshipName,
     referenceTo: field.referenceTo,
   };
@@ -199,7 +205,7 @@ test('previewEntityBootstrap uses only textual filterable fields for starter sea
   });
 });
 
-test('previewEntityBootstrap generates an aggressive form and reports text fallbacks', async () => {
+test('previewEntityBootstrap derives describe-driven form fields and omits managed fields', async () => {
   const { service } = createService([
     createField({ name: 'Id', label: 'Record ID', type: 'id', nillable: false, filterable: true }),
     createField({
@@ -251,18 +257,13 @@ test('previewEntityBootstrap generates an aggressive form and reports text fallb
 
   const formFields =
     response.entity.form?.sections?.flatMap((section) => section.fields ?? []) ?? [];
-  assert.equal(formFields.find((field) => field.field === 'StageName')?.inputType, 'text');
-  assert.equal(formFields.find((field) => field.field === 'IsClosed')?.inputType, 'text');
-  assert.equal(formFields.find((field) => field.field === 'OwnerId')?.inputType, 'text');
-  assert.equal(formFields.find((field) => field.field === 'CloseDate')?.inputType, 'date');
-  assert.ok(
-    response.warnings.some(
-      (warning) =>
-        warning.includes('StageName (picklist)') &&
-        warning.includes('IsClosed (boolean)') &&
-        warning.includes('OwnerId (reference)')
-    )
+  assert.deepEqual(
+    formFields.map((field) => field.field),
+    ['Name', 'StageName', 'CloseDate', 'IsClosed'],
   );
+  assert.equal(formFields.find((field) => field.field === 'OwnerId'), undefined);
+  assert.equal(formFields.find((field) => field.field === 'CloseDate')?.placeholder, undefined);
+  assert.ok(response.warnings.every((warning) => !warning.includes('fallback')));
 });
 
 test('previewEntityBootstrap omits form without writable fields and stays non mutative', async () => {
@@ -362,6 +363,48 @@ test('createEntityConfig rejects unsupported query operators before touching the
       error instanceof BadRequestException &&
       error.message ===
         'entity.detail.query.where[0].operator must be one of =, !=, <, <=, >, >=, IN, NOT IN, LIKE',
+  );
+
+  assert.equal(counters.repositoryCalls, 0);
+  assert.equal(counters.auditCalls, 0);
+});
+
+test('createEntityConfig rejects legacy form field overrides', async () => {
+  const { service, counters } = createService([]);
+
+  await assert.rejects(
+    () =>
+      service.createEntityConfig({
+        entity: {
+          id: 'account',
+          label: 'Account',
+          objectApiName: 'Account',
+          form: {
+            title: {
+              create: 'Nuovo account',
+              edit: 'Modifica account',
+            },
+            query: {
+              object: 'Account',
+              fields: ['Id', 'Name'],
+            },
+            sections: [
+              {
+                title: 'Main',
+                fields: [
+                  {
+                    field: 'Name',
+                    label: 'Custom Name',
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      }),
+    (error: unknown) =>
+      error instanceof BadRequestException &&
+      error.message === 'entity.form.sections[0].fields[0].label is not supported',
   );
 
   assert.equal(counters.repositoryCalls, 0);

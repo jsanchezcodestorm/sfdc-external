@@ -19,7 +19,14 @@ interface SalesforceObjectSummary {
   custom: boolean;
 }
 
-interface SalesforceFieldSummary {
+export interface SalesforcePicklistValueSummary {
+  value: string;
+  label: string;
+  active: boolean;
+  defaultValue: boolean;
+}
+
+export interface SalesforceFieldSummary {
   name: string;
   label: string;
   type: string;
@@ -27,6 +34,10 @@ interface SalesforceFieldSummary {
   createable: boolean;
   updateable: boolean;
   filterable: boolean;
+  defaultedOnCreate: boolean;
+  calculated: boolean;
+  autoNumber: boolean;
+  picklistValues?: SalesforcePicklistValueSummary[];
   relationshipName?: string;
   referenceTo?: string[];
 }
@@ -119,6 +130,20 @@ export class SalesforceService {
       createable: Boolean(field.createable ?? false),
       updateable: Boolean(field.updateable ?? false),
       filterable: Boolean(field.filterable ?? false),
+      defaultedOnCreate: Boolean(field.defaultedOnCreate ?? false),
+      calculated: Boolean(field.calculated ?? false),
+      autoNumber: Boolean(field.autoNumber ?? false),
+      picklistValues: Array.isArray(field.picklistValues)
+        ? field.picklistValues
+            .filter((entry): entry is Record<string, unknown> => this.isObjectRecord(entry))
+            .map((entry) => ({
+              value: String(entry.value ?? ''),
+              label: String(entry.label ?? entry.value ?? ''),
+              active: Boolean(entry.active ?? false),
+              defaultValue: Boolean(entry.defaultValue ?? false)
+            }))
+            .filter((entry) => entry.value.trim().length > 0)
+        : undefined,
       relationshipName: typeof field.relationshipName === 'string' ? field.relationshipName : undefined,
       referenceTo: Array.isArray(field.referenceTo)
         ? field.referenceTo

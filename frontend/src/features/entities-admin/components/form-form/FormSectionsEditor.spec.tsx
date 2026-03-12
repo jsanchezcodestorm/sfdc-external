@@ -10,11 +10,7 @@ const SECTIONS: FormSectionDraft[] = [
     fields: [
       {
         field: 'Name',
-        label: 'Primary Name',
-        inputType: 'text',
-        required: true,
         placeholder: '',
-        lookupEnabled: false,
         lookup: {
           searchField: '',
           prefill: false,
@@ -29,11 +25,7 @@ const SECTIONS: FormSectionDraft[] = [
     fields: [
       {
         field: 'Phone',
-        label: 'Backup Phone',
-        inputType: 'tel',
-        required: false,
         placeholder: '',
-        lookupEnabled: false,
         lookup: {
           searchField: '',
           prefill: false,
@@ -55,12 +47,12 @@ describe('FormSectionsEditor', () => {
       />,
     )
 
-    expect(screen.getByDisplayValue('Primary Name')).not.toBeNull()
-    expect(screen.queryByDisplayValue('Backup Phone')).toBeNull()
+    expect(screen.getByDisplayValue('Name')).not.toBeNull()
+    expect(screen.queryByDisplayValue('Phone')).toBeNull()
 
     fireEvent.click(screen.getByText('Section B').closest('button') as HTMLButtonElement)
 
-    expect(screen.getByDisplayValue('Backup Phone')).not.toBeNull()
-    expect(screen.queryByDisplayValue('Primary Name')).toBeNull()
+    expect(screen.getByDisplayValue('Phone')).not.toBeNull()
+    expect(screen.queryByDisplayValue('Name')).toBeNull()
   })
 })

@@ -141,9 +141,35 @@ Campi:
 
 ### 7.2 Sezioni `form` (`entity_form_section_configs`)
 Ogni field:
-- `label`, `field`, `inputType` (required)
-- `inputType` ammessi: `text | email | tel | date | textarea`
-- `required`, `placeholder`, `lookup` (optional)
+- `field` (required)
+- `placeholder`, `lookup` (optional)
+
+Regola hard-enforced:
+- `label`, `inputType`, `required` NON sono ammessi nella config persistita o nei payload admin
+- la migration dati ripulisce eventuali record legacy in `entity_form_section_configs.fieldsJson`
+
+Fonte di verita runtime:
+- `label` arriva sempre da `Salesforce describe.label`
+- `required` viene derivato da `nillable/createable/updateable/defaultedOnCreate` in base a create vs edit
+- `inputType` viene derivato da `Salesforce describe.type`
+- `options` per `picklist` / `multipicklist` arrivano da `picklistValues`
+- i campi `reference` espongono metadata lookup runtime (`referenceTo`, `searchField`, `where`, `orderBy`, `prefill`)
+
+Tipi runtime esposti dalla response form:
+- `text | email | tel | date | textarea | number | checkbox | select | multiselect | lookup`
+
+Campi esclusi automaticamente dal form runtime e dal perimetro write:
+- `Id`
+- `OwnerId`
+- `RecordTypeId`
+- `CreatedById`
+- `LastModifiedById`
+- `CreatedDate`
+- `LastModifiedDate`
+- `SystemModstamp`
+- campi `calculated`
+- campi `autoNumber`
+- campi non scrivibili nel mode corrente
 
 ### 7.3 `lookup` (metadata form)
 Contratto:
@@ -238,14 +264,15 @@ Errori tipici:
 
 ## 11) Salvataggio form: regole server-side
 Durante create/update:
-- il backend salva solo field presenti nella configurazione form (piu eventuale `pathStatus.field`)
+- il backend salva solo field presenti nella configurazione form (piu eventuale `pathStatus.field`) e ancora scrivibili secondo `describe`
 - field relazionali (`A.B`) non sono salvabili direttamente
-- field non createable/updateable su Salesforce vengono ignorati
+- field system-managed come `OwnerId` vengono esclusi sempre
 - valori normalizzati per tipo (`boolean`, numerici, `date`, `datetime`, `picklist`, `multipicklist`)
+- i required vengono validati dalla `describe`; se manca un field required senza default Salesforce la request fallisce con `400`
 - se payload finale non contiene campi validi -> `400`
 
 Conseguenza:
-- la form config definisce esplicitamente il perimetro di scrittura consentito.
+- la form config definisce quali campi mostrare; la `describe` definisce come vanno resi e validati.
 
 ## 12) Convenzioni raccomandate
 - mantenere `entity_configs.id == entityId` usato in ACL e routing

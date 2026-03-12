@@ -3,6 +3,7 @@ import type {
   EntityConfigEnvelope,
   EntityDetailResponse,
   EntityFormResponse,
+  EntityFormLookupSearchResponse,
   EntityListResponse,
   EntityRecord,
   EntityRelatedListResponse,
@@ -60,6 +61,24 @@ export async function fetchEntityForm(
   }
 
   return apiFetch<EntityFormResponse>(`/entities/${encodedEntityId}/form`)
+}
+
+export async function searchEntityFormLookup(
+  entityId: string,
+  fieldName: string,
+  payload: {
+    q?: string
+    limit?: number
+    context?: Record<string, string | number | boolean | null | undefined>
+  },
+): Promise<EntityFormLookupSearchResponse> {
+  return apiFetch<EntityFormLookupSearchResponse>(
+    `/entities/${encodeURIComponent(entityId)}/form/lookups/${encodeURIComponent(fieldName)}/search`,
+    {
+      method: 'POST',
+      body: payload,
+    },
+  )
 }
 
 export async function fetchEntityRelatedList(

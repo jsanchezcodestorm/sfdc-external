@@ -1,27 +1,9 @@
-import type {
-  EntityConfig,
-  LookupConfig,
-} from '../../../entities/entity-types'
-import type {
-  FormFieldDraft,
-  FormFormDraft,
-  FormInputTypeDraft,
-  FormLookupDraft,
-  FormSectionDraft,
-} from './form-form.types'
+import type { EntityConfig, LookupConfig } from '../../../entities/entity-types'
+import type { FormFieldDraft, FormFormDraft, FormLookupDraft, FormSectionDraft } from './form-form.types'
 
 type FormConfigValue = NonNullable<EntityConfig['form']>
 type FormSectionValue = NonNullable<FormConfigValue['sections']>[number]
 type FormFieldValue = FormSectionValue['fields'][number]
-
-const FORM_INPUT_TYPES = new Set<FormInputTypeDraft>([
-  '',
-  'text',
-  'email',
-  'tel',
-  'date',
-  'textarea',
-])
 
 export function createEmptyFormLookupDraft(): FormLookupDraft {
   return {
@@ -35,11 +17,7 @@ export function createEmptyFormLookupDraft(): FormLookupDraft {
 export function createEmptyFormFieldDraft(): FormFieldDraft {
   return {
     field: '',
-    label: '',
-    inputType: '',
-    required: false,
     placeholder: '',
-    lookupEnabled: false,
     lookup: createEmptyFormLookupDraft(),
   }
 }
@@ -78,13 +56,9 @@ export function createFormDraft(form: EntityConfig['form'] | undefined): FormFor
     subtitle: form.subtitle ?? '',
     queryFields: asStringArray(query?.fields),
     queryWhereJson: Array.isArray(query?.where) ? JSON.stringify(query.where, null, 2) : '',
-    queryOrderByJson: Array.isArray(query?.orderBy)
-      ? JSON.stringify(query.orderBy, null, 2)
-      : '',
+    queryOrderByJson: Array.isArray(query?.orderBy) ? JSON.stringify(query.orderBy, null, 2) : '',
     queryLimit:
-      typeof query?.limit === 'number' && Number.isFinite(query.limit)
-        ? String(query.limit)
-        : '',
+      typeof query?.limit === 'number' && Number.isFinite(query.limit) ? String(query.limit) : '',
     sections: sections.length > 0 ? sections : [createEmptyFormSectionDraft()],
   }
 }
@@ -150,11 +124,7 @@ function createFormSectionDraft(section: FormSectionValue): FormSectionDraft {
     fields:
       section.fields?.map((field) => ({
         field: field.field ?? '',
-        label: field.label ?? '',
-        inputType: normalizeInputType(field.inputType),
-        required: Boolean(field.required),
         placeholder: field.placeholder ?? '',
-        lookupEnabled: Boolean(field.lookup),
         lookup: createFormLookupDraft(field.lookup),
       })) ?? [createEmptyFormFieldDraft()],
   }
@@ -169,16 +139,11 @@ function createFormLookupDraft(lookup: LookupConfig | undefined): FormLookupDraf
     searchField: lookup.searchField ?? '',
     prefill: Boolean(lookup.prefill),
     whereJson: Array.isArray(lookup.where) ? JSON.stringify(lookup.where, null, 2) : '',
-    orderByJson: Array.isArray(lookup.orderBy)
-      ? JSON.stringify(lookup.orderBy, null, 2)
-      : '',
+    orderByJson: Array.isArray(lookup.orderBy) ? JSON.stringify(lookup.orderBy, null, 2) : '',
   }
 }
 
-function parseFormSectionDraft(
-  section: FormSectionDraft,
-  index: number,
-): FormSectionValue | null {
+function parseFormSectionDraft(section: FormSectionDraft, index: number): FormSectionValue | null {
   const title = readOptionalString(section.title)
   const fields = section.fields
     .map((field, fieldIndex) => parseFormFieldDraft(field, index, fieldIndex))
@@ -204,35 +169,20 @@ function parseFormFieldDraft(
   sectionIndex: number,
   fieldIndex: number,
 ): FormFieldValue | null {
-  const label = readOptionalString(field.label)
   const fieldPath = readOptionalString(field.field)
   const placeholder = readOptionalString(field.placeholder)
-  const inputType = normalizeInputType(field.inputType)
   const hasAnyValue = hasAnyFieldValue(field)
 
   if (!hasAnyValue) {
     return null
   }
 
-  if (!label) {
-    throw new Error(`Form section ${sectionIndex + 1} field ${fieldIndex + 1}: label obbligatoria`)
-  }
-
   if (!fieldPath) {
     throw new Error(`Form section ${sectionIndex + 1} field ${fieldIndex + 1}: field obbligatorio`)
   }
 
-  if (!inputType) {
-    throw new Error(
-      `Form section ${sectionIndex + 1} field ${fieldIndex + 1}: inputType obbligatorio`,
-    )
-  }
-
   return {
     field: fieldPath,
-    label,
-    inputType,
-    required: field.required ? true : undefined,
     placeholder,
     lookup: parseLookupDraft(field, sectionIndex, fieldIndex),
   }
@@ -243,10 +193,6 @@ function parseLookupDraft(
   sectionIndex: number,
   fieldIndex: number,
 ): LookupConfig | undefined {
-  if (!field.lookupEnabled) {
-    return undefined
-  }
-
   const label = `Form section ${sectionIndex + 1} field ${fieldIndex + 1}: lookup`
   const searchField = readOptionalString(field.lookup.searchField)
   const where = parseOptionalJsonArray(field.lookup.whereJson, `${label}.where`)
@@ -265,25 +211,14 @@ function parseLookupDraft(
   }
 }
 
-function normalizeInputType(value: unknown): FormInputTypeDraft {
-  if (typeof value !== 'string') {
-    return ''
-  }
-
-  const trimmed = value.trim()
-  return FORM_INPUT_TYPES.has(trimmed as FormInputTypeDraft)
-    ? (trimmed as FormInputTypeDraft)
-    : 'text'
-}
-
 function hasAnyFieldValue(field: FormFieldDraft): boolean {
   return (
     field.field.trim().length > 0 ||
-    field.label.trim().length > 0 ||
-    field.inputType.length > 0 ||
-    field.required ||
     field.placeholder.trim().length > 0 ||
-    field.lookupEnabled
+    field.lookup.searchField.trim().length > 0 ||
+    field.lookup.whereJson.trim().length > 0 ||
+    field.lookup.orderByJson.trim().length > 0 ||
+    field.lookup.prefill
   )
 }
 

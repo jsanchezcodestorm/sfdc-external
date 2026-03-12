@@ -129,3 +129,82 @@ test('getConnection uses persisted access token configuration from setup', async
     (jsforce as unknown as { Connection: unknown }).Connection = originalConnection;
   }
 });
+
+test('describeObjectFields maps picklist and reference metadata from describe payload', async () => {
+  const service = createSalesforceService();
+
+  (service as unknown as { describeObject: (objectApiName: string) => Promise<unknown> }).describeObject = async (
+    objectApiName: string,
+  ) => {
+    assert.equal(objectApiName, 'Account');
+    return {
+      fields: [
+        {
+          name: 'Industry',
+          label: 'Industry',
+          type: 'picklist',
+          nillable: true,
+          createable: true,
+          updateable: true,
+          filterable: true,
+          defaultedOnCreate: false,
+          calculated: false,
+          autoNumber: false,
+          picklistValues: [
+            { value: 'Technology', label: 'Technology', active: true, defaultValue: true },
+            { value: 'Finance', label: 'Finance', active: true, defaultValue: false },
+          ],
+        },
+        {
+          name: 'ParentId',
+          label: 'Parent Account',
+          type: 'reference',
+          nillable: true,
+          createable: true,
+          updateable: true,
+          filterable: true,
+          relationshipName: 'Parent',
+          referenceTo: ['Account'],
+        },
+      ],
+    };
+  };
+
+  const fields = await service.describeObjectFields('Account');
+
+  assert.deepEqual(fields, [
+    {
+      name: 'Industry',
+      label: 'Industry',
+      type: 'picklist',
+      nillable: true,
+      createable: true,
+      updateable: true,
+      filterable: true,
+      defaultedOnCreate: false,
+      calculated: false,
+      autoNumber: false,
+      picklistValues: [
+        { value: 'Technology', label: 'Technology', active: true, defaultValue: true },
+        { value: 'Finance', label: 'Finance', active: true, defaultValue: false },
+      ],
+      relationshipName: undefined,
+      referenceTo: undefined,
+    },
+    {
+      name: 'ParentId',
+      label: 'Parent Account',
+      type: 'reference',
+      nillable: true,
+      createable: true,
+      updateable: true,
+      filterable: true,
+      defaultedOnCreate: false,
+      calculated: false,
+      autoNumber: false,
+      picklistValues: undefined,
+      relationshipName: 'Parent',
+      referenceTo: ['Account'],
+    },
+  ]);
+});

@@ -12,6 +12,7 @@ import type {
   EntityListViewConfig,
   EntityRelatedListConfig
 } from '../entities.types';
+import { normalizeEntityFormFieldConfig } from '../entity-form-config.validation';
 import { normalizeEntityQueryConfig } from '../entity-query-config.validation';
 
 type EntityConfigRecordWithRelations = Prisma.EntityConfigRecordGetPayload<{
@@ -340,14 +341,19 @@ export class EntityConfigRepository {
     entityId: string,
     sectionConfigRecord: EntityFormConfigRecordWithRelations['sections'][number]
   ): EntityFormSectionConfig {
-    const fields = this.asObjectArray(sectionConfigRecord.fieldsJson);
+    const fields = this.asObjectArray(sectionConfigRecord.fieldsJson).map((field, index) =>
+      normalizeEntityFormFieldConfig(
+        field,
+        `Entity form section config ${entityId}.fields[${index}]`
+      )
+    );
     if (fields.length === 0) {
       throw new BadRequestException(`Entity form section config ${entityId} is invalid: fields are required`);
     }
 
     return {
       title: this.asOptionalString(sectionConfigRecord.title),
-      fields: fields as unknown as EntityFormSectionConfig['fields']
+      fields
     };
   }
 
