@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
+import type { AclResourceStatus } from '../../../lib/acl-resource-status'
 import { QueryTemplateEditorForm } from '../components/QueryTemplateEditorForm'
 import {
   fetchQueryTemplateAdmin,
@@ -29,7 +30,7 @@ export function QueryTemplateEditorPage({ mode }: QueryTemplateEditorPageProps) 
   const params = useParams<RouteParams>()
   const previousTemplateId = params.templateId ? decodeURIComponent(params.templateId) : null
   const [draft, setDraft] = useState<QueryTemplateDraft>(createEmptyQueryTemplateDraft())
-  const [aclResourceConfigured, setAclResourceConfigured] = useState(mode === 'edit')
+  const [aclResourceStatus, setAclResourceStatus] = useState<AclResourceStatus | null>(null)
   const [loading, setLoading] = useState(mode === 'edit')
   const [saving, setSaving] = useState(false)
   const [pageError, setPageError] = useState<string | null>(null)
@@ -37,7 +38,7 @@ export function QueryTemplateEditorPage({ mode }: QueryTemplateEditorPageProps) 
   useEffect(() => {
     if (mode !== 'edit' || !previousTemplateId) {
       setDraft(createEmptyQueryTemplateDraft())
-      setAclResourceConfigured(false)
+      setAclResourceStatus(null)
       setLoading(false)
       return
     }
@@ -52,7 +53,7 @@ export function QueryTemplateEditorPage({ mode }: QueryTemplateEditorPageProps) 
         }
 
         setDraft(createQueryTemplateDraft(payload.template))
-        setAclResourceConfigured(payload.aclResourceConfigured)
+        setAclResourceStatus(payload.aclResourceStatus)
         setPageError(null)
       })
       .catch((error) => {
@@ -160,7 +161,7 @@ export function QueryTemplateEditorPage({ mode }: QueryTemplateEditorPageProps) 
         <QueryTemplateEditorForm
           draft={draft}
           setDraft={setDraft}
-          aclResourceConfigured={aclResourceConfigured}
+          aclResourceStatus={aclResourceStatus}
           disableIdField={mode === 'edit'}
           idHelperText={
             mode === 'edit'

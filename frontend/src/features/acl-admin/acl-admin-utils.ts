@@ -25,6 +25,9 @@ export function createEmptyResource(): AclResourceConfig {
   return {
     id: '',
     type: 'rest',
+    accessMode: 'disabled',
+    managedBy: 'manual',
+    syncState: 'present',
     target: '',
     description: '',
     permissions: [],
@@ -48,6 +51,11 @@ export function normalizeResource(resource: AclResourceConfig): AclResourceConfi
   return {
     id: resource.id.trim(),
     type: resource.type,
+    accessMode: resource.accessMode,
+    managedBy: resource.managedBy,
+    syncState: resource.syncState,
+    sourceType: resource.sourceType,
+    sourceRef: resource.sourceRef?.trim() || undefined,
     target: resource.target?.trim() || undefined,
     description: resource.description?.trim() || undefined,
     permissions: uniqueValues(resource.permissions.map((permission) => permission.trim())),

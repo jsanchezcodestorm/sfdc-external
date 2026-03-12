@@ -3,6 +3,13 @@ import { useNavigate, useParams } from 'react-router-dom'
 
 import { useAppDialog } from '../../../components/app-dialog'
 import {
+  describeAclResourceStatus,
+  formatAclResourceAccessMode,
+  formatAclResourceManagedBy,
+  formatAclResourceSyncState,
+  isAclResourceOperational,
+} from '../../../lib/acl-resource-status'
+import {
   deleteQueryTemplateAdmin,
   fetchQueryTemplateAdmin,
 } from '../query-template-admin-api'
@@ -154,17 +161,23 @@ export function QueryTemplateDetailPage() {
         <p className="mt-4 text-sm text-slate-600">Caricamento query template...</p>
       ) : payload ? (
         <div className="mt-5 space-y-5">
-          {!payload.aclResourceConfigured ? (
-            <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-              Risorsa ACL mancante: <code className="font-mono">query:{payload.template.id}</code>.
-              Configurala nel modulo ACL Admin per autorizzare l'uso del template.
-            </p>
-          ) : null}
+          <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            <code className="font-mono">{payload.aclResourceStatus.id}</code> -{' '}
+            {describeAclResourceStatus(payload.aclResourceStatus)}
+          </p>
 
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-4">
             <DetailMetric
-              label="ACL"
-              value={payload.aclResourceConfigured ? 'Configurata' : 'Mancante'}
+              label="ACL Access"
+              value={formatAclResourceAccessMode(payload.aclResourceStatus.accessMode)}
+            />
+            <DetailMetric
+              label="Managed By"
+              value={formatAclResourceManagedBy(payload.aclResourceStatus.managedBy)}
+            />
+            <DetailMetric
+              label="Sync State"
+              value={formatAclResourceSyncState(payload.aclResourceStatus.syncState)}
             />
             <DetailMetric
               label="Max Limit"
@@ -178,6 +191,9 @@ export function QueryTemplateDetailPage() {
 
           <DetailBlock label="Object API Name">{payload.template.objectApiName}</DetailBlock>
           <DetailBlock label="Description">{payload.template.description || '-'}</DetailBlock>
+          <DetailBlock label="Operational">
+            {isAclResourceOperational(payload.aclResourceStatus) ? 'Si' : 'No'}
+          </DetailBlock>
           <DetailBlock label="SOQL" preformatted>
             {payload.template.soql}
           </DetailBlock>

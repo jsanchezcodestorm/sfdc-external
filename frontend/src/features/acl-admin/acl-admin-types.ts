@@ -1,3 +1,10 @@
+import type {
+  AclResourceAccessMode,
+  AclResourceManagedBy,
+  AclResourceStatus,
+  AclResourceSyncState,
+} from '../../lib/acl-resource-status'
+
 export type AclResourceType = 'rest' | 'entity' | 'query' | 'route'
 
 export type AclPermissionDefinition = {
@@ -7,9 +14,11 @@ export type AclPermissionDefinition = {
   aliases?: string[]
 }
 
-export type AclResourceConfig = {
+export type AclResourceConfig = AclResourceStatus & {
   id: string
   type: AclResourceType
+  sourceType?: AclResourceType
+  sourceRef?: string
   target?: string
   description?: string
   permissions: string[]
@@ -41,6 +50,11 @@ export type AclAdminPermissionResponse = {
 export type AclAdminResourceSummary = {
   id: string
   type: AclResourceType
+  accessMode: AclResourceAccessMode
+  managedBy: AclResourceManagedBy
+  syncState: AclResourceSyncState
+  sourceType?: AclResourceType
+  sourceRef?: string
   target?: string
   description?: string
   permissionCount: number
@@ -52,6 +66,15 @@ export type AclAdminResourceListResponse = {
 
 export type AclAdminResourceResponse = {
   resource: AclResourceConfig
+}
+
+export type AclAdminResourceSyncResponse = {
+  result: {
+    discoveredCount: number
+    createdCount: number
+    updatedCount: number
+    staleCount: number
+  }
 }
 
 export type AclAdminDefaultPermissionItem = {

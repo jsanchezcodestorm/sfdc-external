@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
+import {
+  formatAclResourceAccessMode,
+  formatAclResourceSyncState,
+} from '../../../lib/acl-resource-status'
 import { fetchQueryTemplateAdminList } from '../query-template-admin-api'
 import type { QueryTemplateAdminSummary } from '../query-template-admin-types'
 import {
@@ -128,7 +132,8 @@ export function QueryTemplateListPage() {
                       <td className="px-4 py-3 text-slate-700">{item.objectApiName}</td>
                       <td className="px-4 py-3 text-slate-700">{item.description || '-'}</td>
                       <td className="px-4 py-3 text-slate-700">
-                        {item.aclResourceConfigured ? 'OK' : 'Missing'}
+                        {formatAclResourceAccessMode(item.aclResourceStatus.accessMode)} /{' '}
+                        {formatAclResourceSyncState(item.aclResourceStatus.syncState)}
                       </td>
                       <td className="px-4 py-3 text-slate-700">
                         {new Date(item.updatedAt).toLocaleString()}

@@ -1,5 +1,11 @@
 import type { Dispatch, SetStateAction } from 'react'
 
+import type { AclResourceStatus } from '../../../lib/acl-resource-status'
+import {
+  describeAclResourceStatus,
+  formatAclResourceAccessMode,
+  formatAclResourceSyncState,
+} from '../../../lib/acl-resource-status'
 import type {
   DefaultParamDraft,
   QueryTemplateDraft,
@@ -8,7 +14,7 @@ import type {
 type QueryTemplateEditorFormProps = {
   draft: QueryTemplateDraft
   setDraft: Dispatch<SetStateAction<QueryTemplateDraft>>
-  aclResourceConfigured: boolean
+  aclResourceStatus: AclResourceStatus | null
   disableIdField?: boolean
   idHelperText?: string
 }
@@ -16,12 +22,12 @@ type QueryTemplateEditorFormProps = {
 export function QueryTemplateEditorForm({
   draft,
   setDraft,
-  aclResourceConfigured,
+  aclResourceStatus,
   disableIdField = false,
   idHelperText,
 }: QueryTemplateEditorFormProps) {
   const aclResourceId = draft.id.trim()
-  const showAclWarning = !aclResourceConfigured && aclResourceId.length > 0
+  const showAclNotice = aclResourceId.length > 0
 
   const updateDefaultParam = (
     index: number,
@@ -38,11 +44,20 @@ export function QueryTemplateEditorForm({
 
   return (
     <div className="mt-5 space-y-5">
-      {showAclWarning ? (
-        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          Risorsa ACL mancante: <code className="font-mono">query:{aclResourceId}</code>.
-          Configurala nel modulo ACL Admin per autorizzare l'uso del template.
-        </p>
+      {showAclNotice ? (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-800">
+          <p>
+            <code className="font-mono">query:{aclResourceId}</code>{' '}
+            {aclResourceStatus
+              ? `- ${formatAclResourceAccessMode(aclResourceStatus.accessMode)} / ${formatAclResourceSyncState(aclResourceStatus.syncState)}`
+              : '- verra creata automaticamente come risorsa system disabilitata'}
+          </p>
+          <p className="mt-1">
+            {aclResourceStatus
+              ? describeAclResourceStatus(aclResourceStatus)
+              : 'Dopo il primo salvataggio potrai attivarla dal modulo ACL associando una permission o cambiando l access mode.'}
+          </p>
+        </div>
       ) : null}
 
       <div className="grid gap-4 md:grid-cols-2">
