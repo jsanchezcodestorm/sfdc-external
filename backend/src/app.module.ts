@@ -12,6 +12,7 @@ import { MetadataModule } from './metadata/metadata.module';
 import { NavigationModule } from './navigation/navigation.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { QueryModule } from './query/query.module';
+import { ReportsModule } from './reports/reports.module';
 import { SalesforceModule } from './salesforce/salesforce.module';
 import { SetupModule } from './setup/setup.module';
 import { VisibilityModule } from './visibility/visibility.module';
@@ -32,6 +33,7 @@ import { VisibilityModule } from './visibility/visibility.module';
     VisibilityModule,
     EntitiesModule,
     QueryModule,
+    ReportsModule,
     NavigationModule,
     GlobalSearchModule,
     HealthModule,
