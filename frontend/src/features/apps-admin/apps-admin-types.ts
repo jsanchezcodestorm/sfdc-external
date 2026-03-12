@@ -39,12 +39,17 @@ export type AppReportItemConfig = AppItemBaseConfig & {
   kind: 'report'
 }
 
+export type AppDashboardItemConfig = AppItemBaseConfig & {
+  kind: 'dashboard'
+}
+
 export type AppItemConfig =
   | AppHomeItemConfig
   | AppEntityItemConfig
   | AppCustomPageItemConfig
   | AppExternalLinkItemConfig
   | AppReportItemConfig
+  | AppDashboardItemConfig
 
 export type AppConfig = {
   id: string

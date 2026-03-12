@@ -12,6 +12,7 @@ import type {
   AppAdminResponse,
   AppConfig,
   AppCustomPageItemConfig,
+  AppDashboardItemConfig,
   AppEmbedOpenMode,
   AppEntityItemConfig,
   AppExternalLinkItemConfig,
@@ -222,6 +223,11 @@ export class AppsAdminService {
           { id, kind, label, description, resourceId, ...item },
           index
         );
+      case 'dashboard':
+        return this.normalizeDashboardItem(
+          { id, kind, label, description, resourceId, ...item },
+          index
+        );
     }
   }
 
@@ -249,6 +255,19 @@ export class AppsAdminService {
     return {
       id: item.id as string,
       kind: 'report',
+      label: item.label as string,
+      description: item.description as string | undefined,
+      resourceId: item.resourceId as string | undefined
+    };
+  }
+
+  private normalizeDashboardItem(
+    item: Record<string, unknown>,
+    _index: number
+  ): AppDashboardItemConfig {
+    return {
+      id: item.id as string,
+      kind: 'dashboard',
       label: item.label as string,
       description: item.description as string | undefined,
       resourceId: item.resourceId as string | undefined
@@ -348,6 +367,7 @@ export class AppsAdminService {
       case 'custom-page':
       case 'external-link':
       case 'report':
+      case 'dashboard':
         return kind;
       default:
         throw new BadRequestException(`${path} is invalid`);

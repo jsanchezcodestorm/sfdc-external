@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom'
 import { AppPageBlocks } from '../components/AppPageBlocks'
 import { findItemInApp } from '../app-workspace-routing'
 import { useAppWorkspace } from '../useAppWorkspace'
+import { DashboardRuntimeWorkspace } from '../../dashboards/DashboardRuntimeWorkspace'
 import { ReportRuntimeWorkspace } from '../../reports/ReportRuntimeWorkspace'
 
 export function AppRuntimeItemPage() {
@@ -62,6 +63,18 @@ export function AppRuntimeItemPage() {
   if (item.kind === 'report') {
     return (
       <ReportRuntimeWorkspace
+        appId={appId}
+        itemId={itemId}
+        appLabel={selectedApp.label}
+        itemLabel={item.label}
+        itemDescription={item.description}
+      />
+    )
+  }
+
+  if (item.kind === 'dashboard') {
+    return (
+      <DashboardRuntimeWorkspace
         appId={appId}
         itemId={itemId}
         appLabel={selectedApp.label}

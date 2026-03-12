@@ -7,6 +7,7 @@ import type {
   AppAdminSummary,
   AppConfig,
   AppCustomPageItemConfig,
+  AppDashboardItemConfig,
   AppEntityItemConfig,
   AppExternalLinkItemConfig,
   AppHomeItemConfig,
@@ -18,6 +19,7 @@ import type {
   AppUrlOpenMode,
   AvailableApp,
   AvailableAppCustomPageItem,
+  AvailableAppDashboardItem,
   AvailableAppEntityItem,
   AvailableAppExternalLinkItem,
   AvailableAppHomeItem,
@@ -359,6 +361,8 @@ export class AppsAdminConfigRepository {
         return this.mapStoredExternalLinkItem(row);
       case AppItemKind.REPORT:
         return this.mapStoredReportItem(row);
+      case AppItemKind.DASHBOARD:
+        return this.mapStoredDashboardItem(row);
     }
   }
 
@@ -424,6 +428,16 @@ export class AppsAdminConfigRepository {
     };
   }
 
+  private mapStoredDashboardItem(row: ItemRow): AppDashboardItemConfig {
+    return {
+      id: row.itemId,
+      kind: 'dashboard',
+      label: row.label,
+      description: row.description ?? undefined,
+      resourceId: row.resourceId ?? undefined
+    };
+  }
+
   private mapAvailableItem(row: AvailableItemRow): AvailableAppItem {
     switch (row.kind) {
       case AppItemKind.HOME:
@@ -436,6 +450,8 @@ export class AppsAdminConfigRepository {
         return this.mapAvailableExternalLinkItem(row);
       case AppItemKind.REPORT:
         return this.mapAvailableReportItem(row);
+      case AppItemKind.DASHBOARD:
+        return this.mapAvailableDashboardItem(row);
     }
   }
 
@@ -498,6 +514,16 @@ export class AppsAdminConfigRepository {
     return {
       id: row.itemId,
       kind: 'report',
+      label: row.label,
+      description: row.description ?? undefined,
+      resourceId: row.resourceId ?? undefined
+    };
+  }
+
+  private mapAvailableDashboardItem(row: AvailableItemRow): AvailableAppDashboardItem {
+    return {
+      id: row.itemId,
+      kind: 'dashboard',
       label: row.label,
       description: row.description ?? undefined,
       resourceId: row.resourceId ?? undefined
@@ -602,6 +628,7 @@ export class AppsAdminConfigRepository {
       case 'external-link':
         return this.toEmbedItemConfig(item);
       case 'report':
+      case 'dashboard':
         return null;
       case 'entity':
         return null;
@@ -629,6 +656,8 @@ export class AppsAdminConfigRepository {
         return AppItemKind.EXTERNAL_LINK;
       case 'report':
         return AppItemKind.REPORT;
+      case 'dashboard':
+        return AppItemKind.DASHBOARD;
     }
   }
 

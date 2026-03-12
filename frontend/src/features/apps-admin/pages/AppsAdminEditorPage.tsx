@@ -39,6 +39,7 @@ const ITEM_KIND_OPTIONS = [
   { kind: 'custom-page', label: 'Custom Page' },
   { kind: 'external-link', label: 'External Link' },
   { kind: 'report', label: 'Report' },
+  { kind: 'dashboard', label: 'Dashboard' },
 ] as const
 
 type EditingAppItemState =
@@ -342,7 +343,7 @@ export function AppsAdminEditorPage({ mode }: AppsAdminEditorPageProps) {
               <div>
                 <p className="text-sm font-medium text-slate-700">App Items</p>
                 <p className="mt-1 text-xs text-slate-500">
-                  Ordina la navigazione dell&apos;app e configura home, entity, pagine, link esterni e modulo report interno.
+                  Ordina la navigazione dell&apos;app e configura home, entity, pagine, link esterni e moduli interni report/dashboard.
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -835,6 +836,12 @@ function AppItemEditorModal({
                 L&apos;item `report` apre sempre il modulo report interno dell&apos;app. La configurazione operativa di folder, sharing e report builder avviene nel runtime workspace, non qui.
               </div>
             ) : null}
+
+            {draft.kind === 'dashboard' ? (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">
+                L&apos;item `dashboard` apre sempre il modulo dashboard interno dell&apos;app. Cartelle, sharing, source report e widget vengono configurati nel runtime workspace.
+              </div>
+            ) : null}
           </div>
         </div>
 
@@ -875,6 +882,8 @@ function describeItemTarget(item: AppItemDraft): string {
       return item.url.trim() || 'URL da configurare'
     case 'report':
       return 'Modulo report interno'
+    case 'dashboard':
+      return 'Modulo dashboard interno'
   }
 }
 
@@ -891,6 +900,8 @@ function describeItemConfig(item: AppItemDraft): string {
         item.height.trim() ? `${item.height.trim()}px` : '',
       ])
     case 'report':
+      return 'Workspace interno'
+    case 'dashboard':
       return 'Workspace interno'
   }
 }

@@ -197,6 +197,14 @@ function parseAppItemDraft(draft: AppItemDraft, index: number): AppItemConfig {
         description,
         resourceId,
       }
+    case 'dashboard':
+      return {
+        id,
+        kind: 'dashboard',
+        label,
+        description,
+        resourceId,
+      }
   }
 }
 

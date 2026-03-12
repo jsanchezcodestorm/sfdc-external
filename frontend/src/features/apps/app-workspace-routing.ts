@@ -138,6 +138,7 @@ export function getAppItemInternalPath(
     case 'external-link':
       return item.openMode === 'iframe' ? buildAppItemPath(appId, item.id) : null
     case 'report':
+    case 'dashboard':
       return buildAppItemPath(appId, item.id)
   }
 }

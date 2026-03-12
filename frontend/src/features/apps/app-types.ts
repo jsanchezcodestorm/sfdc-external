@@ -1,4 +1,4 @@
-export type AppItemKind = 'home' | 'entity' | 'custom-page' | 'external-link' | 'report'
+export type AppItemKind = 'home' | 'entity' | 'custom-page' | 'external-link' | 'report' | 'dashboard'
 
 export type AppItemTargetType = 'app-item' | 'url'
 
@@ -74,12 +74,17 @@ export type AvailableAppReportItem = AvailableAppItemBase & {
   kind: 'report'
 }
 
+export type AvailableAppDashboardItem = AvailableAppItemBase & {
+  kind: 'dashboard'
+}
+
 export type AvailableAppItem =
   | AvailableAppHomeItem
   | AvailableAppEntityItem
   | AvailableAppCustomPageItem
   | AvailableAppExternalLinkItem
   | AvailableAppReportItem
+  | AvailableAppDashboardItem
 
 export type AvailableApp = {
   id: string

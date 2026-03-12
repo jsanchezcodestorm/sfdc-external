@@ -3,6 +3,8 @@ import { Link, useLocation } from 'react-router-dom'
 
 import { AvailableAppsLauncher } from '../features/apps/components/AvailableAppsLauncher'
 import {
+  extractRuntimeItemId,
+  findItemInApp,
   getActiveRuntimeTabKey,
   getAppItemHref,
 } from '../features/apps/app-workspace-routing'
@@ -24,6 +26,14 @@ export function AppWorkspaceShell({
   const { closeDrawer, isDrawerOpen } = useRuntimeNavigation()
   const [isLauncherOpen, setIsLauncherOpen] = useState(false)
   const launcherRef = useRef<HTMLDivElement | null>(null)
+  const activeItem = findItemInApp(selectedApp, extractRuntimeItemId(location.pathname))
+  const isFullWidthRuntimeItem = activeItem?.kind === 'report' || activeItem?.kind === 'dashboard'
+  const launcherContainerClassName = isFullWidthRuntimeItem
+    ? 'relative w-full px-4 py-2.5 sm:px-6'
+    : 'relative mx-auto w-full max-w-7xl px-4 py-2.5 sm:px-6'
+  const mainContainerClassName = isFullWidthRuntimeItem
+    ? 'flex w-full flex-col gap-5 px-4 py-6 sm:px-6'
+    : 'mx-auto flex w-full max-w-7xl flex-col gap-5 px-4 py-6 sm:px-6'
 
   useEffect(() => {
     if (!isDrawerOpen && !isLauncherOpen) {
@@ -65,7 +75,7 @@ export function AppWorkspaceShell({
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#dbeafe_0%,_#f8fafc_42%,_#ffffff_100%)] text-slate-900">
       <div className="sticky top-[57px] z-20 hidden border-b border-slate-200/80 bg-white/92 backdrop-blur-sm md:block">
-        <div ref={launcherRef} className="relative mx-auto w-full max-w-7xl px-4 py-2.5 sm:px-6">
+        <div ref={launcherRef} className={launcherContainerClassName}>
           <div className="flex items-center gap-2 overflow-x-auto">
             <button
               type="button"
@@ -197,7 +207,7 @@ export function AppWorkspaceShell({
         </div>
       </div>
 
-      <main className="mx-auto flex w-full max-w-7xl flex-col gap-5 px-4 py-6 sm:px-6">
+      <main className={mainContainerClassName}>
         {children}
       </main>
     </div>
@@ -288,6 +298,8 @@ function describeItem(item: AvailableAppItem): string {
       return item.openMode === 'iframe' ? 'Embed esterno' : 'Nuova tab'
     case 'report':
       return 'Report'
+    case 'dashboard':
+      return 'Dashboard'
   }
 }
 
