@@ -438,3 +438,151 @@ test('createEntityConfig auto-provisions entity ACL resource before persistence'
     'audit',
   ]);
 });
+
+test('createEntityConfig derives id and label from objectApiName when omitted', async () => {
+  const calls: string[] = [];
+  const service = new EntityAdminConfigService(
+    {
+      async ensureEntityResource(entityId: string) {
+        calls.push(`ensure:${entityId}`);
+      },
+    } as never,
+    {
+      hasResource() {
+        return true;
+      },
+    } as never,
+    {
+      async ensureEntityBootstrapPolicy(input: { entityId: string; objectApiName: string }) {
+        calls.push(`visibility:${input.entityId}:${input.objectApiName}`);
+      },
+    } as never,
+    {
+      async recordApplicationSuccessOrThrow(input: { targetId: string }) {
+        calls.push(`audit:${input.targetId}`);
+      },
+    } as never,
+    {
+      assertEntityId(entityId: string) {
+        calls.push(`assert:${entityId}`);
+      },
+    } as never,
+    {
+      async listSummaries() {
+        return [];
+      },
+      async getEntityConfig(entityId: string) {
+        return {
+          id: entityId,
+          label: 'Pricebook Entry',
+          objectApiName: 'PricebookEntry',
+        };
+      },
+      async hasEntityConfig() {
+        return false;
+      },
+      async upsertEntityConfig(entity: { id: string; label: string }) {
+        calls.push(`upsert:${entity.id}:${entity.label}`);
+      },
+      async deleteEntityConfig() {},
+    } as never,
+    {
+      async describeObjectFields() {
+        return [];
+      },
+    } as never,
+  );
+
+  const response = await service.createEntityConfig({
+    entity: {
+      objectApiName: 'PricebookEntry',
+    },
+  });
+
+  assert.equal(response.entity.id, 'PricebookEntry');
+  assert.equal(response.entity.label, 'Pricebook Entry');
+  assert.deepEqual(calls, [
+    'assert:PricebookEntry',
+    'ensure:PricebookEntry',
+    'visibility:PricebookEntry:PricebookEntry',
+    'upsert:PricebookEntry:Pricebook Entry',
+    'audit:PricebookEntry',
+  ]);
+});
+
+test('createEntityConfig auto-generates a unique id when requested id already exists', async () => {
+  const calls: string[] = [];
+  const seenIds: string[] = [];
+  const service = new EntityAdminConfigService(
+    {
+      async ensureEntityResource(entityId: string) {
+        calls.push(`ensure:${entityId}`);
+      },
+    } as never,
+    {
+      hasResource() {
+        return true;
+      },
+    } as never,
+    {
+      async ensureEntityBootstrapPolicy(input: { entityId: string; objectApiName: string }) {
+        calls.push(`visibility:${input.entityId}:${input.objectApiName}`);
+      },
+    } as never,
+    {
+      async recordApplicationSuccessOrThrow(input: { targetId: string }) {
+        calls.push(`audit:${input.targetId}`);
+      },
+    } as never,
+    {
+      assertEntityId(entityId: string) {
+        calls.push(`assert:${entityId}`);
+      },
+    } as never,
+    {
+      async listSummaries() {
+        return [];
+      },
+      async getEntityConfig(entityId: string) {
+        calls.push(`get:${entityId}`);
+        return {
+          id: entityId,
+          label: 'Listino',
+          objectApiName: 'PricebookEntry',
+        };
+      },
+      async hasEntityConfig(entityId: string) {
+        seenIds.push(entityId);
+        return entityId === 'Listino';
+      },
+      async upsertEntityConfig(entity: { id: string }) {
+        calls.push(`upsert:${entity.id}`);
+      },
+      async deleteEntityConfig() {},
+    } as never,
+    {
+      async describeObjectFields() {
+        return [];
+      },
+    } as never,
+  );
+
+  const response = await service.createEntityConfig({
+    entity: {
+      id: 'Listino',
+      label: 'Listino',
+      objectApiName: 'PricebookEntry',
+    },
+  });
+
+  assert.deepEqual(seenIds, ['Listino', 'Listino-2']);
+  assert.equal(response.entity.id, 'Listino-2');
+  assert.deepEqual(calls, [
+    'assert:Listino',
+    'ensure:Listino-2',
+    'visibility:Listino-2:PricebookEntry',
+    'upsert:Listino-2',
+    'audit:Listino-2',
+    'get:Listino-2',
+  ]);
+});

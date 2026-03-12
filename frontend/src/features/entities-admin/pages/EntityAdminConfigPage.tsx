@@ -77,6 +77,8 @@ export function EntityAdminConfigPage() {
   const navigate = useNavigate()
   const params = useParams<RouteParams>()
   const blockedNavigationKeyRef = useRef<string | null>(null)
+  const shouldAutoSyncIdRef = useRef(true)
+  const shouldAutoSyncLabelRef = useRef(true)
 
   const isCreateRoute = location.pathname === buildEntityCreatePath()
   const activeEditRoute = useMemo(
@@ -282,6 +284,8 @@ export function EntityAdminConfigPage() {
       setObjectApiNameSuggestions([])
       setObjectApiNameSuggestionsError(null)
       setBasePathAutoSyncEnabled(isCreateRoute)
+      shouldAutoSyncIdRef.current = isCreateRoute
+      shouldAutoSyncLabelRef.current = isCreateRoute
       return
     }
 
@@ -296,6 +300,8 @@ export function EntityAdminConfigPage() {
     setObjectApiNameSuggestions([])
     setObjectApiNameSuggestionsError(null)
     setBasePathAutoSyncEnabled(isCreateRoute)
+    shouldAutoSyncIdRef.current = isCreateRoute
+    shouldAutoSyncLabelRef.current = isCreateRoute
   }, [isCreateRoute, selectedEntityConfig])
 
   useEffect(() => {
@@ -502,6 +508,12 @@ export function EntityAdminConfigPage() {
     if (field === 'basePath') {
       setBasePathAutoSyncEnabled(false)
     }
+    if (field === 'id') {
+      shouldAutoSyncIdRef.current = value.trim().length === 0
+    }
+    if (field === 'label') {
+      shouldAutoSyncLabelRef.current = value.trim().length === 0
+    }
 
     setBaseFormDraft((current) => {
       const nextDraft = {
@@ -509,9 +521,28 @@ export function EntityAdminConfigPage() {
         [field]: value,
       }
 
+      if (field === 'objectApiName') {
+        const suggestedId = value.trim()
+        if (
+          suggestedId.length > 0 &&
+          (current.id.trim().length === 0 || shouldAutoSyncIdRef.current)
+        ) {
+          nextDraft.id = suggestedId
+          shouldAutoSyncIdRef.current = true
+        }
+        if (
+          suggestedId.length > 0 &&
+          (current.label.trim().length === 0 || shouldAutoSyncLabelRef.current)
+        ) {
+          nextDraft.label = buildEntityLabelFromObjectApiName(suggestedId)
+          shouldAutoSyncLabelRef.current = true
+        }
+      }
+
       if (field === 'objectApiName' || field === 'id') {
         const nextObjectApiName = field === 'objectApiName' ? value : current.objectApiName
-        const nextEntityId = field === 'id' ? value : current.id
+        const nextEntityId =
+          field === 'id' ? value : field === 'objectApiName' ? nextDraft.id : current.id
 
         if (basePathAutoSyncEnabled) {
           nextDraft.basePath = buildSuggestedEntityBasePath(nextEntityId, nextObjectApiName)
@@ -1478,11 +1509,11 @@ function readLocationSaveInfo(state: unknown): string | null {
 }
 
 function createEntityConfigFromBaseDraft(baseDraft: BaseFormDraft): EntityConfig | null {
-  const id = baseDraft.id.trim()
-  const label = baseDraft.label.trim()
   const objectApiName = baseDraft.objectApiName.trim()
+  const id = baseDraft.id.trim() || objectApiName
+  const label = baseDraft.label.trim() || buildEntityLabelFromObjectApiName(objectApiName)
 
-  if (id.length === 0 || label.length === 0 || objectApiName.length === 0) {
+  if (objectApiName.length === 0 || id.length === 0 || label.length === 0) {
     return null
   }
 
@@ -1500,6 +1531,16 @@ function createEntityConfigFromBaseDraft(baseDraft: BaseFormDraft): EntityConfig
         ? { basePath: baseDraft.basePath.trim() }
         : undefined,
   }
+}
+
+function buildEntityLabelFromObjectApiName(objectApiName: string): string {
+  const normalized = objectApiName
+    .replace(/__(c|r)$/i, '')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[_-]+/g, ' ')
+    .trim()
+
+  return normalized.length > 0 ? normalized : objectApiName
 }
 
 function createDraftSnapshot(entity: EntityConfig): EntityConfigDraftSnapshot {
@@ -1585,11 +1626,13 @@ function getBaseDraftValidationMessage(
   baseDraft: BaseFormDraft,
   action: 'creare' | 'salvare' | 'generare il preset',
 ): string {
-  if (baseDraft.id.trim() === NEW_ENTITY_SENTINEL) {
+  const resolvedId = baseDraft.id.trim() || baseDraft.objectApiName.trim()
+
+  if (resolvedId === NEW_ENTITY_SENTINEL) {
     return `Entity Id non puo essere ${NEW_ENTITY_SENTINEL}`
   }
 
-  return `Compila id, label e objectApiName per ${action} la entity`
+  return `Compila objectApiName per ${action} la entity`
 }
 
 function getPrefixedSectionMessage(

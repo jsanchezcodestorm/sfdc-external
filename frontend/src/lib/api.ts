@@ -134,9 +134,13 @@ export async function apiFetch<T = unknown>(
   const method = (init.method ?? 'GET').toUpperCase()
   const requiresCsrf = isUnsafeMethod(method)
   const serializeAsJson = shouldSerializeAsJson(body)
+  const isMultipartBody = body instanceof FormData
   const requestHeaders = new Headers(headers)
 
-  if (serializeAsJson && !requestHeaders.has('Content-Type')) {
+  if (
+    !requestHeaders.has('Content-Type') &&
+    (serializeAsJson || (requiresCsrf && body === undefined && !isMultipartBody))
+  ) {
     requestHeaders.set('Content-Type', 'application/json')
   }
 
@@ -188,9 +192,13 @@ export async function apiFetchBlob(
   const method = (init.method ?? 'GET').toUpperCase()
   const requiresCsrf = isUnsafeMethod(method)
   const serializeAsJson = shouldSerializeAsJson(body)
+  const isMultipartBody = body instanceof FormData
   const requestHeaders = new Headers(headers)
 
-  if (serializeAsJson && !requestHeaders.has('Content-Type')) {
+  if (
+    !requestHeaders.has('Content-Type') &&
+    (serializeAsJson || (requiresCsrf && body === undefined && !isMultipartBody))
+  ) {
     requestHeaders.set('Content-Type', 'application/json')
   }
 

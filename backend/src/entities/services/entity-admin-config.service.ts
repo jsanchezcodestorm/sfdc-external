@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 
 import { AclAdminConfigService } from '../../acl/acl-admin-config.service';
 import { AclService } from '../../acl/acl.service';
@@ -140,12 +140,15 @@ export class EntityAdminConfigService {
   }
 
   async createEntityConfig(payload: UpsertEntityAdminConfigPayload): Promise<EntityAdminConfigResponse> {
-    const entity = this.normalizeEntityConfig(undefined, payload.entity);
-    this.resourceAccessService.assertEntityId(entity.id, 'entity.id');
-
-    if (await this.repository.hasEntityConfig(entity.id)) {
-      throw new ConflictException(`Entity config ${entity.id} already exists`);
-    }
+    const normalizedEntity = this.normalizeEntityConfigForCreate(payload.entity);
+    this.resourceAccessService.assertEntityId(normalizedEntity.id, 'entity.id');
+    const entityId = await this.resolveUniqueEntityId(normalizedEntity.id);
+    const entity: EntityConfig = entityId === normalizedEntity.id
+      ? normalizedEntity
+      : {
+          ...normalizedEntity,
+          id: entityId
+        };
 
     await this.aclAdminConfigService.ensureEntityResource(entity.id);
     await this.visibilityAdminService.ensureEntityBootstrapPolicy({
@@ -292,6 +295,49 @@ export class EntityAdminConfigService {
       detail: this.normalizeDetailConfig(entity.detail),
       form: this.normalizeFormConfig(entity.form)
     };
+  }
+
+  private normalizeEntityConfigForCreate(value: unknown): EntityConfig {
+    const entity = this.requireObject(value, 'entity payload must be an object');
+    const objectApiName = this.requireString(entity.objectApiName, 'entity.objectApiName is required');
+    const derivedId = this.asOptionalString(entity.id) ?? objectApiName;
+    const derivedLabel = this.asOptionalString(entity.label) ?? this.buildEntityLabelFromObjectApiName(objectApiName);
+
+    if (!derivedLabel) {
+      throw new BadRequestException('entity.label is required');
+    }
+
+    return this.normalizeEntityConfig(undefined, {
+      ...entity,
+      id: derivedId,
+      label: derivedLabel,
+      objectApiName
+    });
+  }
+
+  private buildEntityLabelFromObjectApiName(objectApiName: string): string {
+    const normalized = objectApiName
+      .replace(/__(c|r)$/i, '')
+      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+      .replace(/[_-]+/g, ' ')
+      .trim();
+
+    return normalized.length > 0 ? normalized : objectApiName;
+  }
+
+  private async resolveUniqueEntityId(baseEntityId: string): Promise<string> {
+    if (!(await this.repository.hasEntityConfig(baseEntityId))) {
+      return baseEntityId;
+    }
+
+    for (let suffix = 2; suffix < Number.MAX_SAFE_INTEGER; suffix += 1) {
+      const candidate = `${baseEntityId}-${suffix}`;
+      if (!(await this.repository.hasEntityConfig(candidate))) {
+        return candidate;
+      }
+    }
+
+    throw new BadRequestException(`Unable to auto-generate a unique entity id from ${baseEntityId}`);
   }
 
   private buildEntityAuditMetadata(entity: EntityConfig): Record<string, unknown> {
