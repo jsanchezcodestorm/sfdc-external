@@ -9,8 +9,14 @@ import { AclGuard } from '../common/guards/acl.guard';
 
 import { AppsAdminService } from './apps-admin.service';
 import { AppsService } from './apps.service';
-import type { AppAdminListResponse, AppAdminResponse, AppsAvailableResponse } from './apps.types';
+import type {
+  AppAdminListResponse,
+  AppAdminResponse,
+  AppDashboardOptionsResponse,
+  AppsAvailableResponse
+} from './apps.types';
 import { UpsertAppAdminDto } from './dto/upsert-app-admin.dto';
+import { UpsertAppHomeDto } from './dto/upsert-app-home.dto';
 
 @Controller('apps')
 @UseGuards(JwtAuthGuard, CsrfGuard, AclGuard)
@@ -38,6 +44,12 @@ export class AppsController {
     return this.appsAdminService.getApp(appId);
   }
 
+  @Get('admin/:appId/dashboard-options')
+  @AclResource('rest:apps-admin')
+  getAdminDashboardOptions(@Param('appId') appId: string): Promise<AppDashboardOptionsResponse> {
+    return this.appsAdminService.listDashboardOptions(appId);
+  }
+
   @Post('admin')
   @AclResource('rest:apps-admin')
   createAdminApp(@Body() dto: UpsertAppAdminDto): Promise<AppAdminResponse> {
@@ -51,6 +63,12 @@ export class AppsController {
     @Body() dto: UpsertAppAdminDto
   ): Promise<AppAdminResponse> {
     return this.appsAdminService.updateApp(appId, dto.app);
+  }
+
+  @Put('admin/:appId/home')
+  @AclResource('rest:apps-admin')
+  updateAdminHome(@Param('appId') appId: string, @Body() dto: UpsertAppHomeDto): Promise<AppAdminResponse> {
+    return this.appsAdminService.updateHomePage(appId, dto.home);
   }
 
   @Delete('admin/:appId')

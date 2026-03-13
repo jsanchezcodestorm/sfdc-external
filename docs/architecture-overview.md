@@ -138,6 +138,8 @@ Catalogo app admin:
 - `GET /apps/admin` -> `{ items: [{ id, label, description?, sortOrder, itemCount, entityCount, permissionCount, updatedAt }] }`
 - `GET /apps/admin/:appId` -> `{ app: { id, label, description?, sortOrder, permissionCodes: string[], items: AppItemConfig[] } }`
 - `POST|PUT /apps/admin` -> `{ app: { id, label, description?, sortOrder?, permissionCodes: string[], items: AppItemConfig[] } }`
+- `PUT /apps/admin/:appId/home` -> `{ app: AppConfig }` con update parziale della sola home (`label`, `description`, `page`)
+- `GET /apps/admin/:appId/dashboard-options` -> `{ items: [{ id, label, folderId, folderLabel, sourceReportLabel, widgetCount, updatedAt }] }`
 
 `AppItemConfig` supporta:
 - `home` -> `{ id, kind: 'home', label, description?, page: { blocks[] } }`
@@ -145,6 +147,12 @@ Catalogo app admin:
 - `custom-page` -> `{ id, kind: 'custom-page', label, description?, resourceId?, page: { blocks[] } }`
 - `external-link` -> `{ id, kind: 'external-link', label, description?, resourceId?, url, openMode: 'new-tab' | 'iframe', iframeTitle?, height? }`
 - `report` -> `{ id, kind: 'report', label, description?, resourceId?, url, openMode: 'new-tab' | 'iframe', iframeTitle?, height?, providerLabel? }`
+- `dashboard` -> `{ id, kind: 'dashboard', label, description?, resourceId? }`
+
+`page.blocks[]` usa un contratto condiviso con:
+- base comune `{ id, layout: { colSpan, rowSpan } }`
+- blocchi `hero`, `markdown`, `link-list`
+- blocco `dashboard` per la home app -> `{ id, type: 'dashboard', layout, dashboardId }`
 
 Launcher utente:
 - `GET /apps/available` -> `{ items: [{ id, label, description?, items: AvailableAppItem[] }] }`

@@ -37,8 +37,10 @@ Gestione amministrativa:
 - `GET /acl/admin/contact-suggestions`
 - `GET /apps/admin`
 - `GET /apps/admin/:appId`
+- `GET /apps/admin/:appId/dashboard-options`
 - `POST /apps/admin`
 - `PUT /apps/admin/:appId`
+- `PUT /apps/admin/:appId/home`
 - `DELETE /apps/admin/:appId`
 
 Il `PUT` sostituisce in modo atomico l intero snapshot:

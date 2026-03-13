@@ -78,3 +78,17 @@ export type AppAdminListResponse = {
 export type AppAdminResponse = {
   app: AppConfig
 }
+
+export type AppDashboardOption = {
+  id: string
+  label: string
+  folderId: string
+  folderLabel: string
+  sourceReportLabel: string
+  widgetCount: number
+  updatedAt: string
+}
+
+export type AppDashboardOptionsResponse = {
+  items: AppDashboardOption[]
+}

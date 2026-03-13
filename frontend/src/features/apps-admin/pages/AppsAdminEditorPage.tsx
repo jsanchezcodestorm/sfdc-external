@@ -15,6 +15,7 @@ import {
 } from '../apps-admin-api'
 import type { AppConfig } from '../apps-admin-types'
 import {
+  buildAppsAdminHomeBuilderPath,
   buildAppsAdminListPath,
   buildAppsAdminViewPath,
   createAppConfigDraft,
@@ -257,6 +258,15 @@ export function AppsAdminEditorPage({ mode }: AppsAdminEditorPageProps) {
         </div>
 
         <div className="flex flex-wrap gap-2">
+          {mode === 'edit' && previousAppId ? (
+            <button
+              type="button"
+              onClick={() => navigate(buildAppsAdminHomeBuilderPath(previousAppId))}
+              className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
+            >
+              Home Builder
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={() => navigate(cancelTarget)}
@@ -770,7 +780,7 @@ function AppItemEditorModal({
               </label>
             ) : null}
 
-            {(draft.kind === 'home' || draft.kind === 'custom-page') ? (
+            {draft.kind === 'custom-page' ? (
               <label className="block text-sm font-medium text-slate-700">
                 Page JSON
                 <textarea
@@ -780,6 +790,12 @@ function AppItemEditorModal({
                   className="mt-2 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 font-mono text-sm text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
                 />
               </label>
+            ) : null}
+
+            {draft.kind === 'home' ? (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">
+                La home usa ora il builder dedicato. Salva prima l&apos;app, poi apri `Home Builder` per configurare blocchi, layout e dashboard.
+              </div>
             ) : null}
 
             {draft.kind === 'external-link' ? (

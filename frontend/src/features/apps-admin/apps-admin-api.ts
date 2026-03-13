@@ -1,6 +1,11 @@
 import { apiFetch } from '../../lib/api'
 
-import type { AppAdminListResponse, AppAdminResponse, AppConfig } from './apps-admin-types'
+import type {
+  AppAdminListResponse,
+  AppAdminResponse,
+  AppConfig,
+  AppDashboardOptionsResponse,
+} from './apps-admin-types'
 
 export async function fetchAppAdminList(): Promise<AppAdminListResponse> {
   return apiFetch<AppAdminListResponse>('/apps/admin')
@@ -22,6 +27,28 @@ export async function updateAppAdmin(appId: string, app: AppConfig): Promise<App
     method: 'PUT',
     body: { app },
   })
+}
+
+export async function updateAppHomeAdmin(
+  appId: string,
+  home: AppConfig['items'][number] & { kind: 'home' },
+): Promise<AppAdminResponse> {
+  return apiFetch<AppAdminResponse>(`/apps/admin/${encodeURIComponent(appId)}/home`, {
+    method: 'PUT',
+    body: {
+      home: {
+        label: home.label,
+        description: home.description,
+        page: home.page,
+      },
+    },
+  })
+}
+
+export async function fetchAppDashboardOptions(appId: string): Promise<AppDashboardOptionsResponse> {
+  return apiFetch<AppDashboardOptionsResponse>(
+    `/apps/admin/${encodeURIComponent(appId)}/dashboard-options`,
+  )
 }
 
 export async function deleteAppAdmin(appId: string): Promise<void> {

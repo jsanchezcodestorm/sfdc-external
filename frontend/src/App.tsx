@@ -19,6 +19,7 @@ import { AuditAdminDetailPage } from './features/audit-admin/pages/AuditAdminDet
 import { AuditAdminPage } from './features/audit-admin/pages/AuditAdminPage'
 import { AppsAdminDetailPage } from './features/apps-admin/pages/AppsAdminDetailPage'
 import { AppsAdminEditorPage } from './features/apps-admin/pages/AppsAdminEditorPage'
+import { AppsAdminHomeBuilderPage } from './features/apps-admin/pages/AppsAdminHomeBuilderPage'
 import { AppsAdminListPage } from './features/apps-admin/pages/AppsAdminListPage'
 import { AppRuntimeHomePage } from './features/apps/pages/AppRuntimeHomePage'
 import { AppRuntimeItemPage } from './features/apps/pages/AppRuntimeItemPage'
@@ -130,6 +131,7 @@ const router = createHashRouter(
                 <Route path="apps/__new__" element={<AppsAdminEditorPage mode="create" />} />
                 <Route path="apps/:appId" element={<AppsAdminDetailPage />} />
                 <Route path="apps/:appId/edit" element={<AppsAdminEditorPage mode="edit" />} />
+                <Route path="apps/:appId/home-builder" element={<AppsAdminHomeBuilderPage />} />
               </Route>
 
               <Route element={<RequireRouteAccess routeId={ADMIN_ACL_ROUTE_ID} />}>

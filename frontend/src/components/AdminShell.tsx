@@ -15,6 +15,7 @@ import {
 import {
   buildAppsAdminCreatePath,
   buildAppsAdminEditPath,
+  buildAppsAdminHomeBuilderPath,
   buildAppsAdminListPath,
   buildAppsAdminViewPath,
 } from '../features/apps-admin/apps-admin-utils'
@@ -328,8 +329,11 @@ function buildAppsModule(
   const isCatalogRoute = pathname === buildAppsAdminListPath()
   const isCreateRoute = pathname === buildAppsAdminCreatePath()
   const editMatch = matchPath('/admin/apps/:appId/edit', pathname)
+  const homeBuilderMatch = matchPath('/admin/apps/:appId/home-builder', pathname)
   const viewMatch = isCreateRoute ? null : matchPath('/admin/apps/:appId', pathname)
-  const appId = editMatch?.params.appId
+  const appId = homeBuilderMatch?.params.appId
+    ? decodeURIComponent(homeBuilderMatch.params.appId)
+    : editMatch?.params.appId
     ? decodeURIComponent(editMatch.params.appId)
     : viewMatch?.params.appId
       ? decodeURIComponent(viewMatch.params.appId)
@@ -368,6 +372,13 @@ function buildAppsModule(
         to: buildAppsAdminEditPath(appId),
         caption: 'Editor metadata',
         isActive: Boolean(editMatch),
+      },
+      {
+        id: 'apps-home-builder',
+        label: 'Home Builder',
+        to: buildAppsAdminHomeBuilderPath(appId),
+        caption: 'Canvas visuale home',
+        isActive: Boolean(homeBuilderMatch),
       },
     )
   }

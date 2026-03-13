@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 
 import type { AppPageAction, AppPageConfig, AvailableApp } from '../app-types'
 import { buildAppHomePath, findItemInApp, getAppItemInternalPath } from '../app-workspace-routing'
+import { EmbeddedDashboardBlock } from './EmbeddedDashboardBlock'
 
 type AppPageBlocksProps = {
   app: AvailableApp
@@ -19,13 +20,14 @@ export function AppPageBlocks({ app, page }: AppPageBlocksProps) {
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-12">
       {page.blocks.map((block, index) => {
         if (block.type === 'hero') {
           return (
             <section
-              key={`${block.type}-${index}`}
-              className="rounded-3xl border border-slate-200 bg-[linear-gradient(135deg,_#ffffff_0%,_#f8fafc_55%,_#e0f2fe_100%)] p-7 shadow-sm"
+              key={block.id || `${block.type}-${index}`}
+              className={`${getBlockColumnClass(block.layout.colSpan)} rounded-3xl border border-slate-200 bg-[linear-gradient(135deg,_#ffffff_0%,_#f8fafc_55%,_#e0f2fe_100%)] p-7 shadow-sm`}
+              style={{ minHeight: `${block.layout.rowSpan * 6.5}rem` }}
             >
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">
                 App Home
@@ -49,14 +51,34 @@ export function AppPageBlocks({ app, page }: AppPageBlocksProps) {
 
         if (block.type === 'markdown') {
           return (
-            <section key={`${block.type}-${index}`} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <section
+              key={block.id || `${block.type}-${index}`}
+              className={`${getBlockColumnClass(block.layout.colSpan)} rounded-2xl border border-slate-200 bg-white p-6 shadow-sm`}
+              style={{ minHeight: `${block.layout.rowSpan * 6.5}rem` }}
+            >
               <MarkdownText markdown={block.markdown} />
             </section>
           )
         }
 
+        if (block.type === 'dashboard') {
+          return (
+            <section
+              key={block.id || `${block.type}-${index}`}
+              className={`${getBlockColumnClass(block.layout.colSpan)} overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm`}
+              style={{ minHeight: `${block.layout.rowSpan * 6.5}rem` }}
+            >
+              <EmbeddedDashboardBlock appId={app.id} dashboardId={block.dashboardId} />
+            </section>
+          )
+        }
+
         return (
-          <section key={`${block.type}-${index}`} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <section
+            key={block.id || `${block.type}-${index}`}
+            className={`${getBlockColumnClass(block.layout.colSpan)} rounded-2xl border border-slate-200 bg-white p-6 shadow-sm`}
+            style={{ minHeight: `${block.layout.rowSpan * 6.5}rem` }}
+          >
             {block.title ? (
               <h3 className="text-lg font-semibold text-slate-950">{block.title}</h3>
             ) : null}
@@ -174,4 +196,15 @@ function MarkdownText({ markdown }: { markdown: string }) {
   flushBulletItems()
 
   return <div className="space-y-3">{elements}</div>
+}
+
+function getBlockColumnClass(colSpan: number): string {
+  switch (colSpan) {
+    case 6:
+      return 'md:col-span-6'
+    case 4:
+      return 'md:col-span-4'
+    default:
+      return 'md:col-span-12'
+  }
 }

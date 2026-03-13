@@ -6,6 +6,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import type {
   AppAdminSummary,
   AppConfig,
+  AppDashboardOption,
   AppCustomPageItemConfig,
   AppDashboardItemConfig,
   AppEntityItemConfig,
@@ -14,6 +15,7 @@ import type {
   AppItemConfig,
   AppPageAction,
   AppPageBlock,
+  AppPageBlockLayout,
   AppPageConfig,
   AppReportItemConfig,
   AppUrlOpenMode,
@@ -84,6 +86,16 @@ type AvailableAppRecord = Prisma.AppConfigRecordGetPayload<{
 type ItemRow = AppConfigWithItems['items'][number];
 
 type AvailableItemRow = AvailableAppRecord['items'][number];
+
+const DEFAULT_BLOCK_LAYOUT: AppPageBlockLayout = {
+  colSpan: 12,
+  rowSpan: 2
+};
+
+const DEFAULT_DASHBOARD_BLOCK_LAYOUT: AppPageBlockLayout = {
+  colSpan: 12,
+  rowSpan: 4
+};
 
 @Injectable()
 export class AppsAdminConfigRepository {
@@ -212,6 +224,60 @@ export class AppsAdminConfigRepository {
     if (missingIds.length > 0) {
       throw new BadRequestException(`Unknown resource ids: ${missingIds.join(', ')}`);
     }
+  }
+
+  async assertDashboardIdsExist(appId: string, dashboardIds: string[]): Promise<void> {
+    if (dashboardIds.length === 0) {
+      return;
+    }
+
+    const rows = await this.prisma.dashboardDefinitionRecord.findMany({
+      where: {
+        appId,
+        id: {
+          in: dashboardIds
+        }
+      },
+      select: {
+        id: true
+      }
+    });
+    const foundIds = new Set(rows.map((row) => row.id));
+    const missingIds = dashboardIds.filter((dashboardId) => !foundIds.has(dashboardId));
+
+    if (missingIds.length > 0) {
+      throw new BadRequestException(`Unknown dashboard ids for app ${appId}: ${missingIds.join(', ')}`);
+    }
+  }
+
+  async listDashboardOptions(appId: string): Promise<AppDashboardOption[]> {
+    const rows = await this.prisma.dashboardDefinitionRecord.findMany({
+      where: { appId },
+      include: {
+        folder: {
+          select: {
+            id: true,
+            label: true
+          }
+        },
+        sourceReport: {
+          select: {
+            label: true
+          }
+        }
+      },
+      orderBy: [{ folder: { label: 'asc' } }, { label: 'asc' }]
+    });
+
+    return rows.map((row) => ({
+      id: row.id,
+      label: row.label,
+      folderId: row.folderId,
+      folderLabel: row.folder.label,
+      sourceReportLabel: row.sourceReport.label,
+      widgetCount: this.readPageDashboardWidgetCount(row.widgetsJson),
+      updatedAt: row.updatedAt.toISOString()
+    }));
   }
 
   async upsertApp(app: AppConfig): Promise<void> {
@@ -545,11 +611,15 @@ export class AppsAdminConfigRepository {
 
   private readPageBlock(value: Record<string, unknown>, path: string): AppPageBlock {
     const type = this.requireString(value.type, `${path}.type is required`);
+    const id = this.asOptionalString(value.id) ?? this.buildLegacyBlockId(type, path);
+    const layout = this.readPageBlockLayout(value.layout, type);
 
     switch (type) {
       case 'hero':
         return {
+          id,
           type: 'hero',
+          layout,
           title: this.requireString(value.title, `${path}.title is required`),
           body: this.asOptionalString(value.body),
           action: this.asObject(value.action)
@@ -558,7 +628,9 @@ export class AppsAdminConfigRepository {
         };
       case 'markdown':
         return {
+          id,
           type: 'markdown',
+          layout,
           markdown: this.requireString(value.markdown, `${path}.markdown is required`)
         };
       case 'link-list': {
@@ -567,14 +639,38 @@ export class AppsAdminConfigRepository {
         );
 
         return {
+          id,
           type: 'link-list',
+          layout,
           title: this.asOptionalString(value.title),
           links
         };
       }
+      case 'dashboard':
+        return {
+          id,
+          type: 'dashboard',
+          layout,
+          dashboardId: this.requireString(value.dashboardId, `${path}.dashboardId is required`)
+        };
       default:
         throw new BadRequestException(`${path}.type is invalid`);
     }
+  }
+
+  private readPageBlockLayout(value: unknown, type: string): AppPageBlockLayout {
+    const layout = this.asObject(value);
+    const colSpan = this.asOptionalInteger(layout?.colSpan);
+    const rowSpan = this.asOptionalInteger(layout?.rowSpan);
+
+    if (colSpan && rowSpan) {
+      return {
+        colSpan,
+        rowSpan
+      };
+    }
+
+    return type === 'dashboard' ? DEFAULT_DASHBOARD_BLOCK_LAYOUT : DEFAULT_BLOCK_LAYOUT;
   }
 
   private readPageAction(value: Record<string, unknown>, path: string): AppPageAction {
@@ -624,7 +720,9 @@ export class AppsAdminConfigRepository {
     switch (item.kind) {
       case 'home':
       case 'custom-page':
-        return { blocks: item.page.blocks as unknown as Prisma.JsonArray };
+        return {
+          blocks: item.page.blocks.map((block) => this.toStoredPageBlock(block)) as unknown as Prisma.JsonArray
+        };
       case 'external-link':
         return this.toEmbedItemConfig(item);
       case 'report':
@@ -641,6 +739,58 @@ export class AppsAdminConfigRepository {
       openMode: item.openMode,
       iframeTitle: item.iframeTitle ?? null,
       height: item.height ?? null
+    };
+  }
+
+  private toStoredPageBlock(block: AppPageBlock): Prisma.JsonObject {
+    switch (block.type) {
+      case 'hero':
+        return {
+          id: block.id,
+          type: block.type,
+          layout: this.toStoredPageBlockLayout(block.layout),
+          title: block.title,
+          body: block.body ?? null,
+          action: block.action ? this.toStoredPageAction(block.action) : null
+        };
+      case 'markdown':
+        return {
+          id: block.id,
+          type: block.type,
+          layout: this.toStoredPageBlockLayout(block.layout),
+          markdown: block.markdown
+        };
+      case 'link-list':
+        return {
+          id: block.id,
+          type: block.type,
+          layout: this.toStoredPageBlockLayout(block.layout),
+          title: block.title ?? null,
+          links: block.links.map((link) => this.toStoredPageAction(link)) as unknown as Prisma.JsonArray
+        };
+      case 'dashboard':
+        return {
+          id: block.id,
+          type: block.type,
+          layout: this.toStoredPageBlockLayout(block.layout),
+          dashboardId: block.dashboardId
+        };
+    }
+  }
+
+  private toStoredPageBlockLayout(layout: AppPageBlockLayout): Prisma.JsonObject {
+    return {
+      colSpan: layout.colSpan,
+      rowSpan: layout.rowSpan
+    };
+  }
+
+  private toStoredPageAction(action: AppPageAction): Prisma.JsonObject {
+    return {
+      label: action.label,
+      targetType: action.targetType,
+      target: action.target,
+      openMode: action.openMode ?? null
     };
   }
 
@@ -701,5 +851,18 @@ export class AppsAdminConfigRepository {
 
   private asOptionalNumber(value: unknown): number | undefined {
     return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+  }
+
+  private asOptionalInteger(value: unknown): number | undefined {
+    return typeof value === 'number' && Number.isInteger(value) ? value : undefined;
+  }
+
+  private buildLegacyBlockId(type: string, path: string): string {
+    const index = path.split('[').at(-1)?.replace(']', '') ?? '0';
+    return `${type}-${index}`;
+  }
+
+  private readPageDashboardWidgetCount(value: Prisma.JsonValue): number {
+    return Array.isArray(value) ? value.length : 0;
   }
 }

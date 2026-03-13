@@ -11,6 +11,8 @@ import type {
   AppAdminListResponse,
   AppAdminResponse,
   AppConfig,
+  AppDashboardOptionsResponse,
+  AppHomeUpdateInput,
   AppCustomPageItemConfig,
   AppDashboardItemConfig,
   AppEmbedOpenMode,
@@ -22,6 +24,7 @@ import type {
   AppItemTargetType,
   AppPageAction,
   AppPageBlock,
+  AppPageBlockLayout,
   AppPageConfig,
   AppReportItemConfig,
   AppUrlOpenMode
@@ -29,6 +32,10 @@ import type {
 
 const APP_SORT_ORDER_MAX = 1_000_000;
 const EMBED_HEIGHT_MAX = 4_000;
+const PAGE_BLOCK_GRID_COLUMNS = 12;
+const PAGE_BLOCK_GRID_ROWS_MAX = 8;
+const LEGACY_PAGE_BLOCK_ROW_SPAN = 2;
+const DASHBOARD_PAGE_BLOCK_ROW_SPAN = 4;
 
 @Injectable()
 export class AppsAdminService {
@@ -49,6 +56,18 @@ export class AppsAdminService {
     this.resourceAccessService.assertKebabCaseId(appId, 'appId');
     return {
       app: await this.appsAdminConfigRepository.getApp(appId)
+    };
+  }
+
+  async listDashboardOptions(appId: string): Promise<AppDashboardOptionsResponse> {
+    this.resourceAccessService.assertKebabCaseId(appId, 'appId');
+
+    if (!(await this.appsAdminConfigRepository.hasApp(appId))) {
+      throw new NotFoundException(`App config ${appId} not found`);
+    }
+
+    return {
+      items: await this.appsAdminConfigRepository.listDashboardOptions(appId)
     };
   }
 
@@ -108,6 +127,27 @@ export class AppsAdminService {
         appId
       }
     });
+  }
+
+  async updateHomePage(appId: string, payload: unknown): Promise<AppAdminResponse> {
+    this.resourceAccessService.assertKebabCaseId(appId, 'appId');
+    const existing = await this.appsAdminConfigRepository.getApp(appId);
+    const home = await this.normalizeHomeUpdate(appId, payload);
+    const app: AppConfig = {
+      ...existing,
+      items: existing.items.map((item) => (item.kind === 'home' ? home : item))
+    };
+
+    await this.appsAdminConfigRepository.upsertApp(app);
+    await this.auditWriteService.recordApplicationSuccessOrThrow({
+      action: 'APP_HOME_UPDATE',
+      targetType: 'app-home',
+      targetId: appId,
+      payload: home,
+      metadata: this.buildHomeAuditMetadata(appId, home)
+    });
+
+    return this.getApp(appId);
   }
 
   normalizeAppForPersistence(
@@ -193,7 +233,9 @@ export class AppsAdminService {
           kind,
           label,
           description,
-          page: this.normalizePageConfig(item.page, `app.items[${index}].page`)
+          page: this.normalizePageConfig(item.page, `app.items[${index}].page`, {
+            allowDashboardBlocks: true
+          })
         } satisfies AppHomeItemConfig;
       case 'entity':
         return {
@@ -211,7 +253,9 @@ export class AppsAdminService {
           label,
           description,
           resourceId,
-          page: this.normalizePageConfig(item.page, `app.items[${index}].page`)
+          page: this.normalizePageConfig(item.page, `app.items[${index}].page`, {
+            allowDashboardBlocks: false
+          })
         } satisfies AppCustomPageItemConfig;
       case 'external-link':
         return this.normalizeExternalLinkItem(
@@ -274,43 +318,114 @@ export class AppsAdminService {
     };
   }
 
-  private normalizePageConfig(value: unknown, path: string): AppPageConfig {
+  private async normalizeHomeUpdate(appId: string, value: unknown): Promise<AppHomeItemConfig> {
+    const payload = this.requireObject(value, 'home payload must be an object');
+    const label = this.requireString(payload.label, 'home.label is required');
+    const home: AppHomeItemConfig = {
+      id: 'home',
+      kind: 'home',
+      label,
+      description: this.asOptionalString(payload.description),
+      page: this.normalizePageConfig(payload.page, 'home.page', {
+        allowDashboardBlocks: true
+      })
+    };
+
+    await this.assertDashboardReferencesExist(appId, home.page);
+    return home;
+  }
+
+  private normalizePageConfig(
+    value: unknown,
+    path: string,
+    options: {
+      allowDashboardBlocks: boolean;
+    }
+  ): AppPageConfig {
     const page = this.requireObject(value, `${path} must be an object`);
     const blocks = this.requireArray(page.blocks, `${path}.blocks must be an array`).map((entry, index) =>
-      this.normalizePageBlock(entry, `${path}.blocks[${index}]`),
+      this.normalizePageBlock(entry, `${path}.blocks[${index}]`, options),
     );
 
     return { blocks };
   }
 
-  private normalizePageBlock(value: unknown, path: string): AppPageBlock {
+  private normalizePageBlock(
+    value: unknown,
+    path: string,
+    options: {
+      allowDashboardBlocks: boolean;
+    }
+  ): AppPageBlock {
     const block = this.requireObject(value, `${path} must be an object`);
     const type = this.requireString(block.type, `${path}.type is required`);
+    const id = this.requireKebabCaseString(block.id, `${path}.id`);
+    const layout = this.normalizePageBlockLayout(block.layout, `${path}.layout`, type);
 
     switch (type) {
       case 'hero':
         return {
+          id,
           type,
+          layout,
           title: this.requireString(block.title, `${path}.title is required`),
           body: this.asOptionalString(block.body),
           action: block.action ? this.normalizePageAction(block.action, `${path}.action`) : undefined
         };
       case 'markdown':
         return {
+          id,
           type,
+          layout,
           markdown: this.requireString(block.markdown, `${path}.markdown is required`)
         };
       case 'link-list':
         return {
+          id,
           type,
+          layout,
           title: this.asOptionalString(block.title),
           links: this.requireArray(block.links, `${path}.links must be an array`).map((entry, index) =>
             this.normalizePageAction(entry, `${path}.links[${index}]`),
           )
         };
+      case 'dashboard':
+        if (!options.allowDashboardBlocks) {
+          throw new BadRequestException(`${path}.type dashboard is not allowed here`);
+        }
+
+        return {
+          id,
+          type,
+          layout,
+          dashboardId: this.requireUuidString(block.dashboardId, `${path}.dashboardId`)
+        };
       default:
         throw new BadRequestException(`${path}.type is invalid`);
     }
+  }
+
+  private normalizePageBlockLayout(value: unknown, path: string, type: string): AppPageBlockLayout {
+    const layout = this.requireObject(value, `${path} must be an object`);
+    const colSpan = this.requireInteger(layout.colSpan, `${path}.colSpan`);
+    const rowSpan = this.requireInteger(layout.rowSpan, `${path}.rowSpan`);
+
+    if (colSpan < 1 || colSpan > PAGE_BLOCK_GRID_COLUMNS) {
+      throw new BadRequestException(`${path}.colSpan must be between 1 and ${PAGE_BLOCK_GRID_COLUMNS}`);
+    }
+
+    if (rowSpan < 1 || rowSpan > PAGE_BLOCK_GRID_ROWS_MAX) {
+      throw new BadRequestException(`${path}.rowSpan must be between 1 and ${PAGE_BLOCK_GRID_ROWS_MAX}`);
+    }
+
+    if (type === 'dashboard' && rowSpan < DASHBOARD_PAGE_BLOCK_ROW_SPAN) {
+      throw new BadRequestException(`${path}.rowSpan must be at least ${DASHBOARD_PAGE_BLOCK_ROW_SPAN} for dashboard`);
+    }
+
+    return {
+      colSpan,
+      rowSpan
+    };
   }
 
   private normalizePageAction(value: unknown, path: string): AppPageAction {
@@ -437,6 +552,23 @@ export class AppsAdminService {
     await this.appsAdminConfigRepository.assertEntityIdsExist(entityIds);
     await this.appsAdminConfigRepository.assertResourceIdsExist(resourceIds);
     await this.appsAdminConfigRepository.assertPermissionCodesExist(app.permissionCodes);
+    await Promise.all(
+      app.items
+        .filter((item): item is AppHomeItemConfig | AppCustomPageItemConfig => item.kind === 'home' || item.kind === 'custom-page')
+        .map((item) => this.assertDashboardReferencesExist(app.id, item.page))
+    );
+  }
+
+  private async assertDashboardReferencesExist(appId: string, page: AppPageConfig): Promise<void> {
+    const dashboardIds = [
+      ...new Set(
+        page.blocks
+          .filter((block): block is Extract<AppPageBlock, { type: 'dashboard' }> => block.type === 'dashboard')
+          .map((block) => block.dashboardId)
+      )
+    ];
+
+    await this.appsAdminConfigRepository.assertDashboardIdsExist(appId, dashboardIds);
   }
 
   private assertPageTargetsExist(items: AppItemConfig[]): void {
@@ -497,6 +629,18 @@ export class AppsAdminService {
     };
   }
 
+  private buildHomeAuditMetadata(appId: string, home: AppHomeItemConfig): Record<string, unknown> {
+    return {
+      appId,
+      blockCount: home.page.blocks.length,
+      blockTypes: home.page.blocks.reduce<Record<string, number>>((counts, block) => {
+        counts[block.type] = (counts[block.type] ?? 0) + 1;
+        return counts;
+      }, {}),
+      dashboardBlockCount: home.page.blocks.filter((block) => block.type === 'dashboard').length
+    };
+  }
+
   private requireArray(value: unknown, message: string): unknown[] {
     if (!Array.isArray(value)) {
       throw new BadRequestException(message);
@@ -526,9 +670,26 @@ export class AppsAdminService {
     return normalized;
   }
 
+  private requireInteger(value: unknown, fieldName: string): number {
+    if (typeof value !== 'number' || !Number.isInteger(value)) {
+      throw new BadRequestException(`${fieldName} must be an integer`);
+    }
+
+    return value;
+  }
+
   private requireKebabCaseString(value: unknown, fieldName: string): string {
     const normalized = this.requireString(value, `${fieldName} is required`);
     this.resourceAccessService.assertKebabCaseId(normalized, fieldName);
+    return normalized;
+  }
+
+  private requireUuidString(value: unknown, fieldName: string): string {
+    const normalized = this.requireString(value, `${fieldName} is required`);
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalized)) {
+      throw new BadRequestException(`${fieldName} must be a valid UUID`);
+    }
+
     return normalized;
   }
 
