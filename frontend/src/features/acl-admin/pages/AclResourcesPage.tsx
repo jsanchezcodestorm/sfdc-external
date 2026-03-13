@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
+import {
+  formatAclResourceAccessMode,
+  formatAclResourceManagedBy,
+  formatAclResourceSyncState,
+} from '../../../lib/acl-resource-status'
 import { fetchAclResources } from '../acl-admin-api'
 import type { AclAdminResourceSummary, AclResourceType } from '../acl-admin-types'
 import { ACL_RESOURCE_TYPE_OPTIONS } from '../acl-admin-utils'
@@ -136,6 +141,9 @@ export function AclResourcesPage() {
                 <tr>
                   <th className="px-4 py-3 text-left">Id</th>
                   <th className="px-4 py-3 text-left">Type</th>
+                  <th className="px-4 py-3 text-left">Access</th>
+                  <th className="px-4 py-3 text-left">Managed</th>
+                  <th className="px-4 py-3 text-left">Sync</th>
                   <th className="px-4 py-3 text-left">Target</th>
                   <th className="px-4 py-3 text-left">Permissions</th>
                   <th className="px-4 py-3 text-left">Description</th>
@@ -148,6 +156,15 @@ export function AclResourcesPage() {
                     <tr key={item.id} className="bg-white">
                       <td className="px-4 py-3 font-semibold text-slate-900">{item.id}</td>
                       <td className="px-4 py-3 text-slate-700">{item.type}</td>
+                      <td className="px-4 py-3 text-slate-700">
+                        {formatAclResourceAccessMode(item.accessMode)}
+                      </td>
+                      <td className="px-4 py-3 text-slate-700">
+                        {formatAclResourceManagedBy(item.managedBy)}
+                      </td>
+                      <td className="px-4 py-3 text-slate-700">
+                        {formatAclResourceSyncState(item.syncState)}
+                      </td>
                       <td className="px-4 py-3 text-slate-700">{item.target || '-'}</td>
                       <td className="px-4 py-3 text-slate-700">{item.permissionCount}</td>
                       <td className="px-4 py-3 text-slate-700">{item.description || '-'}</td>
@@ -177,7 +194,7 @@ export function AclResourcesPage() {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={6} className="px-4 py-10 text-sm text-slate-500">
+                    <td colSpan={9} className="px-4 py-10 text-sm text-slate-500">
                       {query.trim().length > 0 || typeFilter !== 'all'
                         ? 'Nessuna risorsa corrisponde ai filtri.'
                         : 'Nessuna risorsa configurata.'}

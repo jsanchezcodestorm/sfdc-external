@@ -2,6 +2,11 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
 import {
+  describeAclResourceStatus,
+  formatAclResourceManagedBy,
+  formatAclResourceSyncState,
+} from '../../../lib/acl-resource-status'
+import {
   createAclResource,
   fetchAclPermissions,
   fetchAclResource,
@@ -27,6 +32,7 @@ export function AclResourceEditorPage({ mode }: AclResourceEditorPageProps) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [pageError, setPageError] = useState<string | null>(null)
+  const isSystemResource = mode === 'edit' && draft.managedBy === 'system'
 
   useEffect(() => {
     let cancelled = false
@@ -152,6 +158,16 @@ export function AclResourceEditorPage({ mode }: AclResourceEditorPageProps) {
         <p className="mt-4 text-sm text-slate-600">Caricamento resource...</p>
       ) : (
         <div className="mt-5 space-y-5">
+          {mode === 'edit' ? (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-800">
+              <p>{describeAclResourceStatus(draft)}</p>
+              <p className="mt-1">
+                Managed by {formatAclResourceManagedBy(draft.managedBy)} /{' '}
+                {formatAclResourceSyncState(draft.syncState)}
+              </p>
+            </div>
+          ) : null}
+
           <div className="grid gap-4 md:grid-cols-2">
             <label className="text-sm font-medium text-slate-700">
               Resource id
@@ -161,7 +177,8 @@ export function AclResourceEditorPage({ mode }: AclResourceEditorPageProps) {
                 onChange={(event) =>
                   setDraft((current) => ({ ...current, id: event.target.value }))
                 }
-                className="mt-2 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+                disabled={isSystemResource}
+                className="mt-2 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
               />
             </label>
 
@@ -175,7 +192,8 @@ export function AclResourceEditorPage({ mode }: AclResourceEditorPageProps) {
                     type: event.target.value as AclResourceConfig['type'],
                   }))
                 }
-                className="mt-2 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+                disabled={isSystemResource}
+                className="mt-2 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
               >
                 {ACL_RESOURCE_TYPE_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -187,6 +205,24 @@ export function AclResourceEditorPage({ mode }: AclResourceEditorPageProps) {
           </div>
 
           <label className="block text-sm font-medium text-slate-700">
+            Access mode
+            <select
+              value={draft.accessMode}
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  accessMode: event.target.value as AclResourceConfig['accessMode'],
+                }))
+              }
+              className="mt-2 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+            >
+              <option value="disabled">Disabled</option>
+              <option value="authenticated">Authenticated</option>
+              <option value="permission-bound">Permission-bound</option>
+            </select>
+          </label>
+
+          <label className="block text-sm font-medium text-slate-700">
             Target
             <input
               type="text"
@@ -194,7 +230,8 @@ export function AclResourceEditorPage({ mode }: AclResourceEditorPageProps) {
               onChange={(event) =>
                 setDraft((current) => ({ ...current, target: event.target.value }))
               }
-              className="mt-2 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+              disabled={isSystemResource}
+              className="mt-2 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
             />
           </label>
 
@@ -206,7 +243,8 @@ export function AclResourceEditorPage({ mode }: AclResourceEditorPageProps) {
                 setDraft((current) => ({ ...current, description: event.target.value }))
               }
               rows={3}
-              className="mt-2 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+              disabled={isSystemResource}
+              className="mt-2 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
             />
           </label>
 

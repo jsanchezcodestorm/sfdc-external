@@ -2,6 +2,12 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
 import { useAppDialog } from '../../../components/app-dialog'
+import {
+  describeAclResourceStatus,
+  formatAclResourceAccessMode,
+  formatAclResourceManagedBy,
+  formatAclResourceSyncState,
+} from '../../../lib/acl-resource-status'
 import { deleteAclResource, fetchAclResource } from '../acl-admin-api'
 import type { AclAdminResourceResponse } from '../acl-admin-types'
 
@@ -138,12 +144,36 @@ export function AclResourceDetailPage() {
         <p className="mt-4 text-sm text-slate-600">Caricamento resource...</p>
       ) : payload ? (
         <div className="mt-5 space-y-5">
-          <div className="grid gap-3 sm:grid-cols-3">
+          <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            {describeAclResourceStatus(payload.resource)}
+          </p>
+
+          <div className="grid gap-3 sm:grid-cols-5">
             <DetailMetric label="Type" value={payload.resource.type} />
+            <DetailMetric
+              label="Access"
+              value={formatAclResourceAccessMode(payload.resource.accessMode)}
+            />
+            <DetailMetric
+              label="Managed By"
+              value={formatAclResourceManagedBy(payload.resource.managedBy)}
+            />
+            <DetailMetric
+              label="Sync State"
+              value={formatAclResourceSyncState(payload.resource.syncState)}
+            />
             <DetailMetric label="Permissions" value={String(payload.resource.permissions.length)} />
-            <DetailMetric label="Target" value={payload.resource.target ? 'Configurato' : 'Assente'} />
+            <DetailMetric
+              label="Target"
+              value={payload.resource.target ? 'Configurato' : 'Assente'}
+            />
           </div>
 
+          <DetailBlock label="Source">
+            {payload.resource.sourceType && payload.resource.sourceRef
+              ? `${payload.resource.sourceType}:${payload.resource.sourceRef}`
+              : '-'}
+          </DetailBlock>
           <DetailBlock label="Target">{payload.resource.target || '-'}</DetailBlock>
           <DetailBlock label="Description">{payload.resource.description || '-'}</DetailBlock>
           <DetailBlock label="Permissions">

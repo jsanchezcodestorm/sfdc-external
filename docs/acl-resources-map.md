@@ -20,10 +20,16 @@ Comportamento runtime (`AclService`):
 - alias permessi normalizzati lato runtime
 - nessun fallback built-in o file-based
 - configurazione ACL invalida => bootstrap fallisce
+- risorsa mancante => accesso negato
+- `accessMode: disabled` => accesso negato
+- `syncState: stale` => accesso negato
+- `accessMode: authenticated` => accesso consentito a ogni sessione autenticata
+- `accessMode: permission-bound` => accesso consentito solo con almeno una permission effettiva associata alla risorsa
 
 Gestione amministrativa:
 - `GET /acl/admin/config`
 - `PUT /acl/admin/config`
+- `POST /acl/admin/resources/sync`
 - `GET /acl/admin/contact-permissions`
 - `GET /acl/admin/contact-permissions/:contactId`
 - `PUT /acl/admin/contact-permissions/:contactId`
@@ -43,6 +49,11 @@ Il `PUT` sostituisce in modo atomico l intero snapshot:
   "resources": []
 }
 ```
+
+Nota operativa:
+- le risorse `managedBy: system` vengono riallineate automaticamente al boot backend e dopo mutate rilevanti
+- il catalogo system copre discovery di `rest:*`, route note di shell (`route:*`), `entity:*` e `query:*`
+- le risorse manuali restano supportate per casi custom, ma non possono riusare un id riservato alla discovery
 
 ## 3) Modello ACL
 Permission catalog:
@@ -74,6 +85,23 @@ Resource types supportati:
 - `query`
 - `route`
 
+Contratto risorsa ACL:
+- `id`
+- `type`
+- `accessMode`: `disabled | authenticated | permission-bound`
+- `managedBy`: `manual | system`
+- `syncState`: `present | stale`
+- `sourceType?`: `rest | route | entity | query`
+- `sourceRef?`: riferimento tecnico della sorgente scoperta
+- `target?`
+- `description?`
+- `permissions[]`
+
+Semantica:
+- `permissions: []` non implica piu allow implicito; il comportamento dipende da `accessMode`
+- durante la migrazione iniziale, le risorse legacy senza permission vengono portate a `accessMode: authenticated` per preservare il comportamento preesistente
+- associare una permission a una risorsa `disabled` la promuove a `permission-bound`
+
 ## 4) Convenzioni ID risorse
 Pattern obbligatori:
 - `rest:<feature-id>`
@@ -85,6 +113,7 @@ Regole:
 - il suffisso deve essere lowercase kebab-case
 - il prefisso deve combaciare con il `type`
 - risorsa mancante => accesso negato
+- gli id scoperti automaticamente sono riservati al sistema
 
 ## 5) Mappa capability -> resource id
 REST:
@@ -94,11 +123,16 @@ REST:
 - `rest:entities-write`
 - `rest:apps-read`
 - `rest:apps-admin`
+- `rest:auth-admin`
 - `rest:entities-config-admin`
 - `rest:query-execute`
 - `rest:query-template-admin`
 - `rest:acl-config-admin`
 - `rest:audit-read`
+- `rest:dashboards-read`
+- `rest:dashboards-write`
+- `rest:reports-read`
+- `rest:reports-write`
 - `rest:salesforce-objects`
 - `rest:salesforce-raw-query`
 - `rest:visibility-admin`
@@ -111,9 +145,9 @@ ENTITY:
 QUERY:
 - `query:account-pipeline`
 
-ROUTE:
+ROUTE scoperte automaticamente dal catalogo condiviso shell:
 - `route:home`
-- `route:operations-pipeline`
+- `route:admin-auth`
 - `route:admin-apps`
 - `route:admin-visibility`
 - `route:admin-metadata`
@@ -121,6 +155,10 @@ ROUTE:
 - `route:admin-acl`
 - `route:admin-query-templates`
 - `route:admin-audit`
+
+ROUTE manuali supportate:
+- restano consentite per casi custom non presenti nel catalogo condiviso, ad esempio item applicativi o pagine bespoke
+- esempio possibile: `route:sales-kpi`
 
 ## 6) Flusso autorizzativo
 Ordine obbligatorio:
@@ -134,13 +172,15 @@ Regole:
 - visibility decide il perimetro dati
 - i query template usano solo `query:<templateId>` come sorgente autorizzativa
 - il frontend consuma `GET /navigation` come source of truth per le `route:*` consentite
+- `NavigationService` usa il catalogo route condiviso per path/label/ordine e l ACL solo per filtrare gli id consentiti
 
 ## 7) Checklist operativa
 Per aggiungere una capability nuova:
-1. creare o aggiornare il relativo record nello snapshot ACL PostgreSQL
-2. allineare backend e frontend al nuovo `resource id`
-3. verificare scenario allow/deny
-4. aggiornare la documentazione tecnica correlata
+1. se la capability nasce da controller/entity/query/route shell, allineare il codice sorgente e lasciare che il sync generi o riallinei la risorsa
+2. se la capability e custom/manuale, creare o aggiornare il relativo record ACL in PostgreSQL evitando collisioni con id riservati
+3. assegnare `accessMode` corretto (`disabled`, `authenticated`, `permission-bound`)
+4. verificare scenario allow/deny e, per risorse system, lo stato `present` dopo sync
+5. aggiornare la documentazione tecnica correlata
 
 ## 8) Anti-pattern da evitare
 - controllo ACL solo lato frontend

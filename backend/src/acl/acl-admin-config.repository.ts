@@ -1,11 +1,17 @@
 import { randomUUID } from 'node:crypto';
 
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { AclResourceKind } from '@prisma/client';
+import {
+  AclResourceAccessMode,
+  AclResourceKind,
+  AclResourceManagedBy,
+  AclResourceSyncState,
+  Prisma
+} from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
 
-import type { AclConfigSnapshot, AclResourceType } from './acl.types';
+import type { AclConfigSnapshot, AclResourceConfig, AclResourceType } from './acl.types';
 
 export interface ReplaceAclSnapshotOptions {
   renamedPermissionCodes?: Array<{
@@ -108,27 +114,7 @@ export class AclAdminConfigRepository {
         });
       }
 
-      for (const resource of snapshot.resources) {
-        await tx.aclResourceRecord.create({
-          data: {
-            id: resource.id,
-            type: this.mapResourceType(resource.type),
-            target: resource.target ?? null,
-            description: resource.description ?? null
-          }
-        });
-
-        for (const [index, permissionCode] of resource.permissions.entries()) {
-          await tx.aclResourcePermissionRecord.create({
-            data: {
-              id: randomUUID(),
-              resourceId: resource.id,
-              permissionCode,
-              sortOrder: index
-            }
-          });
-        }
-      }
+      await this.createResourceRecords(tx, snapshot.resources);
 
       for (const assignment of options?.replacedPermissionAppAssignments ?? []) {
         await tx.appPermissionAssignmentRecord.deleteMany({
@@ -147,6 +133,14 @@ export class AclAdminConfigRepository {
           });
         }
       }
+    });
+  }
+
+  async replaceResources(resources: AclResourceConfig[]): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      await tx.aclResourcePermissionRecord.deleteMany();
+      await tx.aclResourceRecord.deleteMany();
+      await this.createResourceRecords(tx, resources);
     });
   }
 
@@ -193,6 +187,69 @@ export class AclAdminConfigRepository {
         return AclResourceKind.QUERY;
       case 'route':
         return AclResourceKind.ROUTE;
+    }
+  }
+
+  private mapAccessMode(mode: AclResourceConfig['accessMode']): AclResourceAccessMode {
+    switch (mode) {
+      case 'disabled':
+        return AclResourceAccessMode.DISABLED;
+      case 'authenticated':
+        return AclResourceAccessMode.AUTHENTICATED;
+      case 'permission-bound':
+        return AclResourceAccessMode.PERMISSION_BOUND;
+    }
+  }
+
+  private mapManagedBy(managedBy: AclResourceConfig['managedBy']): AclResourceManagedBy {
+    switch (managedBy) {
+      case 'system':
+        return AclResourceManagedBy.SYSTEM;
+      case 'manual':
+      default:
+        return AclResourceManagedBy.MANUAL;
+    }
+  }
+
+  private mapSyncState(syncState: AclResourceConfig['syncState']): AclResourceSyncState {
+    switch (syncState) {
+      case 'stale':
+        return AclResourceSyncState.STALE;
+      case 'present':
+      default:
+        return AclResourceSyncState.PRESENT;
+    }
+  }
+
+  private async createResourceRecords(
+    tx: Prisma.TransactionClient,
+    resources: AclResourceConfig[]
+  ): Promise<void> {
+    for (const resource of resources) {
+      await tx.aclResourceRecord.create({
+        data: {
+          id: resource.id,
+          type: this.mapResourceType(resource.type),
+          accessMode: this.mapAccessMode(resource.accessMode),
+          managedBy: this.mapManagedBy(resource.managedBy),
+          syncState: this.mapSyncState(resource.syncState),
+          sourceType: resource.sourceType ? this.mapResourceType(resource.sourceType) : null,
+          sourceRef: resource.sourceRef ?? null,
+          target: resource.target ?? null,
+          description: resource.description ?? null
+        }
+      });
+
+      for (const [index, permissionCode] of resource.permissions.entries()) {
+        await tx.aclResourcePermissionRecord.create({
+          data: {
+            id: randomUUID(),
+            resourceId: resource.id,
+            permissionCode,
+            sortOrder: index
+          }
+        });
+      }
     }
   }
 }

@@ -4,7 +4,8 @@
   "private": true,
   "workspaces": [
     "backend",
-    "frontend"
+    "frontend",
+    "shared"
   ],
   "scripts": {
     "build": "npm run build --workspace backend && npm run build --workspace frontend",

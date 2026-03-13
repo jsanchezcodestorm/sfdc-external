@@ -10,6 +10,11 @@ function createService(options?: {
     resources: Array<{
       id: string;
       type: 'rest' | 'entity' | 'query' | 'route';
+      accessMode?: 'disabled' | 'authenticated' | 'permission-bound';
+      managedBy?: 'manual' | 'system';
+      syncState?: 'present' | 'stale';
+      sourceType?: 'rest' | 'entity' | 'query' | 'route';
+      sourceRef?: string;
       target?: string;
       description?: string;
       permissions: string[];
@@ -30,6 +35,9 @@ function createService(options?: {
         {
           id: 'rest:entities-read',
           type: 'rest' as const,
+          accessMode: 'permission-bound' as const,
+          managedBy: 'manual' as const,
+          syncState: 'present' as const,
           target: '/entities/read',
           description: 'Read entities',
           permissions: ['ACCOUNT_READ'],
@@ -72,6 +80,11 @@ function createService(options?: {
     aclAdminConfigRepository as never,
     aclService as never,
     auditWriteService as never,
+    {
+      async isReservedResourceId() {
+        return false;
+      },
+    } as never,
   );
 
   return { service, replaceCalls, auditCalls };
@@ -86,6 +99,11 @@ test('getPermission includes associated resources and app ids', async () => {
     {
       id: 'rest:entities-read',
       type: 'rest',
+      accessMode: 'permission-bound',
+      managedBy: 'manual',
+      syncState: 'present',
+      sourceType: undefined,
+      sourceRef: undefined,
       target: '/entities/read',
       description: 'Read entities',
       permissionCount: 1,

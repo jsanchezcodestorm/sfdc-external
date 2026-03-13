@@ -108,9 +108,9 @@ test('createApp rejects iframe hosts outside APP_EMBED_ALLOWED_HOSTS', async () 
         items: [
           { id: 'home', kind: 'home', label: 'Home', page: { blocks: [] } },
           {
-            id: 'executive-report',
-            kind: 'report',
-            label: 'Executive Report',
+            id: 'external-dashboard',
+            kind: 'external-link',
+            label: 'External Dashboard',
             url: 'https://other.example.com/report',
             openMode: 'iframe',
           },
@@ -119,7 +119,7 @@ test('createApp rejects iframe hosts outside APP_EMBED_ALLOWED_HOSTS', async () 
       }),
     (error: unknown) =>
       error instanceof BadRequestException &&
-      error.message === 'app item executive-report iframe host must be listed in APP_EMBED_ALLOWED_HOSTS',
+      error.message === 'app item external-dashboard iframe host must be listed in APP_EMBED_ALLOWED_HOSTS',
   );
 });
 
@@ -200,9 +200,6 @@ test('createApp persists normalized payload and records audit metadata', async (
         id: 'executive-report',
         kind: 'report',
         label: 'Executive Report',
-        url: 'https://reports.example.com/executive',
-        openMode: 'iframe',
-        providerLabel: 'BI',
       },
     ],
     permissionCodes: ['PORTAL_USER', 'PORTAL_OPERATIONS'],
@@ -251,11 +248,6 @@ test('createApp persists normalized payload and records audit metadata', async (
         label: 'Executive Report',
         description: undefined,
         resourceId: undefined,
-        url: 'https://reports.example.com/executive',
-        openMode: 'iframe',
-        iframeTitle: undefined,
-        height: undefined,
-        providerLabel: 'BI',
       },
     ],
     permissionCodes: ['PORTAL_USER', 'PORTAL_OPERATIONS'],
@@ -273,4 +265,65 @@ test('createApp persists normalized payload and records audit metadata', async (
       report: 1,
     },
   });
+});
+
+test('createApp accepts dashboard items as internal workspace modules', async () => {
+  const storedApps = new Map<string, Record<string, unknown>>();
+
+  const service = createService({
+    repository: {
+      async hasApp(appId: string) {
+        return storedApps.has(appId);
+      },
+      async assertEntityIdsExist(entityIds: string[]) {
+        assert.deepEqual(entityIds, []);
+      },
+      async assertResourceIdsExist(resourceIds: string[]) {
+        assert.deepEqual(resourceIds, ['rest:dashboards-read']);
+      },
+      async assertPermissionCodesExist(permissionCodes: string[]) {
+        assert.deepEqual(permissionCodes, ['PORTAL_USER']);
+      },
+      async upsertApp(app: Record<string, unknown>) {
+        storedApps.set(String(app.id), app);
+      },
+      async getApp(appId: string) {
+        const value = storedApps.get(appId);
+        assert.ok(value);
+        return value;
+      },
+    },
+  });
+
+  const response = await service.createApp({
+    id: 'operations',
+    label: 'Operations',
+    items: [
+      { id: 'home', kind: 'home', label: 'Home', page: { blocks: [] } },
+      {
+        id: 'ops-dashboard',
+        kind: 'dashboard',
+        label: 'Ops Dashboard',
+        resourceId: 'rest:dashboards-read',
+      },
+    ],
+    permissionCodes: ['PORTAL_USER'],
+  });
+
+  assert.deepEqual(response.app.items, [
+    {
+      id: 'home',
+      kind: 'home',
+      label: 'Home',
+      description: undefined,
+      page: { blocks: [] },
+    },
+    {
+      id: 'ops-dashboard',
+      kind: 'dashboard',
+      label: 'Ops Dashboard',
+      description: undefined,
+      resourceId: 'rest:dashboards-read',
+    },
+  ]);
 });

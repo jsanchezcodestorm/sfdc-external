@@ -26,9 +26,11 @@ import type {
   AclAdminPermissionListResponse,
   AclAdminPermissionResponse,
   AclAdminResourceListResponse,
-  AclAdminResourceResponse
+  AclAdminResourceResponse,
+  AclAdminResourceSyncResponse
 } from './acl-admin.types';
 import { AclContactPermissionsAdminService } from './acl-contact-permissions-admin.service';
+import { AclResourceSyncService } from './acl-resource-sync.service';
 import { SearchAclContactSuggestionsDto } from './dto/search-acl-contact-suggestions.dto';
 import { UpdateContactPermissionsDto } from './dto/update-contact-permissions.dto';
 import { UpdateDefaultPermissionsDto } from './dto/update-default-permissions.dto';
@@ -40,7 +42,8 @@ import { UpsertAclResourceDto } from './dto/upsert-acl-resource.dto';
 export class AclController {
   constructor(
     private readonly aclAdminConfigService: AclAdminConfigService,
-    private readonly aclContactPermissionsAdminService: AclContactPermissionsAdminService
+    private readonly aclContactPermissionsAdminService: AclContactPermissionsAdminService,
+    private readonly aclResourceSyncService: AclResourceSyncService
   ) {}
 
   @Get('admin/permissions')
@@ -114,6 +117,12 @@ export class AclController {
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteResource(@Param('resourceId') resourceId: string): Promise<void> {
     await this.aclAdminConfigService.deleteResource(resourceId);
+  }
+
+  @Post('admin/resources/sync')
+  @AclResource('rest:acl-config-admin')
+  syncResources(): Promise<AclAdminResourceSyncResponse> {
+    return this.aclResourceSyncService.syncSystemResources().then((result) => ({ result }));
   }
 
   @Get('admin/default-permissions')

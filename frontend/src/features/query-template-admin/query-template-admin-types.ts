@@ -1,3 +1,5 @@
+import type { AclResourceStatus } from '../../lib/acl-resource-status'
+
 export type QueryTemplate = {
   id: string
   objectApiName: string
@@ -12,7 +14,7 @@ export type QueryTemplateAdminSummary = {
   objectApiName: string
   description?: string
   updatedAt: string
-  aclResourceConfigured: boolean
+  aclResourceStatus: AclResourceStatus
 }
 
 export type QueryTemplateAdminListResponse = {
@@ -21,5 +23,5 @@ export type QueryTemplateAdminListResponse = {
 
 export type QueryTemplateAdminResponse = {
   template: QueryTemplate
-  aclResourceConfigured: boolean
+  aclResourceStatus: AclResourceStatus
 }

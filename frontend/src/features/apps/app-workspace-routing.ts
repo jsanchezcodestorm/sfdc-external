@@ -138,7 +138,8 @@ export function getAppItemInternalPath(
     case 'external-link':
       return item.openMode === 'iframe' ? buildAppItemPath(appId, item.id) : null
     case 'report':
-      return item.openMode === 'iframe' ? buildAppItemPath(appId, item.id) : null
+    case 'dashboard':
+      return buildAppItemPath(appId, item.id)
   }
 }
 
@@ -155,7 +156,7 @@ export function getAppItemHref(
     return internalPath
   }
 
-  if (item.kind === 'external-link' || item.kind === 'report') {
+  if (item.kind === 'external-link') {
     return item.url
   }
 

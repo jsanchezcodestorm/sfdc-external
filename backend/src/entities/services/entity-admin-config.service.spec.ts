@@ -62,6 +62,12 @@ function createService(fields: ReturnType<typeof createField>[]) {
       async ensureEntityBootstrapPolicy() {
         counters.ensureVisibilityBootstrapCalls += 1;
       },
+      getResourceStatus() {
+        return null;
+      },
+    } as never,
+    {
+      async syncSystemResources() {},
     } as never,
     {
       async recordApplicationSuccessOrThrow() {
@@ -430,6 +436,11 @@ test('createEntityConfig auto-provisions entity ACL resource before persistence'
       },
     } as never,
     {
+      async syncSystemResources() {
+        calls.push('sync');
+      },
+    } as never,
+    {
       async recordApplicationSuccessOrThrow() {
         calls.push('audit');
       },
@@ -478,6 +489,7 @@ test('createEntityConfig auto-provisions entity ACL resource before persistence'
     'ensure:account',
     'visibility:account:Account',
     'upsert',
+    'sync',
     'audit',
   ]);
 });
@@ -498,6 +510,11 @@ test('createEntityConfig derives id and label from objectApiName when omitted', 
     {
       async ensureEntityBootstrapPolicy(input: { entityId: string; objectApiName: string }) {
         calls.push(`visibility:${input.entityId}:${input.objectApiName}`);
+      },
+    } as never,
+    {
+      async syncSystemResources() {
+        calls.push('sync');
       },
     } as never,
     {
@@ -549,6 +566,7 @@ test('createEntityConfig derives id and label from objectApiName when omitted', 
     'ensure:PricebookEntry',
     'visibility:PricebookEntry:PricebookEntry',
     'upsert:PricebookEntry:Pricebook Entry',
+    'sync',
     'audit:PricebookEntry',
   ]);
 });
@@ -570,6 +588,11 @@ test('createEntityConfig auto-generates a unique id when requested id already ex
     {
       async ensureEntityBootstrapPolicy(input: { entityId: string; objectApiName: string }) {
         calls.push(`visibility:${input.entityId}:${input.objectApiName}`);
+      },
+    } as never,
+    {
+      async syncSystemResources() {
+        calls.push('sync');
       },
     } as never,
     {
@@ -625,6 +648,7 @@ test('createEntityConfig auto-generates a unique id when requested id already ex
     'ensure:Listino-2',
     'visibility:Listino-2:PricebookEntry',
     'upsert:Listino-2',
+    'sync',
     'audit:Listino-2',
     'get:Listino-2',
   ]);

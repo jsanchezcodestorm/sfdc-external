@@ -1,4 +1,4 @@
-export type AppItemKind = 'home' | 'entity' | 'custom-page' | 'external-link' | 'report'
+export type AppItemKind = 'home' | 'entity' | 'custom-page' | 'external-link' | 'report' | 'dashboard'
 
 export type AppItemTargetType = 'app-item' | 'url'
 
@@ -72,11 +72,10 @@ export type AvailableAppExternalLinkItem = AvailableAppItemBase & {
 
 export type AvailableAppReportItem = AvailableAppItemBase & {
   kind: 'report'
-  url: string
-  openMode: AppEmbedOpenMode
-  iframeTitle?: string
-  height?: number
-  providerLabel?: string
+}
+
+export type AvailableAppDashboardItem = AvailableAppItemBase & {
+  kind: 'dashboard'
 }
 
 export type AvailableAppItem =
@@ -85,6 +84,7 @@ export type AvailableAppItem =
   | AvailableAppCustomPageItem
   | AvailableAppExternalLinkItem
   | AvailableAppReportItem
+  | AvailableAppDashboardItem
 
 export type AvailableApp = {
   id: string

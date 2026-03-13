@@ -7,6 +7,7 @@ import type {
   AppAdminSummary,
   AppConfig,
   AppCustomPageItemConfig,
+  AppDashboardItemConfig,
   AppEntityItemConfig,
   AppExternalLinkItemConfig,
   AppHomeItemConfig,
@@ -18,6 +19,7 @@ import type {
   AppUrlOpenMode,
   AvailableApp,
   AvailableAppCustomPageItem,
+  AvailableAppDashboardItem,
   AvailableAppEntityItem,
   AvailableAppExternalLinkItem,
   AvailableAppHomeItem,
@@ -359,6 +361,8 @@ export class AppsAdminConfigRepository {
         return this.mapStoredExternalLinkItem(row);
       case AppItemKind.REPORT:
         return this.mapStoredReportItem(row);
+      case AppItemKind.DASHBOARD:
+        return this.mapStoredDashboardItem(row);
     }
   }
 
@@ -415,19 +419,22 @@ export class AppsAdminConfigRepository {
   }
 
   private mapStoredReportItem(row: ItemRow): AppReportItemConfig {
-    const config = this.readReportItemConfig(row.configJson, `${row.appId}/${row.itemId}`);
-
     return {
       id: row.itemId,
       kind: 'report',
       label: row.label,
       description: row.description ?? undefined,
-      resourceId: row.resourceId ?? undefined,
-      url: config.url,
-      openMode: config.openMode,
-      iframeTitle: config.iframeTitle,
-      height: config.height,
-      providerLabel: config.providerLabel
+      resourceId: row.resourceId ?? undefined
+    };
+  }
+
+  private mapStoredDashboardItem(row: ItemRow): AppDashboardItemConfig {
+    return {
+      id: row.itemId,
+      kind: 'dashboard',
+      label: row.label,
+      description: row.description ?? undefined,
+      resourceId: row.resourceId ?? undefined
     };
   }
 
@@ -443,6 +450,8 @@ export class AppsAdminConfigRepository {
         return this.mapAvailableExternalLinkItem(row);
       case AppItemKind.REPORT:
         return this.mapAvailableReportItem(row);
+      case AppItemKind.DASHBOARD:
+        return this.mapAvailableDashboardItem(row);
     }
   }
 
@@ -502,19 +511,22 @@ export class AppsAdminConfigRepository {
   }
 
   private mapAvailableReportItem(row: AvailableItemRow): AvailableAppReportItem {
-    const config = this.readReportItemConfig(row.configJson, `${row.appId}/${row.itemId}`);
-
     return {
       id: row.itemId,
       kind: 'report',
       label: row.label,
       description: row.description ?? undefined,
-      resourceId: row.resourceId ?? undefined,
-      url: config.url,
-      openMode: config.openMode,
-      iframeTitle: config.iframeTitle,
-      height: config.height,
-      providerLabel: config.providerLabel
+      resourceId: row.resourceId ?? undefined
+    };
+  }
+
+  private mapAvailableDashboardItem(row: AvailableItemRow): AvailableAppDashboardItem {
+    return {
+      id: row.itemId,
+      kind: 'dashboard',
+      label: row.label,
+      description: row.description ?? undefined,
+      resourceId: row.resourceId ?? undefined
     };
   }
 
@@ -608,19 +620,6 @@ export class AppsAdminConfigRepository {
     };
   }
 
-  private readReportItemConfig(
-    value: Prisma.JsonValue | null,
-    path: string
-  ): Pick<AppReportItemConfig, 'url' | 'openMode' | 'iframeTitle' | 'height' | 'providerLabel'> {
-    const config = this.readEmbedItemConfig(value, path);
-    const configObject = this.asObject(value);
-
-    return {
-      ...config,
-      providerLabel: this.asOptionalString(configObject?.providerLabel)
-    };
-  }
-
   private toStoredItemConfig(item: AppItemConfig): Prisma.JsonObject | null {
     switch (item.kind) {
       case 'home':
@@ -629,18 +628,14 @@ export class AppsAdminConfigRepository {
       case 'external-link':
         return this.toEmbedItemConfig(item);
       case 'report':
-        return {
-          ...this.toEmbedItemConfig(item),
-          providerLabel: item.providerLabel ?? null
-        } as Prisma.JsonObject;
+      case 'dashboard':
+        return null;
       case 'entity':
         return null;
     }
   }
 
-  private toEmbedItemConfig(
-    item: AppExternalLinkItemConfig | AppReportItemConfig
-  ): Prisma.JsonObject {
+  private toEmbedItemConfig(item: AppExternalLinkItemConfig): Prisma.JsonObject {
     return {
       url: item.url,
       openMode: item.openMode,
@@ -661,6 +656,8 @@ export class AppsAdminConfigRepository {
         return AppItemKind.EXTERNAL_LINK;
       case 'report':
         return AppItemKind.REPORT;
+      case 'dashboard':
+        return AppItemKind.DASHBOARD;
     }
   }
 

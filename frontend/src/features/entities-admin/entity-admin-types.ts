@@ -1,10 +1,11 @@
 import type { EntityConfig } from '../entities/entity-types'
+import type { AclResourceStatus } from '../../lib/acl-resource-status'
 
 export type EntityAdminConfigSummary = {
   id: string
   label: string
   objectApiName: string
-  aclResourceConfigured: boolean
+  aclResourceStatus: AclResourceStatus
   hasList: boolean
   hasDetail: boolean
   hasForm: boolean
@@ -21,7 +22,7 @@ export type EntityAdminConfigListResponse = {
 
 export type EntityAdminConfigResponse = {
   entity: EntityConfig
-  aclResourceConfigured: boolean
+  aclResourceStatus: AclResourceStatus
 }
 
 export type EntityAdminBootstrapPreviewResponse = {

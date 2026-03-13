@@ -27,6 +27,10 @@ Regole operative:
 - nessun fallback su file legacy o path runtime alternativi
 - nessun watcher file-based
 - ogni modifica runtime passa dagli endpoint admin o da migration Prisma
+- create, update e delete attivano `AclResourceSyncService` sul catalogo ACL
+- la risorsa `query:<templateId>` viene scoperta automaticamente da `query_templates`
+- una nuova risorsa system nasce con `accessMode: disabled`, `managedBy: system`, `syncState: present`
+- gli endpoint admin template espongono `aclResourceStatus { id, managedBy, accessMode, syncState }`
 
 ## 3) Contratto runtime effettivo
 Ogni template supporta questi campi:
@@ -78,8 +82,8 @@ Controllo accesso template:
 
 Regole:
 - i query template non contengono una policy autorizzativa propria
-- la risorsa ACL `query:<templateId>` va gestita nel modulo admin ACL o via migration
-- la UI admin dei template puo segnalare una risorsa ACL mancante, ma non la crea automaticamente
+- la risorsa ACL `query:<templateId>` viene creata o riallineata dal sync service; non va piu creata manualmente per il caso standard
+- finche resta `disabled` o `stale`, il runtime nega l accesso fail-closed
 - ogni esecuzione runtime produce anche un evento nel nuovo stream audit `query`
 - lo stream `query` salva il SOQL finale gia risolto e scoped, oltre a `baseWhere`/`finalWhere`, stato, contatori e metadati del template
 
@@ -94,13 +98,15 @@ Vincoli admin:
 - `templateId` route e `body.id` devono coincidere
 - `defaultParams` accetta solo valori scalar
 - `maxLimit` deve essere un intero positivo
+- `GET` list/detail ritornano anche `aclResourceStatus`
 
 ## 7) Checklist operativa
 Per aggiungere un nuovo template:
 1. inserire il record in `query_templates` via UI admin o migration Prisma
-2. aggiungere la risorsa ACL `query:<templateId>` nello snapshot ACL PostgreSQL
-3. verificare `POST /query/template/:templateId` con un utente autorizzato
-4. verificare il caso deny con ACL mancante o permessi insufficienti
+2. verificare che `query:<templateId>` sia stata scoperta con stato `disabled/system/present`
+3. configurare `accessMode` e permission assignment nel modulo admin ACL
+4. verificare `POST /query/template/:templateId` con un utente autorizzato
+5. verificare il caso deny con risorsa `disabled`, `stale` o permessi insufficienti
 
 ## 8) Errori attesi
 - `400`: payload admin invalido, placeholder mancante, `limit` non valido

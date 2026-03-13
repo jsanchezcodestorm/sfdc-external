@@ -2,6 +2,11 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
 import {
+  formatAclResourceAccessMode,
+  formatAclResourceManagedBy,
+  formatAclResourceSyncState,
+} from '../../../lib/acl-resource-status'
+import {
   createAclPermission,
   fetchAclPermission,
   fetchAclPermissions,
@@ -415,9 +420,18 @@ export function AclPermissionEditorPage({ mode }: AclPermissionEditorPageProps) 
                         <span className="rounded-full bg-white px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
                           {resource.type}
                         </span>
+                        <span className="rounded-full bg-white px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+                          {formatAclResourceAccessMode(resource.accessMode)}
+                        </span>
+                        <span className="rounded-full bg-white px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+                          {formatAclResourceSyncState(resource.syncState)}
+                        </span>
                       </div>
                       <p className="mt-2 text-xs text-slate-600">
                         {resource.target ? `Target: ${resource.target}` : 'Target non configurato'}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {formatAclResourceManagedBy(resource.managedBy)}
                       </p>
                       {resource.description ? (
                         <p className="mt-1 text-xs text-slate-500">{resource.description}</p>

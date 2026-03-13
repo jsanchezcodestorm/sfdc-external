@@ -22,6 +22,7 @@ import {
   normalizeCanonicalPermissionCode,
 } from '../acl/acl-config.validation';
 import { AclContactPermissionsRepository } from '../acl/acl-contact-permissions.repository';
+import { AclResourceSyncService } from '../acl/acl-resource-sync.service';
 import { AclService } from '../acl/acl.service';
 import type { AclConfigSnapshot, AclPermissionDefinition, AclResourceConfig } from '../acl/acl.types';
 import { AppsAdminConfigRepository } from '../apps/apps-admin-config.repository';
@@ -33,6 +34,10 @@ import { getAuthProviderSlot } from '../auth/auth-provider-catalog';
 import { parseStoredOidcProviderConfig } from '../auth/auth-provider-config';
 import { LocalCredentialAdminService } from '../auth/local-credential-admin.service';
 import { LocalCredentialRepository } from '../auth/local-credential.repository';
+import {
+  normalizeLegacyEntityMetadataId,
+  normalizeLegacyEntityResourceId,
+} from '../entities/entity-id-normalization';
 import { EntityAdminConfigRepository } from '../entities/services/entity-admin-config.repository';
 import { EntityAdminConfigService } from '../entities/services/entity-admin-config.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -224,6 +229,7 @@ export class MetadataAdminService {
     private readonly aclAdminConfigRepository: AclAdminConfigRepository,
     private readonly aclContactPermissionsRepository: AclContactPermissionsRepository,
     private readonly aclService: AclService,
+    private readonly aclResourceSyncService: AclResourceSyncService,
     private readonly queryAdminTemplateRepository: QueryAdminTemplateRepository,
     private readonly queryAdminTemplateService: QueryAdminTemplateService,
     private readonly queryTemplateRepository: QueryTemplateRepository,
@@ -386,6 +392,7 @@ export class MetadataAdminService {
         deployableEntries.filter((entry) => entry.typeName === 'AclContactPermission'),
         appliedCounts,
       );
+      await this.aclResourceSyncService.syncSystemResources();
 
       const applied = DEPLOYABLE_TYPE_ORDER.map((typeName) => ({
         typeName,
@@ -602,11 +609,11 @@ export class MetadataAdminService {
         throw new BadRequestException(`${path} must contain a YAML object`);
       }
 
-      entry.parsedData = parsedValue;
+      const normalizedEntryData = this.normalizeEntryForComparison(typeName, member, parsedValue);
+      entry.member = getNormalizedMetadataMember(typeName, member, normalizedEntryData);
+      entry.parsedData = normalizedEntryData;
       entry.packageHashText = canonicalStringify(parsedValue);
-      entry.compareHashText = canonicalStringify(
-        this.normalizeEntryForComparison(typeName, member, parsedValue),
-      );
+      entry.compareHashText = canonicalStringify(normalizedEntryData);
     } catch (error) {
       blockers.push(
         error instanceof Error ? `Unable to parse ${path}: ${error.message}` : `Unable to parse ${path}`,
@@ -1406,21 +1413,23 @@ export class MetadataAdminService {
     value: unknown,
   ): Record<string, unknown> {
     const payload = requireRecord(value, `${typeName} payload must be an object`);
+    const normalizedMember = normalizeMetadataMemberForComparison(typeName, member);
 
     switch (typeName) {
       case 'EntityConfig': {
-        const id = this.requireString(payload.id, 'entity.id is required');
-        if (id !== member) {
+        const normalizedPayload = normalizeLegacyEntityConfigMetadataPayload(payload);
+        const id = this.requireString(normalizedPayload.id, 'entity.id is required');
+        if (id !== normalizedMember) {
           throw new BadRequestException(`entities/${member}.yaml must contain matching entity.id`);
         }
-        return payload;
+        return normalizedPayload;
       }
       case 'AppConfig': {
         const id = this.requireString(payload.id, 'app.id is required');
         if (id !== member) {
           throw new BadRequestException(`apps/${member}.yaml must contain matching app.id`);
         }
-        return payload;
+        return normalizeLegacyAppConfigMetadataPayload(payload);
       }
       case 'AclPermission': {
         const code = this.requireString(payload.code, 'permission.code is required');
@@ -1430,11 +1439,12 @@ export class MetadataAdminService {
         return payload;
       }
       case 'AclResource': {
-        const id = this.requireString(payload.id, 'resource.id is required');
-        if (id !== member) {
+        const normalizedPayload = normalizeLegacyAclResourceMetadataPayload(payload);
+        const id = this.requireString(normalizedPayload.id, 'resource.id is required');
+        if (id !== normalizedMember) {
           throw new BadRequestException(`acl/resources/${member}.yaml must contain matching id`);
         }
-        return payload;
+        return normalizedPayload;
       }
       case 'AclDefaultPermission': {
         const permissionCode = this.requireString(
@@ -1786,6 +1796,133 @@ function normalizePackageDescriptor(rawText: string): MetadataPackageDescriptor 
       'manual',
     ) as MetadataPackageDescriptor['manualTypes'],
   };
+}
+
+function getNormalizedMetadataMember(
+  typeName: MetadataTypeName,
+  member: string,
+  normalizedPayload: Record<string, unknown>
+): string {
+  switch (typeName) {
+    case 'EntityConfig':
+      return typeof normalizedPayload.id === 'string'
+        ? normalizedPayload.id
+        : normalizeMetadataMemberForComparison(typeName, member);
+    case 'AclResource':
+      return typeof normalizedPayload.id === 'string'
+        ? normalizedPayload.id
+        : normalizeMetadataMemberForComparison(typeName, member);
+    default:
+      return normalizeMetadataMemberForComparison(typeName, member);
+  }
+}
+
+function normalizeMetadataMemberForComparison(typeName: MetadataTypeName, member: string): string {
+  switch (typeName) {
+    case 'EntityConfig':
+      return normalizeLegacyEntityMetadataId(member);
+    case 'AclResource':
+      return normalizeLegacyEntityResourceId(member);
+    default:
+      return member.trim();
+  }
+}
+
+function normalizeLegacyEntityConfigMetadataPayload(
+  payload: Record<string, unknown>
+): Record<string, unknown> {
+  const normalized: Record<string, unknown> = {
+    ...payload,
+    id:
+      typeof payload.id === 'string'
+        ? normalizeLegacyEntityMetadataId(payload.id)
+        : payload.id,
+  };
+
+  const detail = asRecord(payload.detail);
+  const relatedLists = Array.isArray(detail?.relatedLists)
+    ? detail.relatedLists.map((entry) => {
+        const relatedList = asRecord(entry);
+        if (!relatedList) {
+          return entry;
+        }
+
+        return {
+          ...relatedList,
+          entityId:
+            typeof relatedList.entityId === 'string'
+              ? normalizeLegacyEntityMetadataId(relatedList.entityId)
+              : relatedList.entityId,
+        };
+      })
+    : undefined;
+
+  if (detail && relatedLists) {
+    normalized.detail = {
+      ...detail,
+      relatedLists,
+    };
+  }
+
+  return normalized;
+}
+
+function normalizeLegacyAclResourceMetadataPayload(
+  payload: Record<string, unknown>
+): Record<string, unknown> {
+  const normalizedId =
+    typeof payload.id === 'string' ? normalizeLegacyEntityResourceId(payload.id) : payload.id;
+  const normalizedType = typeof payload.type === 'string' ? payload.type.trim().toLowerCase() : undefined;
+  const normalizedSourceType =
+    typeof payload.sourceType === 'string' ? payload.sourceType.trim().toLowerCase() : undefined;
+
+  return {
+    ...payload,
+    id: normalizedId,
+    sourceRef:
+      typeof payload.sourceRef === 'string' &&
+      (normalizedType === 'entity' || normalizedSourceType === 'entity')
+        ? normalizeLegacyEntityMetadataId(payload.sourceRef)
+        : payload.sourceRef,
+  };
+}
+
+function normalizeLegacyAppConfigMetadataPayload(
+  payload: Record<string, unknown>
+): Record<string, unknown> {
+  if (!Array.isArray(payload.items)) {
+    return payload;
+  }
+
+  return {
+    ...payload,
+    items: payload.items.map((entry) => {
+      const item = asRecord(entry);
+      if (!item) {
+        return entry;
+      }
+
+      return {
+        ...item,
+        entityId:
+          typeof item.entityId === 'string'
+            ? normalizeLegacyEntityMetadataId(item.entityId)
+            : item.entityId,
+        resourceId:
+          typeof item.resourceId === 'string'
+            ? normalizeLegacyEntityResourceId(item.resourceId)
+            : item.resourceId,
+      };
+    }),
+  };
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || Array.isArray(value) || typeof value !== 'object') {
+    return null;
+  }
+
+  return value as Record<string, unknown>;
 }
 
 function normalizeTypeCollection(

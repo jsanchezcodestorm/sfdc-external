@@ -1,4 +1,5 @@
-import type { AclPermissionDefinition, AclResourceConfig } from './acl.types';
+import type { AclResourceSyncResult } from './acl-resource-sync.service';
+import type { AclPermissionDefinition, AclResourceConfig, AclResourceStatus } from './acl.types';
 
 export interface AclAdminPermissionSummary {
   code: string;
@@ -26,6 +27,11 @@ export interface AclAdminPermissionResponse {
 export interface AclAdminResourceSummary {
   id: string;
   type: AclResourceConfig['type'];
+  accessMode: AclResourceConfig['accessMode'];
+  managedBy: AclResourceConfig['managedBy'];
+  syncState: AclResourceConfig['syncState'];
+  sourceType?: AclResourceConfig['sourceType'];
+  sourceRef?: AclResourceConfig['sourceRef'];
   target?: string;
   description?: string;
   permissionCount: number;
@@ -38,6 +44,12 @@ export interface AclAdminResourceListResponse {
 export interface AclAdminResourceResponse {
   resource: AclResourceConfig;
 }
+
+export interface AclAdminResourceSyncResponse {
+  result: AclResourceSyncResult;
+}
+
+export interface AclDerivedResourceStatus extends AclResourceStatus {}
 
 export interface AclAdminDefaultPermissionItem {
   permissionCode: string;

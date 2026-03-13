@@ -18,6 +18,7 @@ import {
   normalizeAclResourceConfigInput,
   normalizeCanonicalPermissionCode
 } from './acl-config.validation';
+import { AclResourceSyncService } from './acl-resource-sync.service';
 import { AclService } from './acl.service';
 import type { AclConfigSnapshot, AclPermissionDefinition, AclResourceConfig } from './acl.types';
 
@@ -27,7 +28,8 @@ export class AclAdminConfigService {
     private readonly aclConfigRepository: AclConfigRepository,
     private readonly aclAdminConfigRepository: AclAdminConfigRepository,
     private readonly aclService: AclService,
-    private readonly auditWriteService: AuditWriteService
+    private readonly auditWriteService: AuditWriteService,
+    private readonly aclResourceSyncService: AclResourceSyncService
   ) {}
 
   async listPermissions(): Promise<AclAdminPermissionListResponse> {
@@ -190,7 +192,8 @@ export class AclAdminConfigService {
 
   async createResource(payload: unknown): Promise<AclAdminResourceResponse> {
     const snapshot = await this.loadSnapshot();
-    const resource = normalizeAclResourceConfigInput(payload, 'resource');
+    const resource = this.toManualResource(normalizeAclResourceConfigInput(payload, 'resource'));
+    await this.assertResourceIdNotReserved(resource.id);
     const persisted = await this.persistSnapshot(upsertResourceInSnapshot(snapshot, resource));
     const nextResource = this.requireResource(persisted, resource.id);
     await this.auditWriteService.recordApplicationSuccessOrThrow({
@@ -200,6 +203,8 @@ export class AclAdminConfigService {
       payload: resource,
       metadata: {
         type: nextResource.type,
+        accessMode: nextResource.accessMode,
+        managedBy: nextResource.managedBy,
         permissionCount: nextResource.permissions.length
       }
     });
@@ -248,9 +253,21 @@ export class AclAdminConfigService {
   async updateResource(resourceId: string, payload: unknown): Promise<AclAdminResourceResponse> {
     const previousId = resourceId.trim();
     const snapshot = await this.loadSnapshot();
-    this.requireResource(snapshot, previousId);
+    const previousResource = this.requireResource(snapshot, previousId);
 
-    const resource = normalizeAclResourceConfigInput(payload, 'resource');
+    const normalizedPayload = normalizeAclResourceConfigInput(payload, 'resource');
+    const resource = previousResource.managedBy === 'system'
+      ? {
+          ...previousResource,
+          accessMode: normalizedPayload.accessMode,
+          permissions: [...normalizedPayload.permissions]
+        }
+      : this.toManualResource(normalizedPayload);
+
+    if (previousResource.managedBy === 'manual' && previousId !== resource.id) {
+      await this.assertResourceIdNotReserved(resource.id);
+    }
+
     const persisted = await this.persistSnapshot(
       upsertResourceInSnapshot(snapshot, resource, previousId)
     );
@@ -263,6 +280,8 @@ export class AclAdminConfigService {
       metadata: {
         previousId,
         type: nextResource.type,
+        accessMode: nextResource.accessMode,
+        managedBy: nextResource.managedBy,
         permissionCount: nextResource.permissions.length
       }
     });
@@ -272,7 +291,18 @@ export class AclAdminConfigService {
   async deleteResource(resourceId: string): Promise<void> {
     const normalizedId = resourceId.trim();
     const snapshot = await this.loadSnapshot();
-    this.requireResource(snapshot, normalizedId);
+    const resource = this.requireResource(snapshot, normalizedId);
+
+    if (resource.managedBy === 'system') {
+      if (resource.syncState === 'present') {
+        throw new BadRequestException(`System ACL resource ${normalizedId} cannot be deleted while the source is present`);
+      }
+
+      if (resource.permissions.length > 0) {
+        throw new BadRequestException(`System ACL resource ${normalizedId} still has permission assignments`);
+      }
+    }
+
     await this.persistSnapshot(deleteResourceFromSnapshot(snapshot, normalizedId));
     await this.auditWriteService.recordApplicationSuccessOrThrow({
       action: 'ACL_RESOURCE_DELETE',
@@ -370,6 +400,11 @@ export class AclAdminConfigService {
     return {
       id: resource.id,
       type: resource.type,
+      accessMode: resource.accessMode,
+      managedBy: resource.managedBy,
+      syncState: resource.syncState,
+      sourceType: resource.sourceType,
+      sourceRef: resource.sourceRef,
       target: resource.target,
       description: resource.description,
       permissionCount: resource.permissions.length
@@ -484,6 +519,22 @@ export class AclAdminConfigService {
 
     return uniqueResourceIds;
   }
+
+  private toManualResource(resource: AclResourceConfig): AclResourceConfig {
+    return {
+      ...resource,
+      managedBy: 'manual',
+      syncState: 'present',
+      sourceType: undefined,
+      sourceRef: undefined
+    };
+  }
+
+  private async assertResourceIdNotReserved(resourceId: string): Promise<void> {
+    if (await this.aclResourceSyncService.isReservedResourceId(resourceId)) {
+      throw new BadRequestException(`ACL resource id ${resourceId} is reserved by system discovery`);
+    }
+  }
 }
 
 function upsertPermissionInSnapshot(
@@ -517,7 +568,11 @@ function upsertPermissionInSnapshot(
         ]
       : resource.permissions
           .map((code) => (previousCode && code === previousCode ? nextCode : code))
-          .filter((code) => code !== nextCode)
+          .filter((code) => code !== nextCode),
+    accessMode:
+      selectedResourceIds.has(resource.id) && resource.accessMode === 'disabled'
+        ? 'permission-bound'
+        : resource.accessMode
   }));
 
   return {

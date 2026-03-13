@@ -1,5 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import type { AclResourceKind, Prisma } from '@prisma/client';
+import type {
+  AclResourceAccessMode as PrismaAclResourceAccessMode,
+  AclResourceKind,
+  AclResourceManagedBy as PrismaAclResourceManagedBy,
+  AclResourceSyncState as PrismaAclResourceSyncState,
+  Prisma
+} from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -84,6 +90,11 @@ export class AclConfigRepository {
     return {
       id: resource.id,
       type: this.mapResourceType(resource.type),
+      accessMode: this.mapAccessMode(resource.accessMode),
+      managedBy: this.mapManagedBy(resource.managedBy),
+      syncState: this.mapSyncState(resource.syncState),
+      sourceType: resource.sourceType ? this.mapResourceType(resource.sourceType) : undefined,
+      sourceRef: resource.sourceRef ?? undefined,
       target: resource.target ?? undefined,
       description: resource.description ?? undefined,
       permissions: resource.permissions.map((entry) => entry.permission.code)
@@ -102,6 +113,39 @@ export class AclConfigRepository {
         return 'route';
       default:
         return 'rest';
+    }
+  }
+
+  private mapAccessMode(mode: PrismaAclResourceAccessMode): AclConfigSnapshot['resources'][number]['accessMode'] {
+    switch (mode) {
+      case 'DISABLED':
+        return 'disabled';
+      case 'AUTHENTICATED':
+        return 'authenticated';
+      case 'PERMISSION_BOUND':
+        return 'permission-bound';
+      default:
+        return 'disabled';
+    }
+  }
+
+  private mapManagedBy(managedBy: PrismaAclResourceManagedBy): AclConfigSnapshot['resources'][number]['managedBy'] {
+    switch (managedBy) {
+      case 'SYSTEM':
+        return 'system';
+      case 'MANUAL':
+      default:
+        return 'manual';
+    }
+  }
+
+  private mapSyncState(syncState: PrismaAclResourceSyncState): AclConfigSnapshot['resources'][number]['syncState'] {
+    switch (syncState) {
+      case 'STALE':
+        return 'stale';
+      case 'PRESENT':
+      default:
+        return 'present';
     }
   }
 }

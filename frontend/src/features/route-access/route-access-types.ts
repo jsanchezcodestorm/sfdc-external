@@ -1,3 +1,9 @@
+import type {
+  AdminRouteId as SharedAdminRouteId,
+  KnownRouteDefinition as SharedKnownRouteDefinition,
+  KnownRouteId as SharedKnownRouteId,
+} from '@sfdc-external/shared'
+
 export type NavigationRouteItem = {
   id: string
   target?: string
@@ -8,24 +14,8 @@ export type NavigationRoutesResponse = {
   items: NavigationRouteItem[]
 }
 
-export type KnownRouteId =
-  | 'route:home'
-  | 'route:admin-auth'
-  | 'route:admin-entity-config'
-  | 'route:admin-apps'
-  | 'route:admin-acl'
-  | 'route:admin-query-templates'
-  | 'route:admin-visibility'
-  | 'route:admin-metadata'
-  | 'route:admin-audit'
+export type KnownRouteId = SharedKnownRouteId
 
-export type AdminRouteId = Exclude<KnownRouteId, 'route:home'>
+export type AdminRouteId = SharedAdminRouteId
 
-export type KnownRouteDefinition = {
-  id: KnownRouteId
-  path: string
-  label: string
-  description: string
-  isAdmin: boolean
-  sortOrder: number
-}
+export type KnownRouteDefinition = SharedKnownRouteDefinition

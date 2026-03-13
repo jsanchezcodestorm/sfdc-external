@@ -79,7 +79,7 @@ const router = createHashRouter(
 
           <Route element={<RequireAuth />}>
             <Route path="/app/:appId" element={<AppRuntimeHomePage />} />
-            <Route path="/app/:appId/items/:itemId" element={<AppRuntimeItemPage />} />
+            <Route path="/app/:appId/items/:itemId/*" element={<AppRuntimeItemPage />} />
             <Route path="/app/:appId/entity/:entityId" element={<EntityListPage />} />
             <Route path="/app/:appId/entity/:entityId/new" element={<EntityFormPage />} />
             <Route path="/app/:appId/entity/:entityId/:recordId" element={<EntityDetailPage />} />

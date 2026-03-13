@@ -1,4 +1,4 @@
-export type AppItemKind = 'home' | 'entity' | 'custom-page' | 'external-link' | 'report';
+export type AppItemKind = 'home' | 'entity' | 'custom-page' | 'external-link' | 'report' | 'dashboard';
 
 export type AppItemTargetType = 'app-item' | 'url';
 
@@ -70,11 +70,10 @@ export interface AppExternalLinkItemConfig extends AppItemBase {
 
 export interface AppReportItemConfig extends AppItemBase {
   kind: 'report';
-  url: string;
-  openMode: AppEmbedOpenMode;
-  iframeTitle?: string;
-  height?: number;
-  providerLabel?: string;
+}
+
+export interface AppDashboardItemConfig extends AppItemBase {
+  kind: 'dashboard';
 }
 
 export type AppItemConfig =
@@ -82,7 +81,8 @@ export type AppItemConfig =
   | AppEntityItemConfig
   | AppCustomPageItemConfig
   | AppExternalLinkItemConfig
-  | AppReportItemConfig;
+  | AppReportItemConfig
+  | AppDashboardItemConfig;
 
 export interface AppConfig {
   id: string;
@@ -147,11 +147,10 @@ export interface AvailableAppExternalLinkItem extends AvailableAppItemBase {
 
 export interface AvailableAppReportItem extends AvailableAppItemBase {
   kind: 'report';
-  url: string;
-  openMode: AppEmbedOpenMode;
-  iframeTitle?: string;
-  height?: number;
-  providerLabel?: string;
+}
+
+export interface AvailableAppDashboardItem extends AvailableAppItemBase {
+  kind: 'dashboard';
 }
 
 export type AvailableAppItem =
@@ -159,7 +158,8 @@ export type AvailableAppItem =
   | AvailableAppEntityItem
   | AvailableAppCustomPageItem
   | AvailableAppExternalLinkItem
-  | AvailableAppReportItem;
+  | AvailableAppReportItem
+  | AvailableAppDashboardItem;
 
 export interface AvailableApp {
   id: string;

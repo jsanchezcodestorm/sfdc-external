@@ -2,6 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useBeforeUnload, useBlocker, useLocation, useNavigate, useParams } from 'react-router-dom'
 
 import { useAppDialog } from '../../../components/app-dialog'
+import {
+  describeAclResourceStatus,
+  formatAclResourceAccessMode,
+  formatAclResourceSyncState,
+  isAclResourceOperational,
+  type AclResourceStatus,
+} from '../../../lib/acl-resource-status'
 import type { EntityConfig } from '../../entities/entity-types'
 import {
   createEntityAdminConfig,
@@ -130,7 +137,7 @@ export function EntityAdminConfigPage() {
   const [pageError, setPageError] = useState<string | null>(null)
   const [editorError, setEditorError] = useState<string | null>(null)
   const [saveInfo, setSaveInfo] = useState<string | null>(null)
-  const [aclResourceConfigured, setAclResourceConfigured] = useState(true)
+  const [aclResourceStatus, setAclResourceStatus] = useState<AclResourceStatus | null>(null)
   const [bootstrapPreview, setBootstrapPreview] =
     useState<EntityAdminBootstrapPreviewResponse | null>(null)
   const [bootstrapPreviewFingerprint, setBootstrapPreviewFingerprint] = useState<string | null>(
@@ -215,7 +222,7 @@ export function EntityAdminConfigPage() {
   const loadSelectedEntityConfig = useCallback(async () => {
     if (isCreateRoute) {
       setSelectedEntityConfig(createEmptyEntityConfig())
-      setAclResourceConfigured(false)
+      setAclResourceStatus(null)
       setLoadingConfig(false)
       setPageError(null)
       return
@@ -223,7 +230,7 @@ export function EntityAdminConfigPage() {
 
     if (!selectedEntityId) {
       setSelectedEntityConfig(null)
-      setAclResourceConfigured(true)
+      setAclResourceStatus(null)
       return
     }
 
@@ -231,7 +238,7 @@ export function EntityAdminConfigPage() {
     try {
       const payload = await fetchEntityAdminConfig(selectedEntityId)
       setSelectedEntityConfig(payload.entity)
-      setAclResourceConfigured(payload.aclResourceConfigured)
+      setAclResourceStatus(payload.aclResourceStatus)
       setPageError(null)
     } catch (error) {
       const message =
@@ -862,7 +869,7 @@ export function EntityAdminConfigPage() {
     try {
       const payload = await updateEntityAdminConfig(selectedEntityConfig.id, nextConfig)
       setSelectedEntityConfig(payload.entity)
-      setAclResourceConfigured(payload.aclResourceConfigured)
+      setAclResourceStatus(payload.aclResourceStatus)
       setSaveInfo('Configurazione salvata')
       navigate(
         buildEntityEditPathForSection(
@@ -905,7 +912,7 @@ export function EntityAdminConfigPage() {
     try {
       const payload = await createEntityAdminConfig(nextConfig)
       setSelectedEntityConfig(payload.entity)
-      setAclResourceConfigured(payload.aclResourceConfigured)
+      setAclResourceStatus(payload.aclResourceStatus)
       await refreshEntityList()
       navigate(buildEntityEditPath(payload.entity.id, 'base'), {
         replace: true,
@@ -944,7 +951,7 @@ export function EntityAdminConfigPage() {
     try {
       const payload = await createEntityAdminConfig(bootstrapPreview.entity)
       setSelectedEntityConfig(payload.entity)
-      setAclResourceConfigured(payload.aclResourceConfigured)
+      setAclResourceStatus(payload.aclResourceStatus)
       await refreshEntityList()
       navigate(buildEntityEditPath(payload.entity.id, 'list'), {
         replace: true,
@@ -1177,11 +1184,11 @@ export function EntityAdminConfigPage() {
 
       {isViewRoute && selectedEntitySummary ? (
         <>
-          <EntitySummaryCard
-            summary={selectedEntitySummary}
-            entity={selectedEntityConfig}
-            aclResourceConfigured={aclResourceConfigured}
-          />
+            <EntitySummaryCard
+              summary={selectedEntitySummary}
+              entity={selectedEntityConfig}
+              aclResourceStatus={aclResourceStatus}
+            />
         </>
       ) : null}
 
@@ -1193,11 +1200,11 @@ export function EntityAdminConfigPage() {
 
       {!loadingConfig && isEditRoute && selectedEntityConfig ? (
         <>
-          {!aclResourceConfigured ? (
+          {aclResourceStatus && !isAclResourceOperational(aclResourceStatus) ? (
             <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
               <p className="text-sm text-amber-800">
-                Risorsa ACL mancante: <code className="font-mono">entity:{selectedEntityConfig.id}</code>.
-                Configurala nel modulo ACL Admin per rendere coerente accesso e navigazione.
+                <code className="font-mono">{aclResourceStatus.id}</code> -{' '}
+                {describeAclResourceStatus(aclResourceStatus)}
               </p>
             </section>
           ) : null}
@@ -1339,7 +1346,7 @@ function EntityAdminCatalog({
                     <td className="px-4 py-3 text-slate-700">{entity.label}</td>
                     <td className="px-4 py-3 text-slate-700">{entity.objectApiName}</td>
                     <td className="px-4 py-3 text-slate-700">
-                      {entity.aclResourceConfigured ? 'Configurata' : 'Missing'}
+                      {formatAclResourceStatusLabel(entity.aclResourceStatus)}
                     </td>
                     <td className="px-4 py-3 text-slate-700">{entity.viewCount}</td>
                     <td className="px-4 py-3 text-slate-700">
@@ -1380,11 +1387,11 @@ function EntityAdminCatalog({
 function EntitySummaryCard({
   summary,
   entity,
-  aclResourceConfigured,
+  aclResourceStatus,
 }: {
   summary: EntityAdminConfigSummary
   entity: EntityConfig | null
-  aclResourceConfigured: boolean
+  aclResourceStatus: AclResourceStatus | null
 }) {
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -1407,10 +1414,10 @@ function EntitySummaryCard({
         <SummaryChip label="Form Sections" value={summary.formSectionCount} />
       </div>
 
-      {!aclResourceConfigured ? (
+      {aclResourceStatus && !isAclResourceOperational(aclResourceStatus) ? (
         <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          Risorsa ACL mancante: <code className="font-mono">entity:{summary.id}</code>.
-          Configurala nel modulo ACL Admin per rendere coerente accesso e navigazione.
+          <code className="font-mono">{aclResourceStatus.id}</code> -{' '}
+          {describeAclResourceStatus(aclResourceStatus)}
         </p>
       ) : null}
 
@@ -1432,6 +1439,10 @@ function EntitySummaryCard({
       </div>
     </section>
   )
+}
+
+function formatAclResourceStatusLabel(status: AclResourceStatus): string {
+  return `${formatAclResourceAccessMode(status.accessMode)} / ${formatAclResourceSyncState(status.syncState)}`
 }
 
 function SummaryChip({ label, value }: SummaryChipProps) {

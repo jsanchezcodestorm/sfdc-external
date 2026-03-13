@@ -13,7 +13,6 @@ export type AppItemDraft = {
   openMode: AppEmbedOpenMode
   iframeTitle: string
   height: string
-  providerLabel: string
 }
 
 export type AppConfigDraft = {
@@ -54,7 +53,6 @@ export function createEmptyAppItemDraft(kind: AppItemKind = 'custom-page'): AppI
     openMode: 'new-tab',
     iframeTitle: '',
     height: '',
-    providerLabel: '',
   }
 }
 
@@ -81,15 +79,10 @@ export function createAppItemDraft(item: AppItemConfig): AppItemDraft {
       item.kind === 'home' || item.kind === 'custom-page'
         ? JSON.stringify(item.page, null, 2)
         : JSON.stringify(createEmptyPageConfig(), null, 2),
-    url: item.kind === 'external-link' || item.kind === 'report' ? item.url : '',
-    openMode: item.kind === 'external-link' || item.kind === 'report' ? item.openMode : 'new-tab',
-    iframeTitle:
-      item.kind === 'external-link' || item.kind === 'report' ? item.iframeTitle ?? '' : '',
-    height:
-      item.kind === 'external-link' || item.kind === 'report'
-        ? String(item.height ?? '')
-        : '',
-    providerLabel: item.kind === 'report' ? item.providerLabel ?? '' : '',
+    url: item.kind === 'external-link' ? item.url : '',
+    openMode: item.kind === 'external-link' ? item.openMode : 'new-tab',
+    iframeTitle: item.kind === 'external-link' ? item.iframeTitle ?? '' : '',
+    height: item.kind === 'external-link' ? String(item.height ?? '') : '',
   }
 }
 
@@ -203,11 +196,14 @@ function parseAppItemDraft(draft: AppItemDraft, index: number): AppItemConfig {
         label,
         description,
         resourceId,
-        url: requireValue(draft.url, `Item ${index + 1}: URL obbligatoria`),
-        openMode: draft.openMode,
-        iframeTitle: draft.iframeTitle.trim() || undefined,
-        height: parseOptionalHeight(draft.height, index),
-        providerLabel: draft.providerLabel.trim() || undefined,
+      }
+    case 'dashboard':
+      return {
+        id,
+        kind: 'dashboard',
+        label,
+        description,
+        resourceId,
       }
   }
 }

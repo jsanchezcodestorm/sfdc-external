@@ -217,15 +217,20 @@ export function AppsAdminDetailPage() {
                     </pre>
                   ) : null}
 
-                  {(item.kind === 'external-link' || item.kind === 'report') ? (
+                  {item.kind === 'external-link' ? (
                     <div className="mt-3 grid gap-2 text-sm text-slate-700">
                       <p>URL: {item.url}</p>
                       <p>Open mode: {item.openMode}</p>
                       {item.iframeTitle ? <p>Iframe title: {item.iframeTitle}</p> : null}
                       {typeof item.height === 'number' ? <p>Height: {item.height}</p> : null}
-                      {item.kind === 'report' && item.providerLabel ? (
-                        <p>Provider: {item.providerLabel}</p>
-                      ) : null}
+                    </div>
+                  ) : null}
+
+                  {(item.kind === 'report' || item.kind === 'dashboard') ? (
+                    <div className="mt-3 grid gap-2 text-sm text-slate-700">
+                      <p>Workspace interno: sì</p>
+                      <p>Routing: /app/{app.id}/items/{item.id}</p>
+                      <p>Modulo: {item.kind === 'report' ? 'Report' : 'Dashboard'}</p>
                     </div>
                   ) : null}
                 </article>

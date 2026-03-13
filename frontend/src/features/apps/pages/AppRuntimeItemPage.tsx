@@ -3,6 +3,8 @@ import { useParams } from 'react-router-dom'
 import { AppPageBlocks } from '../components/AppPageBlocks'
 import { findItemInApp } from '../app-workspace-routing'
 import { useAppWorkspace } from '../useAppWorkspace'
+import { DashboardRuntimeWorkspace } from '../../dashboards/DashboardRuntimeWorkspace'
+import { ReportRuntimeWorkspace } from '../../reports/ReportRuntimeWorkspace'
 
 export function AppRuntimeItemPage() {
   const { appId = '', itemId = '' } = useParams()
@@ -58,6 +60,30 @@ export function AppRuntimeItemPage() {
     )
   }
 
+  if (item.kind === 'report') {
+    return (
+      <ReportRuntimeWorkspace
+        appId={appId}
+        itemId={itemId}
+        appLabel={selectedApp.label}
+        itemLabel={item.label}
+        itemDescription={item.description}
+      />
+    )
+  }
+
+  if (item.kind === 'dashboard') {
+    return (
+      <DashboardRuntimeWorkspace
+        appId={appId}
+        itemId={itemId}
+        appLabel={selectedApp.label}
+        itemLabel={item.label}
+        itemDescription={item.description}
+      />
+    )
+  }
+
   if (item.openMode === 'new-tab') {
     return (
       <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -88,8 +114,7 @@ export function AppRuntimeItemPage() {
           {item.label}
         </h1>
         <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-600">
-          {item.description?.trim() ||
-            (item.kind === 'report' ? 'Report embedded configurato.' : 'Embed esterno configurato.')}
+          {item.description?.trim() || 'Embed esterno configurato.'}
         </p>
       </header>
 

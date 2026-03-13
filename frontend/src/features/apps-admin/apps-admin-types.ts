@@ -37,11 +37,10 @@ export type AppExternalLinkItemConfig = AppItemBaseConfig & {
 
 export type AppReportItemConfig = AppItemBaseConfig & {
   kind: 'report'
-  url: string
-  openMode: AppEmbedOpenMode
-  iframeTitle?: string
-  height?: number
-  providerLabel?: string
+}
+
+export type AppDashboardItemConfig = AppItemBaseConfig & {
+  kind: 'dashboard'
 }
 
 export type AppItemConfig =
@@ -50,6 +49,7 @@ export type AppItemConfig =
   | AppCustomPageItemConfig
   | AppExternalLinkItemConfig
   | AppReportItemConfig
+  | AppDashboardItemConfig
 
 export type AppConfig = {
   id: string

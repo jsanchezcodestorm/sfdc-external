@@ -1,5 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 
+import type { AclDerivedResourceStatus } from '../../acl/acl-admin.types';
+import { AclResourceSyncService } from '../../acl/acl-resource-sync.service';
 import { AclService } from '../../acl/acl.service';
 import { AuditWriteService } from '../../audit/audit-write.service';
 import { ResourceAccessService } from '../../common/services/resource-access.service';
@@ -13,7 +15,7 @@ import { QueryTemplateCompiler } from './query-template.compiler';
 import { QueryTemplateRepository } from './query-template.repository';
 
 export interface QueryTemplateAdminSummaryResponse extends QueryTemplateAdminSummary {
-  aclResourceConfigured: boolean;
+  aclResourceStatus: AclDerivedResourceStatus;
 }
 
 export interface QueryTemplateAdminListResponse {
@@ -22,7 +24,7 @@ export interface QueryTemplateAdminListResponse {
 
 export interface QueryTemplateAdminResponse {
   template: QueryTemplate;
-  aclResourceConfigured: boolean;
+  aclResourceStatus: AclDerivedResourceStatus;
 }
 
 @Injectable()
@@ -32,6 +34,7 @@ export class QueryAdminTemplateService {
     private readonly queryAdminTemplateRepository: QueryAdminTemplateRepository,
     private readonly queryTemplateRepository: QueryTemplateRepository,
     private readonly aclService: AclService,
+    private readonly aclResourceSyncService: AclResourceSyncService,
     private readonly queryTemplateCompiler: QueryTemplateCompiler,
     private readonly auditWriteService: AuditWriteService
   ) {}
@@ -42,7 +45,7 @@ export class QueryAdminTemplateService {
     return {
       items: items.map((item) => ({
         ...item,
-        aclResourceConfigured: this.aclService.hasResource(`query:${item.id}`)
+        aclResourceStatus: this.getQueryAclResourceStatus(item.id)
       }))
     };
   }
@@ -53,7 +56,7 @@ export class QueryAdminTemplateService {
 
     return {
       template,
-      aclResourceConfigured: this.aclService.hasResource(`query:${templateId}`)
+      aclResourceStatus: this.getQueryAclResourceStatus(templateId)
     };
   }
 
@@ -68,6 +71,7 @@ export class QueryAdminTemplateService {
 
     await this.queryAdminTemplateRepository.upsertTemplate(template);
     this.queryTemplateRepository.evictTemplate(templateId);
+    await this.aclResourceSyncService.syncSystemResources();
     await this.auditWriteService.recordApplicationSuccessOrThrow({
       action: existedBefore ? 'QUERY_TEMPLATE_UPDATE' : 'QUERY_TEMPLATE_CREATE',
       targetType: 'query-template',
@@ -87,6 +91,7 @@ export class QueryAdminTemplateService {
     this.resourceAccessService.assertKebabCaseId(templateId, 'templateId');
     await this.queryAdminTemplateRepository.deleteTemplate(templateId);
     this.queryTemplateRepository.evictTemplate(templateId);
+    await this.aclResourceSyncService.syncSystemResources();
     await this.auditWriteService.recordApplicationSuccessOrThrow({
       action: 'QUERY_TEMPLATE_DELETE',
       targetType: 'query-template',
@@ -211,5 +216,16 @@ export class QueryAdminTemplateService {
     }
 
     return value;
+  }
+
+  private getQueryAclResourceStatus(templateId: string): AclDerivedResourceStatus {
+    return (
+      this.aclService.getResourceStatus(`query:${templateId}`) ?? {
+        id: `query:${templateId}`,
+        accessMode: 'disabled',
+        managedBy: 'system',
+        syncState: 'stale'
+      }
+    );
   }
 }

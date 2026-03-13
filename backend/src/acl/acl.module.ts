@@ -9,6 +9,7 @@ import { AclAdminConfigService } from './acl-admin-config.service';
 import { AclConfigRepository } from './acl-config.repository';
 import { AclContactPermissionsAdminService } from './acl-contact-permissions-admin.service';
 import { AclContactPermissionsRepository } from './acl-contact-permissions.repository';
+import { AclResourceSyncService } from './acl-resource-sync.service';
 import { AclController } from './acl.controller';
 import { AclService } from './acl.service';
 
@@ -22,7 +23,8 @@ import { AclService } from './acl.service';
     AclAdminConfigRepository,
     AclAdminConfigService,
     AclContactPermissionsRepository,
-    AclContactPermissionsAdminService
+    AclContactPermissionsAdminService,
+    AclResourceSyncService
   ],
   exports: [
     AclService,
@@ -31,7 +33,8 @@ import { AclService } from './acl.service';
     AclAdminConfigRepository,
     AclAdminConfigService,
     AclContactPermissionsRepository,
-    AclContactPermissionsAdminService
+    AclContactPermissionsAdminService,
+    AclResourceSyncService
   ]
 })
 export class AclModule {}

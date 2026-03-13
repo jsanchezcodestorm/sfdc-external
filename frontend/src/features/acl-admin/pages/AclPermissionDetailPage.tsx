@@ -2,6 +2,11 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
 import { useAppDialog } from '../../../components/app-dialog'
+import {
+  formatAclResourceAccessMode,
+  formatAclResourceManagedBy,
+  formatAclResourceSyncState,
+} from '../../../lib/acl-resource-status'
 import { deleteAclPermission, fetchAclPermission } from '../acl-admin-api'
 import type { AclAdminPermissionResponse, AclAdminResourceSummary } from '../acl-admin-types'
 
@@ -238,6 +243,11 @@ function AssociatedResourceCard({
       </div>
 
       <div className="mt-4 space-y-2 text-sm text-slate-700">
+        <p>
+          {formatAclResourceAccessMode(resource.accessMode)} /{' '}
+          {formatAclResourceSyncState(resource.syncState)} /{' '}
+          {formatAclResourceManagedBy(resource.managedBy)}
+        </p>
         <p>{resource.target ? `Target: ${resource.target}` : 'Target non configurato'}</p>
         {resource.description ? <p>{resource.description}</p> : null}
       </div>
