@@ -45,6 +45,8 @@ function renderAdminShell(
               <Route path="auth/providers/:providerId/edit" element={<div>Auth provider edit</div>} />
               <Route path="entity-config/:entityId/edit/detail/:detailArea" element={<div>Detail page</div>} />
               <Route path="entity-config/:entityId/edit/form/:formArea" element={<div>Form page</div>} />
+              <Route path="entity-config/:entityId/edit/layouts/:layoutId/detail/:detailArea" element={<div>Detail page</div>} />
+              <Route path="entity-config/:entityId/edit/layouts/:layoutId/form/:formArea" element={<div>Form page</div>} />
               <Route path="query-templates" element={<div>Query templates page</div>} />
             </Route>
           </Routes>
@@ -79,7 +81,7 @@ describe('AdminShell', () => {
 
   it('keeps detail section active on nested detail editor routes', () => {
     const { container } = renderAdminShell(
-      '/admin/entity-config/account/edit/detail/sections',
+      '/admin/entity-config/account/edit/layouts/sales/detail/sections',
       createRouteAccessValue({
         allowedRouteIds: [ADMIN_ENTITY_CONFIG_ROUTE_ID],
         allowedAdminRouteIds: [ADMIN_ENTITY_CONFIG_ROUTE_ID],
@@ -90,7 +92,7 @@ describe('AdminShell', () => {
     )
 
     const detailLink = container.querySelector(
-      'a[href="/admin/entity-config/account/edit/detail/header-query"]',
+      'a[href="/admin/entity-config/account/edit/layouts/sales/detail/header-query"]',
     )
 
     expect(detailLink).not.toBeNull()
@@ -99,7 +101,7 @@ describe('AdminShell', () => {
 
   it('keeps form section active on nested form editor routes', () => {
     const { container } = renderAdminShell(
-      '/admin/entity-config/account/edit/form/sections',
+      '/admin/entity-config/account/edit/layouts/sales/form/sections',
       createRouteAccessValue({
         allowedRouteIds: [ADMIN_ENTITY_CONFIG_ROUTE_ID],
         allowedAdminRouteIds: [ADMIN_ENTITY_CONFIG_ROUTE_ID],
@@ -110,7 +112,7 @@ describe('AdminShell', () => {
     )
 
     const formLink = container.querySelector(
-      'a[href="/admin/entity-config/account/edit/form/header-query"]',
+      'a[href="/admin/entity-config/account/edit/layouts/sales/form/header-query"]',
     )
 
     expect(formLink).not.toBeNull()

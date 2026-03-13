@@ -80,37 +80,25 @@ export function EntityDetailPage() {
   const baseEntityPath = appId ? buildAppEntityBasePath(appId, entityId) : ''
   const headerTitle =
     detailResponse?.title ?? String(record.Name ?? record.name ?? `${entityLabel} Detail`)
-  const detailSections = useMemo<DetailSectionConfig[]>(() => {
-    if (detailResponse?.sections && detailResponse.sections.length > 0) {
-      return detailResponse.sections
-    }
+  const detailSections = useMemo<DetailSectionConfig[]>(
+    () => detailResponse?.sections ?? [],
+    [detailResponse?.sections],
+  )
 
-    if (config?.entity.detail?.sections && config.entity.detail.sections.length > 0) {
-      return config.entity.detail.sections
-    }
+  const relatedLists = useMemo<RelatedListConfig[]>(
+    () => detailResponse?.relatedLists ?? [],
+    [detailResponse?.relatedLists],
+  )
 
-    return []
-  }, [config?.entity.detail?.sections, detailResponse?.sections])
+  const detailActions = useMemo<EntityAction[]>(
+    () => detailResponse?.actions ?? [],
+    [detailResponse?.actions],
+  )
 
-  const relatedLists = useMemo<RelatedListConfig[]>(() => {
-    if (detailResponse?.relatedLists && detailResponse.relatedLists.length > 0) {
-      return detailResponse.relatedLists
-    }
-
-    return config?.entity.detail?.relatedLists ?? []
-  }, [config?.entity.detail?.relatedLists, detailResponse?.relatedLists])
-
-  const detailActions = useMemo<EntityAction[]>(() => {
-    if (detailResponse?.actions && detailResponse.actions.length > 0) {
-      return detailResponse.actions
-    }
-
-    return config?.entity.detail?.actions ?? []
-  }, [config?.entity.detail?.actions, detailResponse?.actions])
-
-  const pathStatus = useMemo<PathStatusConfig | undefined>(() => {
-    return detailResponse?.pathStatus ?? config?.entity.detail?.pathStatus
-  }, [config?.entity.detail?.pathStatus, detailResponse?.pathStatus])
+  const pathStatus = useMemo<PathStatusConfig | undefined>(
+    () => detailResponse?.pathStatus,
+    [detailResponse?.pathStatus],
+  )
 
   if (!entityId || !recordId) {
     return (

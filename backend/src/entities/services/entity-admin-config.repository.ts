@@ -27,6 +27,10 @@ export interface EntityAdminConfigSummary {
   hasList: boolean;
   hasDetail: boolean;
   hasForm: boolean;
+  layoutCount: number;
+  detailLayoutCount: number;
+  formLayoutCount: number;
+  assignmentCount: number;
   viewCount: number;
   detailSectionCount: number;
   relatedListCount: number;
@@ -53,22 +57,30 @@ export class EntityAdminConfigRepository {
             }
           }
         },
-        detailConfig: {
+        layouts: {
           select: {
             updatedAt: true,
-            sections: {
+            assignments: {
               select: { id: true }
             },
-            relatedLists: {
-              select: { id: true }
-            }
-          }
-        },
-        formConfig: {
-          select: {
-            updatedAt: true,
-            sections: {
-              select: { id: true }
+            detailConfig: {
+              select: {
+                updatedAt: true,
+                sections: {
+                  select: { id: true }
+                },
+                relatedLists: {
+                  select: { id: true }
+                }
+              }
+            },
+            formConfig: {
+              select: {
+                updatedAt: true,
+                sections: {
+                  select: { id: true }
+                }
+              }
             }
           }
         }
@@ -76,7 +88,28 @@ export class EntityAdminConfigRepository {
     });
 
     return rows.map((row) => {
-      const latestUpdatedAt = [row.updatedAt, row.listConfig?.updatedAt, row.detailConfig?.updatedAt, row.formConfig?.updatedAt]
+      const timestamps = [row.updatedAt, row.listConfig?.updatedAt];
+      const detailLayoutCount = row.layouts.filter((layout) => Boolean(layout.detailConfig)).length;
+      const formLayoutCount = row.layouts.filter((layout) => Boolean(layout.formConfig)).length;
+      const assignmentCount = row.layouts.reduce((total, layout) => total + layout.assignments.length, 0);
+      const detailSectionCount = row.layouts.reduce(
+        (total, layout) => total + (layout.detailConfig?.sections.length ?? 0),
+        0
+      );
+      const relatedListCount = row.layouts.reduce(
+        (total, layout) => total + (layout.detailConfig?.relatedLists.length ?? 0),
+        0
+      );
+      const formSectionCount = row.layouts.reduce(
+        (total, layout) => total + (layout.formConfig?.sections.length ?? 0),
+        0
+      );
+
+      for (const layout of row.layouts) {
+        timestamps.push(layout.updatedAt, layout.detailConfig?.updatedAt, layout.formConfig?.updatedAt);
+      }
+
+      const latestUpdatedAt = timestamps
         .filter((value): value is Date => value instanceof Date)
         .sort((a, b) => b.getTime() - a.getTime())[0];
 
@@ -85,12 +118,16 @@ export class EntityAdminConfigRepository {
         label: row.label,
         objectApiName: row.objectApiName,
         hasList: Boolean(row.listConfig),
-        hasDetail: Boolean(row.detailConfig),
-        hasForm: Boolean(row.formConfig),
+        hasDetail: detailLayoutCount > 0,
+        hasForm: formLayoutCount > 0,
+        layoutCount: row.layouts.length,
+        detailLayoutCount,
+        formLayoutCount,
+        assignmentCount,
         viewCount: row.listConfig?.views.length ?? 0,
-        detailSectionCount: row.detailConfig?.sections.length ?? 0,
-        relatedListCount: row.detailConfig?.relatedLists.length ?? 0,
-        formSectionCount: row.formConfig?.sections.length ?? 0,
+        detailSectionCount,
+        relatedListCount,
+        formSectionCount,
         updatedAt: (latestUpdatedAt ?? row.updatedAt).toISOString()
       };
     });
@@ -173,109 +210,107 @@ export class EntityAdminConfigRepository {
         });
       }
 
-      if (entityConfig.detail) {
-        await tx.entityDetailConfigRecord.upsert({
-          where: { entityId: entityConfig.id },
-          create: {
+      await tx.entityLayoutConfigRecord.deleteMany({
+        where: { entityId: entityConfig.id }
+      });
+
+      for (const [layoutIndex, layout] of entityConfig.layouts.entries()) {
+        const layoutRow = await tx.entityLayoutConfigRecord.create({
+          data: {
+            id: randomUUID(),
             entityId: entityConfig.id,
-            queryJson: toJson(entityConfig.detail.query),
-            titleTemplate: entityConfig.detail.titleTemplate ?? null,
-            fallbackTitle: entityConfig.detail.fallbackTitle ?? null,
-            subtitle: entityConfig.detail.subtitle ?? null,
-            actionsJson: toNullableJson(entityConfig.detail.actions),
-            pathStatusJson: toNullableJson(entityConfig.detail.pathStatus)
-          },
-          update: {
-            queryJson: toJson(entityConfig.detail.query),
-            titleTemplate: entityConfig.detail.titleTemplate ?? null,
-            fallbackTitle: entityConfig.detail.fallbackTitle ?? null,
-            subtitle: entityConfig.detail.subtitle ?? null,
-            actionsJson: toNullableJson(entityConfig.detail.actions),
-            pathStatusJson: toNullableJson(entityConfig.detail.pathStatus)
+            sortOrder: layoutIndex,
+            layoutId: layout.id,
+            label: layout.label,
+            description: layout.description ?? null,
+            isDefault: layout.isDefault ?? false
           }
         });
 
-        await tx.entityDetailSectionConfigRecord.deleteMany({
-          where: { entityId: entityConfig.id }
-        });
-        await tx.entityRelatedListConfigRecord.deleteMany({
-          where: { entityId: entityConfig.id }
-        });
-
-        for (const [index, section] of entityConfig.detail.sections.entries()) {
-          await tx.entityDetailSectionConfigRecord.create({
+        for (const [assignmentIndex, assignment] of layout.assignments.entries()) {
+          await tx.entityLayoutAssignmentRecord.create({
             data: {
               id: randomUUID(),
-              entityId: entityConfig.id,
-              sortOrder: index,
-              title: section.title,
-              fieldsJson: toJson(section.fields)
+              layoutConfigId: layoutRow.id,
+              sortOrder: assignmentIndex,
+              recordTypeDeveloperName: assignment.recordTypeDeveloperName ?? null,
+              permissionCode: assignment.permissionCode ?? null,
+              priority: assignment.priority ?? 0
             }
           });
         }
 
-        for (const [index, relatedList] of (entityConfig.detail.relatedLists ?? []).entries()) {
-          await tx.entityRelatedListConfigRecord.create({
+        if (layout.detail) {
+          const detailRow = await tx.entityDetailConfigRecord.create({
             data: {
               id: randomUUID(),
-              entityId: entityConfig.id,
-              sortOrder: index,
-              relatedListId: relatedList.id,
-              label: relatedList.label,
-              description: relatedList.description ?? null,
-              queryJson: toJson(relatedList.query),
-              columnsJson: toJson(relatedList.columns),
-              actionsJson: toNullableJson(relatedList.actions),
-              rowActionsJson: toNullableJson(relatedList.rowActions),
-              emptyState: relatedList.emptyState ?? null,
-              pageSize: typeof relatedList.pageSize === 'number' ? relatedList.pageSize : null,
-              linkedEntityId: relatedList.entityId ?? null
+              layoutConfigId: layoutRow.id,
+              queryJson: toJson(layout.detail.query),
+              titleTemplate: layout.detail.titleTemplate ?? null,
+              fallbackTitle: layout.detail.fallbackTitle ?? null,
+              subtitle: layout.detail.subtitle ?? null,
+              actionsJson: toNullableJson(layout.detail.actions),
+              pathStatusJson: toNullableJson(layout.detail.pathStatus)
             }
           });
-        }
-      } else {
-        await tx.entityDetailConfigRecord.deleteMany({
-          where: { entityId: entityConfig.id }
-        });
-      }
 
-      if (entityConfig.form) {
-        await tx.entityFormConfigRecord.upsert({
-          where: { entityId: entityConfig.id },
-          create: {
-            entityId: entityConfig.id,
-            createTitle: entityConfig.form.title.create,
-            editTitle: entityConfig.form.title.edit,
-            queryJson: toJson(entityConfig.form.query),
-            subtitle: entityConfig.form.subtitle ?? null
-          },
-          update: {
-            createTitle: entityConfig.form.title.create,
-            editTitle: entityConfig.form.title.edit,
-            queryJson: toJson(entityConfig.form.query),
-            subtitle: entityConfig.form.subtitle ?? null
+          for (const [index, section] of layout.detail.sections.entries()) {
+            await tx.entityDetailSectionConfigRecord.create({
+              data: {
+                id: randomUUID(),
+                detailConfigId: detailRow.id,
+                sortOrder: index,
+                title: section.title,
+                fieldsJson: toJson(section.fields)
+              }
+            });
           }
-        });
 
-        await tx.entityFormSectionConfigRecord.deleteMany({
-          where: { entityId: entityConfig.id }
-        });
+          for (const [index, relatedList] of (layout.detail.relatedLists ?? []).entries()) {
+            await tx.entityRelatedListConfigRecord.create({
+              data: {
+                id: randomUUID(),
+                detailConfigId: detailRow.id,
+                sortOrder: index,
+                relatedListId: relatedList.id,
+                label: relatedList.label,
+                description: relatedList.description ?? null,
+                queryJson: toJson(relatedList.query),
+                columnsJson: toJson(relatedList.columns),
+                actionsJson: toNullableJson(relatedList.actions),
+                rowActionsJson: toNullableJson(relatedList.rowActions),
+                emptyState: relatedList.emptyState ?? null,
+                pageSize: typeof relatedList.pageSize === 'number' ? relatedList.pageSize : null,
+                linkedEntityId: relatedList.entityId ?? null
+              }
+            });
+          }
+        }
 
-        for (const [index, section] of entityConfig.form.sections.entries()) {
-          await tx.entityFormSectionConfigRecord.create({
+        if (layout.form) {
+          const formRow = await tx.entityFormConfigRecord.create({
             data: {
               id: randomUUID(),
-              entityId: entityConfig.id,
-              sortOrder: index,
-              title: section.title ?? null,
-              fieldsJson: toJson(section.fields ?? [])
+              layoutConfigId: layoutRow.id,
+              createTitle: layout.form.title.create,
+              editTitle: layout.form.title.edit,
+              queryJson: toJson(layout.form.query),
+              subtitle: layout.form.subtitle ?? null
             }
           });
+
+          for (const [index, section] of layout.form.sections.entries()) {
+            await tx.entityFormSectionConfigRecord.create({
+              data: {
+                id: randomUUID(),
+                formConfigId: formRow.id,
+                sortOrder: index,
+                title: section.title ?? null,
+                fieldsJson: toJson(section.fields ?? [])
+              }
+            });
+          }
         }
-      } else {
-        await tx.entityFormConfigRecord.deleteMany({
-          where: { entityId: entityConfig.id }
-        });
       }
     });
 

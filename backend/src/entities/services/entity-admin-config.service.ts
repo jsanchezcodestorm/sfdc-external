@@ -15,6 +15,8 @@ import {
   EntityDetailSectionConfig,
   EntityFormConfig,
   EntityFormSectionConfig,
+  EntityLayoutAssignmentConfig,
+  EntityLayoutConfig,
   EntityListConfig,
   EntityListViewConfig,
   EntityRelatedListConfig
@@ -58,6 +60,15 @@ interface SalesforceFieldSuggestion {
   label: string;
   type: string;
   filterable: boolean;
+}
+
+interface SalesforceRecordTypeSuggestion {
+  developerName: string;
+  label: string;
+  active: boolean;
+  available: boolean;
+  defaultRecordTypeMapping: boolean;
+  master: boolean;
 }
 
 interface SalesforceFieldDescribe {
@@ -287,6 +298,45 @@ export class EntityAdminConfigService {
     };
   }
 
+  async searchSalesforceRecordTypes(
+    objectApiName: string,
+    query: string | undefined,
+    limit: number | undefined
+  ): Promise<{ items: SalesforceRecordTypeSuggestion[] }> {
+    const normalizedObjectApiName = this.asOptionalString(objectApiName);
+    if (!normalizedObjectApiName) {
+      throw new BadRequestException('objectApiName is required');
+    }
+
+    const normalizedQuery = this.asOptionalString(query)?.toLowerCase() ?? '';
+    const normalizedLimit = this.normalizeSuggestionLimit(limit);
+    const recordTypes = await this.salesforceService.describeRecordTypes(normalizedObjectApiName);
+    const items = recordTypes
+      .filter((recordType) => recordType.active)
+      .map((recordType) => ({
+        developerName: recordType.developerName,
+        label: recordType.label || recordType.developerName,
+        active: recordType.active,
+        available: recordType.available,
+        defaultRecordTypeMapping: recordType.defaultRecordTypeMapping,
+        master: recordType.master
+      }));
+
+    const filtered =
+      normalizedQuery.length === 0
+        ? items
+        : items.filter((item) => {
+            const haystack = `${item.developerName} ${item.label}`.toLowerCase();
+            return haystack.includes(normalizedQuery);
+          });
+
+    return {
+      items: filtered
+        .sort((left, right) => left.developerName.localeCompare(right.developerName, 'en', { sensitivity: 'base' }))
+        .slice(0, normalizedLimit)
+    };
+  }
+
   normalizeEntityConfigForPersistence(
     entityId: string | undefined,
     value: unknown
@@ -312,8 +362,7 @@ export class EntityAdminConfigService {
       description: this.asOptionalString(entity.description),
       navigation: this.normalizeNavigation(entity.navigation),
       list: this.normalizeListConfig(entity.list),
-      detail: this.normalizeDetailConfig(entity.detail),
-      form: this.normalizeFormConfig(entity.form)
+      layouts: this.normalizeLayoutsConfig(entity.layouts, entity)
     };
   }
 
@@ -361,21 +410,33 @@ export class EntityAdminConfigService {
   }
 
   private buildEntityAuditMetadata(entity: EntityConfig): Record<string, unknown> {
+    const detailLayoutCount = entity.layouts.filter((layout) => layout.detail).length;
+    const formLayoutCount = entity.layouts.filter((layout) => layout.form).length;
+
     return {
       objectApiName: entity.objectApiName,
       hasList: Boolean(entity.list),
-      hasDetail: Boolean(entity.detail),
-      hasForm: Boolean(entity.form),
+      hasDetail: detailLayoutCount > 0,
+      hasForm: formLayoutCount > 0,
+      layoutCount: entity.layouts.length,
+      detailLayoutCount,
+      formLayoutCount,
+      assignmentCount: entity.layouts.reduce((total, layout) => total + layout.assignments.length, 0),
       listViews: entity.list?.views.length ?? 0,
-      detailSections: entity.detail?.sections.length ?? 0,
-      relatedLists: entity.detail?.relatedLists?.length ?? 0,
-      formSections: entity.form?.sections.length ?? 0
+      detailSections: entity.layouts.reduce((total, layout) => total + (layout.detail?.sections.length ?? 0), 0),
+      relatedLists: entity.layouts.reduce((total, layout) => total + (layout.detail?.relatedLists?.length ?? 0), 0),
+      formSections: entity.layouts.reduce((total, layout) => total + (layout.form?.sections.length ?? 0), 0)
     };
   }
 
   private normalizeBootstrapEntityBase(value: unknown): EntityConfig {
     const entity = this.requireObject(value, 'entity payload must be an object');
-    if (entity.list !== undefined || entity.detail !== undefined || entity.form !== undefined) {
+    if (
+      entity.list !== undefined ||
+      entity.layouts !== undefined ||
+      entity.detail !== undefined ||
+      entity.form !== undefined
+    ) {
       throw new BadRequestException('bootstrap preview accepts base entity fields only');
     }
 
@@ -384,7 +445,8 @@ export class EntityAdminConfigService {
       label: this.requireString(entity.label, 'entity.label is required'),
       objectApiName: this.requireString(entity.objectApiName, 'entity.objectApiName is required'),
       description: this.asOptionalString(entity.description),
-      navigation: this.normalizeNavigation(entity.navigation)
+      navigation: this.normalizeNavigation(entity.navigation),
+      layouts: []
     };
   }
 
@@ -409,8 +471,17 @@ export class EntityAdminConfigService {
       entity: {
         ...entity,
         list: listPreset.config,
-        detail: detailPreset,
-        form: formPreset
+        layouts: [
+          {
+            id: 'default',
+            label: 'Default',
+            description: 'Bootstrap default layout',
+            isDefault: true,
+            detail: detailPreset,
+            form: formPreset,
+            assignments: []
+          }
+        ]
       },
       warnings
     };
@@ -935,44 +1006,156 @@ export class EntityAdminConfigService {
     };
   }
 
-  private normalizeDetailConfig(value: unknown): EntityDetailConfig | undefined {
+  private normalizeDetailConfig(value: unknown, path = 'entity.detail'): EntityDetailConfig | undefined {
     if (value === undefined || value === null) {
       return undefined;
     }
 
-    const detail = this.requireObject(value, 'entity.detail must be an object');
-    const sections = this.requireArray(detail.sections, 'entity.detail.sections must be an array')
-      .map((entry, index) => this.normalizeDetailSection(entry, index));
+    const detail = this.requireObject(value, `${path} must be an object`);
+    const sections = this.requireArray(detail.sections, `${path}.sections must be an array`)
+      .map((entry, index) => this.normalizeDetailSection(entry, `${path}.sections[${index}]`));
 
     if (sections.length === 0) {
-      throw new BadRequestException('entity.detail.sections must contain at least one item');
+      throw new BadRequestException(`${path}.sections must contain at least one item`);
     }
 
     return {
-      query: normalizeEntityQueryConfig(detail.query, 'entity.detail.query'),
+      query: normalizeEntityQueryConfig(detail.query, `${path}.query`),
       sections,
-      relatedLists: this.normalizeRelatedListsArray(detail.relatedLists),
+      relatedLists: this.normalizeRelatedListsArray(detail.relatedLists, `${path}.relatedLists`),
       titleTemplate: this.asOptionalString(detail.titleTemplate),
       fallbackTitle: this.asOptionalString(detail.fallbackTitle),
       subtitle: this.asOptionalString(detail.subtitle),
-      actions: this.normalizeActionsArray(detail.actions, 'entity.detail.actions'),
-      pathStatus: this.normalizeObjectOrUndefined(detail.pathStatus, 'entity.detail.pathStatus') as EntityDetailConfig['pathStatus']
+      actions: this.normalizeActionsArray(detail.actions, `${path}.actions`),
+      pathStatus: this.normalizeObjectOrUndefined(detail.pathStatus, `${path}.pathStatus`) as EntityDetailConfig['pathStatus']
     };
   }
 
-  private normalizeDetailSection(value: unknown, index: number): EntityDetailSectionConfig {
-    const section = this.requireObject(value, `entity.detail.sections[${index}] must be an object`);
-    const title = this.requireString(section.title, `entity.detail.sections[${index}].title is required`);
-    const fields = this.requireArray(section.fields, `entity.detail.sections[${index}].fields must be an array`)
+  private normalizeLayoutsConfig(
+    value: unknown,
+    entity: Record<string, unknown>
+  ): EntityLayoutConfig[] {
+    if (entity.detail !== undefined || entity.form !== undefined) {
+      throw new BadRequestException('entity.detail and entity.form are no longer supported; use entity.layouts');
+    }
+
+    if (value === undefined || value === null) {
+      return [];
+    }
+
+    const layouts = this.requireArray(value, 'entity.layouts must be an array').map((entry, index) =>
+      this.normalizeLayoutConfig(entry, index)
+    );
+    const seenLayoutIds = new Set<string>();
+    let defaultLayoutCount = 0;
+    const assignmentIndex = new Map<string, { layoutId: string; priority: number }>();
+
+    for (const layout of layouts) {
+      if (seenLayoutIds.has(layout.id)) {
+        throw new BadRequestException(`entity.layouts contains a duplicate layout id: ${layout.id}`);
+      }
+
+      seenLayoutIds.add(layout.id);
+      if (layout.isDefault) {
+        defaultLayoutCount += 1;
+      }
+
+      for (const assignment of layout.assignments) {
+        const recordTypeKey = assignment.recordTypeDeveloperName ?? '*';
+        const permissionKey = assignment.permissionCode ?? '*';
+        const priority = assignment.priority ?? 0;
+        const signature = `${recordTypeKey}::${permissionKey}::${priority}`;
+        const existing = assignmentIndex.get(signature);
+
+        if (existing) {
+          throw new BadRequestException(
+            `entity.layouts assignments are ambiguous for recordType=${recordTypeKey}, permission=${permissionKey}, priority=${priority} between layouts ${existing.layoutId} and ${layout.id}`
+          );
+        }
+
+        assignmentIndex.set(signature, {
+          layoutId: layout.id,
+          priority
+        });
+      }
+    }
+
+    if (defaultLayoutCount > 1) {
+      throw new BadRequestException('entity.layouts cannot contain more than one default layout');
+    }
+
+    return layouts;
+  }
+
+  private normalizeLayoutConfig(value: unknown, index: number): EntityLayoutConfig {
+    const layout = this.requireObject(value, `entity.layouts[${index}] must be an object`);
+    const id = this.requireString(layout.id, `entity.layouts[${index}].id is required`);
+    const label = this.requireString(layout.label, `entity.layouts[${index}].label is required`);
+    const detail = this.normalizeDetailConfig(layout.detail, `entity.layouts[${index}].detail`);
+    const form = this.normalizeFormConfig(layout.form, `entity.layouts[${index}].form`);
+
+    if (!detail && !form) {
+      throw new BadRequestException(
+        `entity.layouts[${index}] must include at least one of detail or form`
+      );
+    }
+
+    return {
+      id,
+      label,
+      description: this.asOptionalString(layout.description),
+      isDefault: this.asOptionalBoolean(layout.isDefault),
+      detail,
+      form,
+      assignments: this.normalizeLayoutAssignments(layout.assignments, index)
+    };
+  }
+
+  private normalizeLayoutAssignments(value: unknown, layoutIndex: number): EntityLayoutAssignmentConfig[] {
+    if (value === undefined || value === null) {
+      return [];
+    }
+
+    return this.requireArray(value, `entity.layouts[${layoutIndex}].assignments must be an array`).map(
+      (entry, index) => this.normalizeLayoutAssignment(entry, layoutIndex, index)
+    );
+  }
+
+  private normalizeLayoutAssignment(
+    value: unknown,
+    layoutIndex: number,
+    index: number
+  ): EntityLayoutAssignmentConfig {
+    const assignment = this.requireObject(
+      value,
+      `entity.layouts[${layoutIndex}].assignments[${index}] must be an object`
+    );
+    const recordTypeDeveloperName = this.asOptionalString(assignment.recordTypeDeveloperName);
+    const permissionCode = this.asOptionalString(assignment.permissionCode);
+
+    if (!recordTypeDeveloperName && !permissionCode) {
+      throw new BadRequestException(
+        `entity.layouts[${layoutIndex}].assignments[${index}] must define recordTypeDeveloperName or permissionCode`
+      );
+    }
+
+    return {
+      recordTypeDeveloperName,
+      permissionCode,
+      priority: this.asOptionalNumber(assignment.priority) ?? 0
+    };
+  }
+
+  private normalizeDetailSection(value: unknown, path: string): EntityDetailSectionConfig {
+    const section = this.requireObject(value, `${path} must be an object`);
+    const title = this.requireString(section.title, `${path}.title is required`);
+    const fields = this.requireArray(section.fields, `${path}.fields must be an array`)
       .map((entry, fieldIndex) =>
-        this.requireObject(
-          entry,
-          `entity.detail.sections[${index}].fields[${fieldIndex}] must be an object`
-        )
+        this.requireObject(entry, `${path}.fields[${fieldIndex}] must be an object`)
       );
 
     if (fields.length === 0) {
-      throw new BadRequestException(`entity.detail.sections[${index}].fields must contain at least one item`);
+      throw new BadRequestException(`${path}.fields must contain at least one item`);
     }
 
     return {
@@ -981,54 +1164,51 @@ export class EntityAdminConfigService {
     };
   }
 
-  private normalizeRelatedListsArray(value: unknown): EntityRelatedListConfig[] | undefined {
+  private normalizeRelatedListsArray(value: unknown, path: string): EntityRelatedListConfig[] | undefined {
     if (value === undefined || value === null) {
       return undefined;
     }
 
-    const rows = this.requireArray(value, 'entity.detail.relatedLists must be an array')
-      .map((entry, index) => this.normalizeRelatedList(entry, index));
+    const rows = this.requireArray(value, `${path} must be an array`)
+      .map((entry, index) => this.normalizeRelatedList(entry, `${path}[${index}]`));
 
     return rows.length > 0 ? rows : undefined;
   }
 
-  private normalizeRelatedList(value: unknown, index: number): EntityRelatedListConfig {
-    const relatedList = this.requireObject(value, `entity.detail.relatedLists[${index}] must be an object`);
-    const id = this.requireString(relatedList.id, `entity.detail.relatedLists[${index}].id is required`);
-    const label = this.requireString(relatedList.label, `entity.detail.relatedLists[${index}].label is required`);
-    const columns = this.normalizeColumns(relatedList.columns, `entity.detail.relatedLists[${index}].columns`);
+  private normalizeRelatedList(value: unknown, path: string): EntityRelatedListConfig {
+    const relatedList = this.requireObject(value, `${path} must be an object`);
+    const id = this.requireString(relatedList.id, `${path}.id is required`);
+    const label = this.requireString(relatedList.label, `${path}.label is required`);
+    const columns = this.normalizeColumns(relatedList.columns, `${path}.columns`);
 
     return {
       id,
       label,
-      query: normalizeEntityQueryConfig(
-        relatedList.query,
-        `entity.detail.relatedLists[${index}].query`
-      ),
+      query: normalizeEntityQueryConfig(relatedList.query, `${path}.query`),
       columns,
       description: this.asOptionalString(relatedList.description),
-      actions: this.normalizeActionsArray(relatedList.actions, `entity.detail.relatedLists[${index}].actions`),
-      rowActions: this.normalizeActionsArray(relatedList.rowActions, `entity.detail.relatedLists[${index}].rowActions`),
+      actions: this.normalizeActionsArray(relatedList.actions, `${path}.actions`),
+      rowActions: this.normalizeActionsArray(relatedList.rowActions, `${path}.rowActions`),
       emptyState: this.asOptionalString(relatedList.emptyState),
       pageSize: this.asOptionalNumber(relatedList.pageSize),
       entityId: this.asOptionalString(relatedList.entityId)
     };
   }
 
-  private normalizeFormConfig(value: unknown): EntityFormConfig | undefined {
+  private normalizeFormConfig(value: unknown, path = 'entity.form'): EntityFormConfig | undefined {
     if (value === undefined || value === null) {
       return undefined;
     }
 
-    const form = this.requireObject(value, 'entity.form must be an object');
-    const title = this.requireObject(form.title, 'entity.form.title is required');
-    const createTitle = this.requireString(title.create, 'entity.form.title.create is required');
-    const editTitle = this.requireString(title.edit, 'entity.form.title.edit is required');
-    const sections = this.requireArray(form.sections, 'entity.form.sections must be an array')
-      .map((entry, index) => this.normalizeFormSection(entry, index));
+    const form = this.requireObject(value, `${path} must be an object`);
+    const title = this.requireObject(form.title, `${path}.title is required`);
+    const createTitle = this.requireString(title.create, `${path}.title.create is required`);
+    const editTitle = this.requireString(title.edit, `${path}.title.edit is required`);
+    const sections = this.requireArray(form.sections, `${path}.sections must be an array`)
+      .map((entry, index) => this.normalizeFormSection(entry, `${path}.sections[${index}]`));
 
     if (sections.length === 0) {
-      throw new BadRequestException('entity.form.sections must contain at least one item');
+      throw new BadRequestException(`${path}.sections must contain at least one item`);
     }
 
     return {
@@ -1036,24 +1216,21 @@ export class EntityAdminConfigService {
         create: createTitle,
         edit: editTitle
       },
-      query: normalizeEntityQueryConfig(form.query, 'entity.form.query'),
+      query: normalizeEntityQueryConfig(form.query, `${path}.query`),
       subtitle: this.asOptionalString(form.subtitle),
       sections
     };
   }
 
-  private normalizeFormSection(value: unknown, index: number): EntityFormSectionConfig {
-    const section = this.requireObject(value, `entity.form.sections[${index}] must be an object`);
-    const fields = this.requireArray(section.fields, `entity.form.sections[${index}].fields must be an array`)
+  private normalizeFormSection(value: unknown, path: string): EntityFormSectionConfig {
+    const section = this.requireObject(value, `${path} must be an object`);
+    const fields = this.requireArray(section.fields, `${path}.fields must be an array`)
       .map((entry, fieldIndex) =>
-        normalizeEntityFormFieldConfig(
-          entry,
-          `entity.form.sections[${index}].fields[${fieldIndex}]`
-        )
+        normalizeEntityFormFieldConfig(entry, `${path}.fields[${fieldIndex}]`)
       );
 
     if (fields.length === 0) {
-      throw new BadRequestException(`entity.form.sections[${index}].fields must contain at least one item`);
+      throw new BadRequestException(`${path}.fields must contain at least one item`);
     }
 
     return {

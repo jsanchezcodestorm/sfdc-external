@@ -189,6 +189,20 @@ export type EntityConfig = {
     basePath?: string
   }
   list?: EntityListConfig
+  layouts: EntityLayoutConfig[]
+}
+
+export type EntityLayoutAssignmentConfig = {
+  recordTypeDeveloperName?: string
+  permissionCode?: string
+  priority?: number
+}
+
+export type EntityLayoutConfig = {
+  id: string
+  label: string
+  description?: string
+  isDefault?: boolean
   detail?: {
     query?: EntityQueryConfig
     sections?: DetailSectionConfig[]
@@ -208,6 +222,7 @@ export type EntityConfig = {
     subtitle?: string
     sections?: FormSectionConfig[]
   }
+  assignments: EntityLayoutAssignmentConfig[]
 }
 
 export type EntityConfigEnvelope = {
@@ -233,6 +248,8 @@ export type EntityListResponse = {
 export type EntityDetailResponse = {
   title?: string
   subtitle?: string
+  layoutId?: string
+  recordTypeDeveloperName?: string
   sections?: DetailSectionConfig[]
   fieldDefinitions?: EntityFieldDefinition[]
   record?: EntityRecord
@@ -243,6 +260,8 @@ export type EntityDetailResponse = {
 }
 
 export type EntityRelatedListResponse = {
+  layoutId?: string
+  recordTypeDeveloperName?: string
   relatedList?: RelatedListConfig
   title?: string
   columns?: Array<EntityColumn | string>
@@ -258,6 +277,8 @@ export type EntityRelatedListResponse = {
 }
 
 export type EntityFormResponse = {
+  layoutId?: string
+  recordTypeDeveloperName?: string
   title?: string
   subtitle?: string
   sections?: RuntimeFormSectionConfig[]
@@ -273,4 +294,14 @@ export type EntityFormLookupSearchResponse = {
     objectApiName: string
     subtitle?: string
   }>
+}
+
+export type EntityCreateLayoutOption = {
+  recordTypeDeveloperName: string
+  label: string
+  layoutId: string
+}
+
+export type EntityCreateLayoutOptionsResponse = {
+  items: EntityCreateLayoutOption[]
 }

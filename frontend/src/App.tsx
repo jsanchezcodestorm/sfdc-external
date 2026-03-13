@@ -117,11 +117,27 @@ const router = createHashRouter(
                 <Route path="entity-config/:entityId/edit/base" element={<EntityAdminConfigPage />} />
                 <Route path="entity-config/:entityId/edit/list" element={<EntityAdminConfigPage />} />
                 <Route
+                  path="entity-config/:entityId/edit/assignments"
+                  element={<EntityAdminConfigPage />}
+                />
+                <Route
                   path="entity-config/:entityId/edit/detail/:detailArea"
                   element={<EntityAdminConfigPage />}
                 />
                 <Route
                   path="entity-config/:entityId/edit/form/:formArea"
+                  element={<EntityAdminConfigPage />}
+                />
+                <Route
+                  path="entity-config/:entityId/edit/layouts/:layoutId/assignments"
+                  element={<EntityAdminConfigPage />}
+                />
+                <Route
+                  path="entity-config/:entityId/edit/layouts/:layoutId/detail/:detailArea"
+                  element={<EntityAdminConfigPage />}
+                />
+                <Route
+                  path="entity-config/:entityId/edit/layouts/:layoutId/form/:formArea"
                   element={<EntityAdminConfigPage />}
                 />
               </Route>

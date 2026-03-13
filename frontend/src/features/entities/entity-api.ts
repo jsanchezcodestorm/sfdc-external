@@ -1,6 +1,7 @@
 import { ApiError, apiFetch } from '../../lib/api'
 import type {
   EntityConfigEnvelope,
+  EntityCreateLayoutOptionsResponse,
   EntityDetailResponse,
   EntityFormResponse,
   EntityFormLookupSearchResponse,
@@ -51,16 +52,28 @@ export async function fetchEntityRecord(
 export async function fetchEntityForm(
   entityId: string,
   recordId?: string,
+  recordTypeDeveloperName?: string,
 ): Promise<EntityFormResponse> {
   const encodedEntityId = encodeURIComponent(entityId)
+  const query = buildQueryString({
+    recordTypeDeveloperName,
+  })
 
   if (recordId) {
     return apiFetch<EntityFormResponse>(
-      `/entities/${encodedEntityId}/form/${encodeURIComponent(recordId)}`,
+      `/entities/${encodedEntityId}/form/${encodeURIComponent(recordId)}${query}`,
     )
   }
 
-  return apiFetch<EntityFormResponse>(`/entities/${encodedEntityId}/form`)
+  return apiFetch<EntityFormResponse>(`/entities/${encodedEntityId}/form${query}`)
+}
+
+export async function fetchEntityCreateLayoutOptions(
+  entityId: string,
+): Promise<EntityCreateLayoutOptionsResponse> {
+  return apiFetch<EntityCreateLayoutOptionsResponse>(
+    `/entities/${encodeURIComponent(entityId)}/layouts/create-options`,
+  )
 }
 
 export async function searchEntityFormLookup(
@@ -70,6 +83,8 @@ export async function searchEntityFormLookup(
     q?: string
     limit?: number
     context?: Record<string, string | number | boolean | null | undefined>
+    recordTypeDeveloperName?: string
+    recordId?: string
   },
 ): Promise<EntityFormLookupSearchResponse> {
   return apiFetch<EntityFormLookupSearchResponse>(
@@ -109,11 +124,17 @@ export function isInvalidEntityCursorError(error: unknown): boolean {
 export async function createEntityRecord(
   entityId: string,
   values: EntityRecord,
+  recordTypeDeveloperName: string,
 ): Promise<EntityRecord | null> {
-  return apiFetch<EntityRecord | null>(`/entities/${encodeURIComponent(entityId)}/records`, {
-    method: 'POST',
-    body: values,
-  })
+  const query = buildQueryString({ recordTypeDeveloperName })
+
+  return apiFetch<EntityRecord | null>(
+    `/entities/${encodeURIComponent(entityId)}/records${query}`,
+    {
+      method: 'POST',
+      body: values,
+    },
+  )
 }
 
 export async function updateEntityRecord(

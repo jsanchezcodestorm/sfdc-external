@@ -11,6 +11,7 @@ import { EntitiesService } from './entities.service';
 import { EntityAdminConfigRepository } from './services/entity-admin-config.repository';
 import { EntityAdminConfigService } from './services/entity-admin-config.service';
 import { EntityConfigRepository } from './services/entity-config.repository';
+import { EntityLayoutResolverService } from './services/entity-layout-resolver.service';
 import { EntityQueryCursorService } from './services/entity-query-cursor.service';
 
 @Module({
@@ -19,6 +20,7 @@ import { EntityQueryCursorService } from './services/entity-query-cursor.service
   providers: [
     EntitiesService,
     EntityConfigRepository,
+    EntityLayoutResolverService,
     EntityQueryCursorService,
     EntityAdminConfigRepository,
     EntityAdminConfigService,

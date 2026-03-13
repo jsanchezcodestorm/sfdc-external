@@ -16,4 +16,12 @@ export class SearchEntityFormLookupDto {
   @IsOptional()
   @IsObject()
   context?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsString()
+  recordTypeDeveloperName?: string;
+
+  @IsOptional()
+  @IsString()
+  recordId?: string;
 }

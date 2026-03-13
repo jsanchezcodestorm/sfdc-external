@@ -1,4 +1,4 @@
-import type { EntityAction, EntityConfig, RelatedListConfig } from '../../../entities/entity-types'
+import type { EntityAction, EntityLayoutConfig, RelatedListConfig } from '../../../entities/entity-types'
 import type {
   DetailFieldDraft,
   DetailFormDraft,
@@ -7,7 +7,7 @@ import type {
   RelatedListDraft,
 } from './detail-form.types'
 
-type DetailConfigValue = NonNullable<EntityConfig['detail']>
+type DetailConfigValue = NonNullable<EntityLayoutConfig['detail']>
 type DetailSectionValue = NonNullable<DetailConfigValue['sections']>[number]
 type DetailFieldValue = DetailSectionValue['fields'][number]
 type DetailPathStatusValue = NonNullable<DetailConfigValue['pathStatus']>
@@ -33,7 +33,7 @@ export function createEmptyDetailFormDraft(): DetailFormDraft {
 }
 
 export function createDetailFormDraft(
-  detail: EntityConfig['detail'] | undefined,
+  detail: EntityLayoutConfig['detail'] | undefined,
 ): DetailFormDraft {
   if (!detail) {
     return createEmptyDetailFormDraft()
@@ -91,7 +91,7 @@ export function createDetailFormDraft(
 export function parseDetailFormDraft(
   draft: DetailFormDraft,
   baseObjectApiName: string,
-): NonNullable<EntityConfig['detail']> {
+): NonNullable<EntityLayoutConfig['detail']> {
   const normalizedBaseObjectApiName = readRequiredString(
     baseObjectApiName,
     'Base objectApiName obbligatorio per la sezione Detail',

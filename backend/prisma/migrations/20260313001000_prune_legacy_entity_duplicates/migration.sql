@@ -1,42 +1,65 @@
-CREATE TEMP TABLE "_legacy_entity_id_map" (
-  "legacyId" VARCHAR(64) PRIMARY KEY,
-  "normalizedId" VARCHAR(64) NOT NULL,
-  "legacyResourceId" VARCHAR(128) NOT NULL,
-  "normalizedResourceId" VARCHAR(128) NOT NULL
-) ON COMMIT DROP;
-
-INSERT INTO "_legacy_entity_id_map" ("legacyId", "normalizedId", "legacyResourceId", "normalizedResourceId")
-VALUES
-  ('Contact', 'contact', 'entity:Contact', 'entity:contact'),
-  ('Opportunity', 'opportunity', 'entity:Opportunity', 'entity:opportunity'),
-  ('Product2', 'product2', 'entity:Product2', 'entity:product2');
-
+WITH "mapping" ("legacyId", "normalizedId", "legacyResourceId", "normalizedResourceId") AS (
+  VALUES
+    ('Contact', 'contact', 'entity:Contact', 'entity:contact'),
+    ('Opportunity', 'opportunity', 'entity:Opportunity', 'entity:opportunity'),
+    ('Product2', 'product2', 'entity:Product2', 'entity:product2')
+)
 UPDATE "entity_related_list_configs" AS "relatedList"
 SET "linkedEntityId" = "mapping"."normalizedId"
-FROM "_legacy_entity_id_map" AS "mapping"
+FROM "mapping"
 WHERE "relatedList"."linkedEntityId" = "mapping"."legacyId";
 
+WITH "mapping" ("legacyId", "normalizedId", "legacyResourceId", "normalizedResourceId") AS (
+  VALUES
+    ('Contact', 'contact', 'entity:Contact', 'entity:contact'),
+    ('Opportunity', 'opportunity', 'entity:Opportunity', 'entity:opportunity'),
+    ('Product2', 'product2', 'entity:Product2', 'entity:product2')
+)
 UPDATE "entity_query_cursor_cache" AS "cursorCache"
 SET "entityId" = "mapping"."normalizedId"
-FROM "_legacy_entity_id_map" AS "mapping"
+FROM "mapping"
 WHERE "cursorCache"."entityId" = "mapping"."legacyId";
 
+WITH "mapping" ("legacyId", "normalizedId", "legacyResourceId", "normalizedResourceId") AS (
+  VALUES
+    ('Contact', 'contact', 'entity:Contact', 'entity:contact'),
+    ('Opportunity', 'opportunity', 'entity:Opportunity', 'entity:opportunity'),
+    ('Product2', 'product2', 'entity:Product2', 'entity:product2')
+)
 UPDATE "app_item_records" AS "item"
 SET "entityId" = "mapping"."normalizedId"
-FROM "_legacy_entity_id_map" AS "mapping"
+FROM "mapping"
 WHERE "item"."entityId" = "mapping"."legacyId";
 
+WITH "mapping" ("legacyId", "normalizedId", "legacyResourceId", "normalizedResourceId") AS (
+  VALUES
+    ('Contact', 'contact', 'entity:Contact', 'entity:contact'),
+    ('Opportunity', 'opportunity', 'entity:Opportunity', 'entity:opportunity'),
+    ('Product2', 'product2', 'entity:Product2', 'entity:product2')
+)
 UPDATE "app_item_records" AS "item"
 SET "resourceId" = "mapping"."normalizedResourceId"
-FROM "_legacy_entity_id_map" AS "mapping"
+FROM "mapping"
 WHERE "item"."resourceId" = "mapping"."legacyResourceId";
 
+WITH "mapping" ("legacyId", "normalizedId", "legacyResourceId", "normalizedResourceId") AS (
+  VALUES
+    ('Contact', 'contact', 'entity:Contact', 'entity:contact'),
+    ('Opportunity', 'opportunity', 'entity:Opportunity', 'entity:opportunity'),
+    ('Product2', 'product2', 'entity:Product2', 'entity:product2')
+)
 UPDATE "acl_resources" AS "resource"
 SET "sourceRef" = "mapping"."normalizedId"
-FROM "_legacy_entity_id_map" AS "mapping"
+FROM "mapping"
 WHERE "resource"."sourceType" = 'ENTITY'
   AND "resource"."sourceRef" = "mapping"."legacyId";
 
+WITH "mapping" ("legacyId", "normalizedId", "legacyResourceId", "normalizedResourceId") AS (
+  VALUES
+    ('Contact', 'contact', 'entity:Contact', 'entity:contact'),
+    ('Opportunity', 'opportunity', 'entity:Opportunity', 'entity:opportunity'),
+    ('Product2', 'product2', 'entity:Product2', 'entity:product2')
+)
 INSERT INTO "acl_resources" (
   "id",
   "type",
@@ -63,12 +86,18 @@ SELECT
   "resource"."createdAt",
   "resource"."updatedAt"
 FROM "acl_resources" AS "resource"
-JOIN "_legacy_entity_id_map" AS "mapping"
+JOIN "mapping"
   ON "resource"."id" = "mapping"."legacyResourceId"
 LEFT JOIN "acl_resources" AS "normalized"
   ON "normalized"."id" = "mapping"."normalizedResourceId"
 WHERE "normalized"."id" IS NULL;
 
+WITH "mapping" ("legacyId", "normalizedId", "legacyResourceId", "normalizedResourceId") AS (
+  VALUES
+    ('Contact', 'contact', 'entity:Contact', 'entity:contact'),
+    ('Opportunity', 'opportunity', 'entity:Opportunity', 'entity:opportunity'),
+    ('Product2', 'product2', 'entity:Product2', 'entity:product2')
+)
 INSERT INTO "acl_resource_permissions" (
   "id",
   "resourceId",
@@ -85,19 +114,31 @@ SELECT
   "legacyPermission"."createdAt",
   "legacyPermission"."updatedAt"
 FROM "acl_resource_permissions" AS "legacyPermission"
-JOIN "_legacy_entity_id_map" AS "mapping"
+JOIN "mapping"
   ON "legacyPermission"."resourceId" = "mapping"."legacyResourceId"
 LEFT JOIN "acl_resource_permissions" AS "normalizedPermission"
   ON "normalizedPermission"."resourceId" = "mapping"."normalizedResourceId"
   AND "normalizedPermission"."permissionCode" = "legacyPermission"."permissionCode"
 WHERE "normalizedPermission"."id" IS NULL;
 
+WITH "mapping" ("legacyId", "normalizedId", "legacyResourceId", "normalizedResourceId") AS (
+  VALUES
+    ('Contact', 'contact', 'entity:Contact', 'entity:contact'),
+    ('Opportunity', 'opportunity', 'entity:Opportunity', 'entity:opportunity'),
+    ('Product2', 'product2', 'entity:Product2', 'entity:product2')
+)
 DELETE FROM "acl_resources" AS "resource"
-USING "_legacy_entity_id_map" AS "mapping"
+USING "mapping"
 WHERE "resource"."id" = "mapping"."legacyResourceId";
 
+WITH "mapping" ("legacyId", "normalizedId", "legacyResourceId", "normalizedResourceId") AS (
+  VALUES
+    ('Contact', 'contact', 'entity:Contact', 'entity:contact'),
+    ('Opportunity', 'opportunity', 'entity:Opportunity', 'entity:opportunity'),
+    ('Product2', 'product2', 'entity:Product2', 'entity:product2')
+)
 DELETE FROM "entity_configs" AS "entityConfig"
-USING "_legacy_entity_id_map" AS "mapping"
+USING "mapping"
 WHERE "entityConfig"."id" = "mapping"."legacyId"
   AND EXISTS (
     SELECT 1

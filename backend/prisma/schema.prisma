@@ -406,11 +406,46 @@ model EntityConfigRecord {
   createdAt      DateTime                  @default(now())
   updatedAt      DateTime                  @updatedAt
   listConfig     EntityListConfigRecord?
-  detailConfig   EntityDetailConfigRecord?
-  formConfig     EntityFormConfigRecord?
+  layouts        EntityLayoutConfigRecord[]
   appItems       AppItemRecord[]
 
   @@map("entity_configs")
+}
+
+model EntityLayoutConfigRecord {
+  id          String                           @id @default(uuid()) @db.Uuid
+  entityId    String                           @db.VarChar(64)
+  sortOrder   Int
+  layoutId    String                           @db.VarChar(64)
+  label       String                           @db.VarChar(256)
+  description String?                          @db.VarChar(512)
+  isDefault   Boolean                          @default(false)
+  createdAt   DateTime                         @default(now())
+  updatedAt   DateTime                         @updatedAt
+  entity      EntityConfigRecord               @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  detailConfig EntityDetailConfigRecord?
+  formConfig  EntityFormConfigRecord?
+  assignments EntityLayoutAssignmentRecord[]
+
+  @@unique([entityId, layoutId])
+  @@index([entityId, sortOrder])
+  @@map("entity_layout_configs")
+}
+
+model EntityLayoutAssignmentRecord {
+  id                      String                   @id @default(uuid()) @db.Uuid
+  layoutConfigId          String                   @db.Uuid
+  sortOrder               Int
+  recordTypeDeveloperName String?                  @db.VarChar(128)
+  permissionCode          String?                  @db.VarChar(80)
+  priority                Int                      @default(0)
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+  layoutConfig            EntityLayoutConfigRecord @relation(fields: [layoutConfigId], references: [id], onDelete: Cascade)
+
+  @@index([layoutConfigId, sortOrder])
+  @@index([recordTypeDeveloperName, permissionCode])
+  @@map("entity_layout_assignments")
 }
 
 model EntityListConfigRecord {
@@ -450,7 +485,8 @@ model EntityListViewConfigRecord {
 }
 
 model EntityDetailConfigRecord {
-  entityId       String                            @id @db.VarChar(64)
+  id             String                            @id @default(uuid()) @db.Uuid
+  layoutConfigId String                            @unique @db.Uuid
   queryJson      Json
   titleTemplate  String?                           @db.VarChar(512)
   fallbackTitle  String?                           @db.VarChar(256)
@@ -459,7 +495,7 @@ model EntityDetailConfigRecord {
   pathStatusJson Json?
   createdAt      DateTime                          @default(now())
   updatedAt      DateTime                          @updatedAt
-  entity         EntityConfigRecord                @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  layoutConfig   EntityLayoutConfigRecord          @relation(fields: [layoutConfigId], references: [id], onDelete: Cascade)
   sections       EntityDetailSectionConfigRecord[]
   relatedLists   EntityRelatedListConfigRecord[]
 
@@ -467,22 +503,22 @@ model EntityDetailConfigRecord {
 }
 
 model EntityDetailSectionConfigRecord {
-  id           String                   @id @default(uuid()) @db.Uuid
-  entityId     String                   @db.VarChar(64)
-  sortOrder    Int
-  title        String                   @db.VarChar(256)
-  fieldsJson   Json
-  createdAt    DateTime                 @default(now())
-  updatedAt    DateTime                 @updatedAt
-  detailConfig EntityDetailConfigRecord @relation(fields: [entityId], references: [entityId], onDelete: Cascade)
+  id             String                   @id @default(uuid()) @db.Uuid
+  detailConfigId String                   @db.Uuid
+  sortOrder      Int
+  title          String                   @db.VarChar(256)
+  fieldsJson     Json
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+  detailConfig   EntityDetailConfigRecord @relation(fields: [detailConfigId], references: [id], onDelete: Cascade)
 
-  @@index([entityId, sortOrder])
+  @@index([detailConfigId, sortOrder])
   @@map("entity_detail_section_configs")
 }
 
 model EntityRelatedListConfigRecord {
   id             String                   @id @default(uuid()) @db.Uuid
-  entityId       String                   @db.VarChar(64)
+  detailConfigId String                   @db.Uuid
   sortOrder      Int
   relatedListId  String                   @db.VarChar(64)
   label          String                   @db.VarChar(256)
@@ -496,38 +532,39 @@ model EntityRelatedListConfigRecord {
   linkedEntityId String?                  @db.VarChar(64)
   createdAt      DateTime                 @default(now())
   updatedAt      DateTime                 @updatedAt
-  detailConfig   EntityDetailConfigRecord @relation(fields: [entityId], references: [entityId], onDelete: Cascade)
+  detailConfig   EntityDetailConfigRecord @relation(fields: [detailConfigId], references: [id], onDelete: Cascade)
 
-  @@unique([entityId, relatedListId])
-  @@index([entityId, sortOrder])
+  @@unique([detailConfigId, relatedListId])
+  @@index([detailConfigId, sortOrder])
   @@map("entity_related_list_configs")
 }
 
 model EntityFormConfigRecord {
-  entityId    String                          @id @db.VarChar(64)
+  id           String                         @id @default(uuid()) @db.Uuid
+  layoutConfigId String                       @unique @db.Uuid
   createTitle String                          @db.VarChar(256)
   editTitle   String                          @db.VarChar(256)
   queryJson   Json
   subtitle    String?                         @db.VarChar(512)
   createdAt   DateTime                        @default(now())
   updatedAt   DateTime                        @updatedAt
-  entity      EntityConfigRecord              @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  layoutConfig EntityLayoutConfigRecord       @relation(fields: [layoutConfigId], references: [id], onDelete: Cascade)
   sections    EntityFormSectionConfigRecord[]
 
   @@map("entity_form_configs")
 }
 
 model EntityFormSectionConfigRecord {
-  id         String                 @id @default(uuid()) @db.Uuid
-  entityId   String                 @db.VarChar(64)
-  sortOrder  Int
-  title      String?                @db.VarChar(256)
-  fieldsJson Json
-  createdAt  DateTime               @default(now())
-  updatedAt  DateTime               @updatedAt
-  formConfig EntityFormConfigRecord @relation(fields: [entityId], references: [entityId], onDelete: Cascade)
+  id           String                 @id @default(uuid()) @db.Uuid
+  formConfigId String                 @db.Uuid
+  sortOrder    Int
+  title        String?                @db.VarChar(256)
+  fieldsJson   Json
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+  formConfig   EntityFormConfigRecord @relation(fields: [formConfigId], references: [id], onDelete: Cascade)
 
-  @@index([entityId, sortOrder])
+  @@index([formConfigId, sortOrder])
   @@map("entity_form_section_configs")
 }
 

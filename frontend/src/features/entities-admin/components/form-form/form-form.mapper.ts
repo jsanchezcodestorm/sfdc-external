@@ -1,7 +1,7 @@
-import type { EntityConfig, LookupConfig } from '../../../entities/entity-types'
+import type { EntityLayoutConfig, LookupConfig } from '../../../entities/entity-types'
 import type { FormFieldDraft, FormFormDraft, FormLookupDraft, FormSectionDraft } from './form-form.types'
 
-type FormConfigValue = NonNullable<EntityConfig['form']>
+type FormConfigValue = NonNullable<EntityLayoutConfig['form']>
 type FormSectionValue = NonNullable<FormConfigValue['sections']>[number]
 type FormFieldValue = FormSectionValue['fields'][number]
 
@@ -42,7 +42,7 @@ export function createEmptyFormDraft(): FormFormDraft {
   }
 }
 
-export function createFormDraft(form: EntityConfig['form'] | undefined): FormFormDraft {
+export function createFormDraft(form: EntityLayoutConfig['form'] | undefined): FormFormDraft {
   if (!form) {
     return createEmptyFormDraft()
   }
@@ -66,7 +66,7 @@ export function createFormDraft(form: EntityConfig['form'] | undefined): FormFor
 export function parseFormDraft(
   draft: FormFormDraft,
   baseObjectApiName: string,
-): NonNullable<EntityConfig['form']> {
+): NonNullable<EntityLayoutConfig['form']> {
   const normalizedBaseObjectApiName = readRequiredString(
     baseObjectApiName,
     'Base objectApiName obbligatorio per la sezione Form',

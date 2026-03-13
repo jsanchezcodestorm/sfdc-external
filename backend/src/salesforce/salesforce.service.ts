@@ -42,6 +42,16 @@ export interface SalesforceFieldSummary {
   referenceTo?: string[];
 }
 
+export interface SalesforceRecordTypeSummary {
+  id: string;
+  developerName: string;
+  label: string;
+  active: boolean;
+  available: boolean;
+  defaultRecordTypeMapping: boolean;
+  master: boolean;
+}
+
 interface SalesforceContactRecord {
   Id: string;
   Name?: string;
@@ -151,6 +161,43 @@ export class SalesforceService {
             .filter((entry) => entry.length > 0)
         : undefined
     }));
+  }
+
+  async describeRecordTypes(objectApiName: string): Promise<SalesforceRecordTypeSummary[]> {
+    const objectDescription = (await this.describeObject(objectApiName)) as {
+      recordTypeInfos?: Array<Record<string, unknown>>;
+    };
+
+    return (objectDescription.recordTypeInfos ?? [])
+      .filter((entry): entry is Record<string, unknown> => this.isObjectRecord(entry))
+      .map((entry) => ({
+        id: String(entry.recordTypeId ?? '').trim(),
+        developerName: String(entry.developerName ?? '').trim(),
+        label: String(entry.name ?? entry.label ?? entry.developerName ?? '').trim(),
+        active: Boolean(entry.active ?? false),
+        available: Boolean(entry.available ?? false),
+        defaultRecordTypeMapping: Boolean(entry.defaultRecordTypeMapping ?? false),
+        master: Boolean(entry.master ?? false)
+      }))
+      .filter((entry) => entry.id.length > 0 && entry.developerName.length > 0);
+  }
+
+  async resolveRecordTypeId(objectApiName: string, developerName: string): Promise<string> {
+    const normalizedDeveloperName = developerName.trim();
+    if (!normalizedDeveloperName) {
+      throw new BadRequestException('recordTypeDeveloperName is required');
+    }
+
+    const recordType = (await this.describeRecordTypes(objectApiName)).find(
+      (entry) => entry.developerName === normalizedDeveloperName
+    );
+    if (!recordType || !recordType.active) {
+      throw new BadRequestException(
+        `Record type ${normalizedDeveloperName} is not available for ${objectApiName}`
+      );
+    }
+
+    return recordType.id;
   }
 
   async findContactByEmail(

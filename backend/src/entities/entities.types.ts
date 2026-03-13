@@ -161,6 +161,22 @@ export interface EntityFormConfig {
   sections: EntityFormSectionConfig[];
 }
 
+export interface EntityLayoutAssignmentConfig {
+  recordTypeDeveloperName?: string;
+  permissionCode?: string;
+  priority?: number;
+}
+
+export interface EntityLayoutConfig {
+  id: string;
+  label: string;
+  description?: string;
+  isDefault?: boolean;
+  detail?: EntityDetailConfig;
+  form?: EntityFormConfig;
+  assignments: EntityLayoutAssignmentConfig[];
+}
+
 export interface EntityBaseNavigationConfig {
   basePath?: string;
 }
@@ -172,7 +188,6 @@ export interface EntityConfig {
   description?: string;
   navigation?: EntityBaseNavigationConfig;
   list?: EntityListConfig;
-  detail?: EntityDetailConfig;
-  form?: EntityFormConfig;
+  layouts: EntityLayoutConfig[];
   [key: string]: unknown;
 }

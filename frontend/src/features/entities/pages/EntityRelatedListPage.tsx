@@ -19,7 +19,6 @@ import type {
   EntityConfigEnvelope,
   EntityRelatedListResponse,
   EntityRecord,
-  RelatedListConfig,
 } from '../entity-types'
 import { resolveRelatedListNavigationTarget } from '../related-list-navigation'
 import { EntityCursorPaginationControls } from '../components/EntityCursorPaginationControls'
@@ -105,12 +104,7 @@ export function EntityRelatedListPage() {
     void loadRelatedList()
   }, [loadRelatedList])
 
-  const configRelatedList = useMemo<RelatedListConfig | undefined>(
-    () => config?.entity.detail?.relatedLists?.find((item) => item.id === relatedListId),
-    [config?.entity.detail?.relatedLists, relatedListId],
-  )
-
-  const relatedList = relatedPayload?.relatedList ?? configRelatedList
+  const relatedList = relatedPayload?.relatedList
   const navigationTarget = resolveRelatedListNavigationTarget(appId, relatedList, selectedEntities)
   const relatedEntityId = navigationTarget.entityId
   const entityLabel = config?.entity.label ?? toTitleCase(entityId)

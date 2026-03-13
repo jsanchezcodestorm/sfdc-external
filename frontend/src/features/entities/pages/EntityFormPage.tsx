@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   createEntityRecord,
   fetchEntityConfig,
+  fetchEntityCreateLayoutOptions,
   fetchEntityForm,
   updateEntityRecord,
 } from '../entity-api'
@@ -15,6 +16,7 @@ import {
 import { buildAppEntityBasePath, buildAppHomePath } from '../../apps/app-workspace-routing'
 import type {
   EntityConfigEnvelope,
+  EntityCreateLayoutOption,
   EntityRecord,
   EntityFormResponse,
   LookupCondition,
@@ -32,6 +34,8 @@ export function EntityFormPage() {
 
   const [config, setConfig] = useState<EntityConfigEnvelope | null>(null)
   const [formResponse, setFormResponse] = useState<EntityFormResponse | null>(null)
+  const [createOptions, setCreateOptions] = useState<EntityCreateLayoutOption[]>([])
+  const [selectedRecordTypeDeveloperName, setSelectedRecordTypeDeveloperName] = useState('')
   const [initialValues, setInitialValues] = useState<EntityRecord>({})
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
@@ -47,19 +51,44 @@ export function EntityFormPage() {
 
       const entityConfig = await fetchEntityConfig(entityId)
       setConfig(entityConfig)
+      let resolvedPayload: EntityFormResponse | null = null
 
-      const payload = await fetchEntityForm(entityId, recordId)
-      setFormResponse(payload)
+      if (mode === 'create') {
+        const optionsResponse = await fetchEntityCreateLayoutOptions(entityId)
+        const nextOptions = optionsResponse.items ?? []
+        setCreateOptions(nextOptions)
 
-      if (payload?.values) {
-        setInitialValues(payload.values)
-      } else if (payload?.record) {
-        setInitialValues(payload.record)
+        const nextRecordType =
+          selectedRecordTypeDeveloperName ||
+          (nextOptions.length === 1 ? nextOptions[0].recordTypeDeveloperName : '')
+        if (nextRecordType && nextRecordType !== selectedRecordTypeDeveloperName) {
+          setSelectedRecordTypeDeveloperName(nextRecordType)
+        }
+
+        if (!nextRecordType) {
+          setFormResponse(null)
+          setInitialValues({})
+          setError(null)
+          return
+        }
+
+        resolvedPayload = await fetchEntityForm(entityId, undefined, nextRecordType)
+        setFormResponse(resolvedPayload)
+      } else {
+        resolvedPayload = await fetchEntityForm(entityId, recordId)
+        setFormResponse(resolvedPayload)
+        setCreateOptions([])
+      }
+
+      if (resolvedPayload?.values) {
+        setInitialValues(resolvedPayload.values)
+      } else if (resolvedPayload?.record) {
+        setInitialValues(resolvedPayload.record)
       } else {
         setInitialValues({})
       }
 
-      if (recordId && !payload?.values && !payload?.record) {
+      if (recordId && !resolvedPayload?.values && !resolvedPayload?.record) {
         throw new Error('Form edit payload non conforme: values/record mancanti')
       }
 
@@ -69,11 +98,12 @@ export function EntityFormPage() {
       setError(message)
       setConfig(null)
       setFormResponse(null)
+      setCreateOptions([])
       setInitialValues({})
     } finally {
       setLoading(false)
     }
-  }, [entityId, recordId])
+  }, [entityId, mode, recordId, selectedRecordTypeDeveloperName])
 
   useEffect(() => {
     void loadForm()
@@ -92,6 +122,8 @@ export function EntityFormPage() {
       entityId,
       id: recordId ?? '',
       recordId: recordId ?? '',
+      recordTypeDeveloperName:
+        formResponse?.recordTypeDeveloperName ?? selectedRecordTypeDeveloperName,
       parentId: searchParams.get('parentId') ?? '',
       parentRel: searchParams.get('parentRel') ?? '',
     }
@@ -101,7 +133,7 @@ export function EntityFormPage() {
     }
 
     return context
-  }, [entityId, recordId, searchParams])
+  }, [entityId, formResponse?.recordTypeDeveloperName, recordId, searchParams, selectedRecordTypeDeveloperName])
 
   const initialValuesWithDefaults = useMemo(() => {
     if (mode !== 'create') {
@@ -121,10 +153,9 @@ export function EntityFormPage() {
 
   const title =
     formResponse?.title ??
-    (mode === 'edit' ? config?.entity.form?.title?.edit : config?.entity.form?.title?.create) ??
     `${mode === 'edit' ? 'Edit' : 'New'} ${entityLabel}`
 
-  const subtitle = formResponse?.subtitle ?? config?.entity.form?.subtitle ?? `${entityLabel} - ${mode}`
+  const subtitle = formResponse?.subtitle ?? `${entityLabel} - ${mode}`
 
   if (!entityId) {
     return (
@@ -165,42 +196,82 @@ export function EntityFormPage() {
         <EntityStatePanel tone="error" title="Form non disponibile" description={error} />
       )}
       {!loading && !error && (
-        <EntityRecordForm
-          entityId={entityId}
-          sections={sections}
-          initialValues={initialValuesWithLookupPrefill}
-          lookupContext={lookupContext}
-          submitLabel={mode === 'edit' ? 'Save changes' : 'Create record'}
-          isSubmitting={submitting}
-          onSubmit={async (values) => {
-            try {
-              setSubmitting(true)
-              const filteredValues = filterFormValues(values, sections)
+        <>
+          {mode === 'create' && (
+            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.1em] text-slate-600">
+                  Record Type
+                </span>
+                <select
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+                  value={selectedRecordTypeDeveloperName}
+                  onChange={(event) => setSelectedRecordTypeDeveloperName(event.target.value)}
+                  disabled={createOptions.length <= 1}
+                >
+                  {createOptions.length > 1 ? <option value="">Select a record type</option> : null}
+                  {createOptions.map((option) => (
+                    <option key={option.recordTypeDeveloperName} value={option.recordTypeDeveloperName}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </section>
+          )}
 
-              const payload =
-                mode === 'edit' && recordId
-                  ? await updateEntityRecord(entityId, recordId, filteredValues)
-                  : await createEntityRecord(entityId, filteredValues)
-
-              const targetRecordId =
-                (payload ? getRecordId(payload) : '') ||
-                (mode === 'edit' && recordId ? recordId : '')
-
-              if (targetRecordId) {
-                navigate(`${baseEntityPath}/${targetRecordId}`)
-                return
+          {mode === 'create' && selectedRecordTypeDeveloperName.length === 0 ? (
+            <EntityStatePanel
+              title="Seleziona un record type"
+              description={
+                createOptions.length === 0
+                  ? 'Nessun record type con form accessibile è disponibile per questa entity.'
+                  : 'Scegli il record type per caricare il layout di creazione corretto.'
               }
+            />
+          ) : (
+            <EntityRecordForm
+              entityId={entityId}
+              sections={sections}
+              initialValues={initialValuesWithLookupPrefill}
+              lookupContext={lookupContext}
+              submitLabel={mode === 'edit' ? 'Save changes' : 'Create record'}
+              isSubmitting={submitting}
+              onSubmit={async (values) => {
+                try {
+                  setSubmitting(true)
+                  const filteredValues = filterFormValues(values, sections)
 
-              navigate(baseEntityPath)
-            } catch (submitError) {
-              const message =
-                submitError instanceof Error ? submitError.message : 'Errore salvataggio record'
-              setError(message)
-            } finally {
-              setSubmitting(false)
-            }
-          }}
-        />
+                  const payload =
+                    mode === 'edit' && recordId
+                      ? await updateEntityRecord(entityId, recordId, filteredValues)
+                      : await createEntityRecord(
+                          entityId,
+                          filteredValues,
+                          selectedRecordTypeDeveloperName,
+                        )
+
+                  const targetRecordId =
+                    (payload ? getRecordId(payload) : '') ||
+                    (mode === 'edit' && recordId ? recordId : '')
+
+                  if (targetRecordId) {
+                    navigate(`${baseEntityPath}/${targetRecordId}`)
+                    return
+                  }
+
+                  navigate(baseEntityPath)
+                } catch (submitError) {
+                  const message =
+                    submitError instanceof Error ? submitError.message : 'Errore salvataggio record'
+                  setError(message)
+                } finally {
+                  setSubmitting(false)
+                }
+              }}
+            />
+          )}
+        </>
       )}
     </EntityPageFrame>
   )

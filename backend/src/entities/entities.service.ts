@@ -19,18 +19,23 @@ import type {
   EntityActionConfig,
   EntityColumnConfig,
   EntityConfig,
+  EntityDetailConfig,
   EntityFormFieldConfig,
+  EntityFormConfig,
   EntityLookupCondition,
   EntityLookupOrderBy,
+  EntityLayoutConfig,
   EntityListSearchConfig,
   EntityListViewConfig,
   EntityQueryOperator,
+  EntityRelatedListConfig,
   EntityPathStatusConfig,
   EntityQueryConfig,
   EntityQueryWhere,
   EntityQueryScalarValue
 } from './entities.types';
 import { EntityConfigRepository } from './services/entity-config.repository';
+import { EntityLayoutResolverService } from './services/entity-layout-resolver.service';
 import { EntityQueryCursorService } from './services/entity-query-cursor.service';
 
 const MAX_PAGE_SIZE = 2000;
@@ -146,14 +151,16 @@ interface EntityListResponse {
 }
 
 interface EntityDetailResponse {
+  layoutId: string;
+  recordTypeDeveloperName?: string;
   title: string;
   subtitle?: string;
-  sections?: NonNullable<EntityConfig['detail']>['sections'];
+  sections?: EntityDetailConfig['sections'];
   actions?: EntityActionConfig[];
   pathStatus?: EntityPathStatusConfig;
   record: Record<string, unknown>;
   data: Record<string, unknown>;
-  relatedLists?: NonNullable<EntityConfig['detail']>['relatedLists'];
+  relatedLists?: EntityDetailConfig['relatedLists'];
   fieldDefinitions: EntityFieldDefinition[];
   visibility: VisibilityEvaluation;
 }
@@ -172,6 +179,8 @@ interface EntityFormSectionResponse {
 }
 
 interface EntityFormResponse {
+  layoutId: string;
+  recordTypeDeveloperName?: string;
   title: string;
   subtitle?: string;
   sections: EntityFormSectionResponse[];
@@ -182,11 +191,13 @@ interface EntityFormResponse {
 }
 
 interface EntityRelatedListResponse {
-  relatedList: NonNullable<NonNullable<EntityConfig['detail']>['relatedLists']>[number];
+  layoutId: string;
+  recordTypeDeveloperName?: string;
+  relatedList: EntityRelatedListConfig;
   title: string;
-  columns: NonNullable<NonNullable<EntityConfig['detail']>['relatedLists']>[number]['columns'];
-  actions?: NonNullable<NonNullable<EntityConfig['detail']>['relatedLists']>[number]['actions'];
-  rowActions?: NonNullable<NonNullable<EntityConfig['detail']>['relatedLists']>[number]['rowActions'];
+  columns: EntityRelatedListConfig['columns'];
+  actions?: EntityRelatedListConfig['actions'];
+  rowActions?: EntityRelatedListConfig['rowActions'];
   emptyState?: string;
   records: Array<Record<string, unknown>>;
   total: number;
@@ -201,6 +212,14 @@ interface EntityFormLookupSearchResult {
     label: string;
     objectApiName: string;
     subtitle?: string;
+  }>;
+}
+
+interface EntityCreateLayoutOptionsResponse {
+  items: Array<{
+    recordTypeDeveloperName: string;
+    label: string;
+    layoutId: string;
   }>;
 }
 
@@ -237,6 +256,7 @@ export class EntitiesService {
     private readonly queryAuditService: QueryAuditService,
     private readonly resourceAccessService: ResourceAccessService,
     private readonly entityConfigRepository: EntityConfigRepository,
+    private readonly entityLayoutResolverService: EntityLayoutResolverService,
     private readonly entityQueryCursorService: EntityQueryCursorService,
     private readonly salesforceService: SalesforceService,
     private readonly visibilityService: VisibilityService
@@ -346,8 +366,20 @@ export class EntitiesService {
   async getEntityRecord(user: SessionUser, entityId: string, recordId: string): Promise<EntityDetailResponse> {
     const entityConfig = await this.loadEntityConfig(entityId);
     this.assertSalesforceRecordId(recordId);
-
-    const detailConfig = entityConfig.detail;
+    await this.resourceAccessService.authorizeObjectAccess(user, `entity:${entityId}`, entityConfig.objectApiName, {
+      queryKind: 'ENTITY_DETAIL_LAYOUT'
+    });
+    const recordTypeDeveloperName = await this.entityLayoutResolverService.resolveRecordTypeDeveloperName(
+      entityConfig,
+      recordId
+    );
+    const resolvedLayout = this.entityLayoutResolverService.resolveLayout(
+      entityConfig,
+      user,
+      'detail',
+      recordTypeDeveloperName
+    );
+    const detailConfig = resolvedLayout.layout.detail;
     if (!detailConfig) {
       throw new NotFoundException(`Detail view is not configured for ${entityId}`);
     }
@@ -367,11 +399,8 @@ export class EntitiesService {
     }));
     const detailFieldNames = this.collectDetailFieldNames(
       {
-        ...entityConfig,
-        detail: {
-          ...detailConfig,
-          sections: visibleSections
-        }
+        ...detailConfig,
+        sections: visibleSections
       },
       detailConfig.query
     );
@@ -415,6 +444,8 @@ export class EntitiesService {
     const subtitle = this.renderRecordTemplate(detailConfig.subtitle, record);
 
     return {
+      layoutId: resolvedLayout.layoutId,
+      recordTypeDeveloperName,
       title,
       subtitle,
       sections: visibleSections,
@@ -428,17 +459,55 @@ export class EntitiesService {
     };
   }
 
-  async getEntityForm(user: SessionUser, entityId: string, recordId?: string): Promise<EntityFormResponse> {
+  async getEntityCreateLayoutOptions(
+    user: SessionUser,
+    entityId: string
+  ): Promise<EntityCreateLayoutOptionsResponse> {
+    const entityConfig = await this.loadEntityConfig(entityId);
+    await this.resourceAccessService.authorizeObjectAccess(user, `entity:${entityId}`, entityConfig.objectApiName, {
+      queryKind: 'ENTITY_FORM_CREATE_OPTIONS'
+    });
+
+    return {
+      items: await this.entityLayoutResolverService.listCreateOptions(entityConfig, user)
+    };
+  }
+
+  async getEntityForm(
+    user: SessionUser,
+    entityId: string,
+    recordId?: string,
+    recordTypeDeveloperName?: string
+  ): Promise<EntityFormResponse> {
     const entityConfig = await this.loadEntityConfig(entityId);
     const mode: WriteMode = recordId ? 'update' : 'create';
 
-    const formConfig = entityConfig.form;
-    if (!formConfig || !formConfig.sections || formConfig.sections.length === 0) {
-      throw new NotFoundException(`Form is not configured for ${entityId}`);
-    }
-
     if (recordId) {
       this.assertSalesforceRecordId(recordId);
+    }
+
+    let resolvedRecordTypeDeveloperName = recordTypeDeveloperName?.trim() || undefined;
+    if (recordId) {
+      await this.resourceAccessService.authorizeObjectAccess(user, `entity:${entityId}`, entityConfig.objectApiName, {
+        queryKind: 'ENTITY_FORM_LAYOUT'
+      });
+      resolvedRecordTypeDeveloperName = await this.entityLayoutResolverService.resolveRecordTypeDeveloperName(
+        entityConfig,
+        recordId
+      );
+    } else if (!resolvedRecordTypeDeveloperName) {
+      throw new BadRequestException('recordTypeDeveloperName query parameter is required');
+    }
+
+    const resolvedLayout = this.entityLayoutResolverService.resolveLayout(
+      entityConfig,
+      user,
+      'form',
+      resolvedRecordTypeDeveloperName
+    );
+    const formConfig = resolvedLayout.layout.form;
+    if (!formConfig || !formConfig.sections || formConfig.sections.length === 0) {
+      throw new NotFoundException(`Form is not configured for ${entityId}`);
     }
 
     const sections = await this.resolveFormSections(formConfig.sections, entityConfig.objectApiName, mode);
@@ -475,6 +544,8 @@ export class EntitiesService {
         durationMs: 0
       });
       return {
+        layoutId: resolvedLayout.layoutId,
+        recordTypeDeveloperName: resolvedRecordTypeDeveloperName,
         title,
         subtitle: formConfig.subtitle,
         sections: visibleSections,
@@ -518,6 +589,8 @@ export class EntitiesService {
     const record = records[0];
 
     return {
+      layoutId: resolvedLayout.layoutId,
+      recordTypeDeveloperName: resolvedRecordTypeDeveloperName,
       title,
       subtitle: this.renderRecordTemplate(formConfig.subtitle, record),
       sections: visibleSections,
@@ -535,7 +608,27 @@ export class EntitiesService {
     payload: SearchEntityFormLookupDto,
   ): Promise<EntityFormLookupSearchResult> {
     const entityConfig = await this.loadEntityConfig(entityId);
-    const formConfig = entityConfig.form;
+    let recordTypeDeveloperName = payload.recordTypeDeveloperName?.trim() || undefined;
+    if (payload.recordId) {
+      this.assertSalesforceRecordId(payload.recordId);
+      await this.resourceAccessService.authorizeObjectAccess(user, `entity:${entityId}`, entityConfig.objectApiName, {
+        queryKind: 'ENTITY_FORM_LOOKUP_LAYOUT'
+      });
+      recordTypeDeveloperName = await this.entityLayoutResolverService.resolveRecordTypeDeveloperName(
+        entityConfig,
+        payload.recordId
+      );
+    } else if (!recordTypeDeveloperName) {
+      throw new BadRequestException('recordTypeDeveloperName or recordId is required');
+    }
+
+    const resolvedLayout = this.entityLayoutResolverService.resolveLayout(
+      entityConfig,
+      user,
+      'form',
+      recordTypeDeveloperName
+    );
+    const formConfig = resolvedLayout.layout.form;
     if (!formConfig || !formConfig.sections || formConfig.sections.length === 0) {
       throw new NotFoundException(`Form is not configured for ${entityId}`);
     }
@@ -563,7 +656,11 @@ export class EntitiesService {
 
     const limit = this.clamp(payload.limit ?? ENTITY_FORM_LOOKUP_LIMIT, 1, ENTITY_FORM_LOOKUP_LIMIT);
     const search = payload.q?.trim();
-    const context = this.normalizeLookupSearchContext(payload.context);
+    const context = this.normalizeLookupSearchContext({
+      ...payload.context,
+      recordId: payload.recordId ?? undefined,
+      recordTypeDeveloperName,
+    });
     const items: EntityFormLookupSearchResult['items'] = [];
     const seen = new Set<string>();
 
@@ -670,7 +767,20 @@ export class EntitiesService {
     }
     this.assertSalesforceRecordId(recordId);
 
-    const relatedLists = entityConfig.detail?.relatedLists ?? [];
+    await this.resourceAccessService.authorizeObjectAccess(user, `entity:${entityId}`, entityConfig.objectApiName, {
+      queryKind: 'ENTITY_RELATED_LIST_LAYOUT'
+    });
+    const recordTypeDeveloperName = await this.entityLayoutResolverService.resolveRecordTypeDeveloperName(
+      entityConfig,
+      recordId
+    );
+    const resolvedLayout = this.entityLayoutResolverService.resolveLayout(
+      entityConfig,
+      user,
+      'detail',
+      recordTypeDeveloperName
+    );
+    const relatedLists = resolvedLayout.layout.detail?.relatedLists ?? [];
     const relatedList = relatedLists.find((entry) => entry.id === relatedListId);
     if (!relatedList) {
       throw new NotFoundException(`Related list ${relatedListId} is not configured for ${entityId}`);
@@ -725,6 +835,8 @@ export class EntitiesService {
     });
 
     return {
+      layoutId: resolvedLayout.layoutId,
+      recordTypeDeveloperName,
       relatedList,
       title: relatedList.label,
       columns: visibleColumns,
@@ -742,7 +854,8 @@ export class EntitiesService {
   async createEntityRecord(
     user: SessionUser,
     entityId: string,
-    payload: unknown
+    payload: unknown,
+    recordTypeDeveloperName: string
   ): Promise<Record<string, unknown>> {
     const entityConfig = await this.loadEntityConfig(entityId);
     const visibility = await this.authorizeEntityWriteAccess(
@@ -751,7 +864,22 @@ export class EntitiesService {
       entityConfig.objectApiName,
       ENTITY_CREATE_QUERY_KIND
     );
-    const values = await this.normalizeWritePayload(entityConfig, payload, 'create');
+    const normalizedRecordTypeDeveloperName = recordTypeDeveloperName.trim();
+    if (!normalizedRecordTypeDeveloperName) {
+      throw new BadRequestException('recordTypeDeveloperName query parameter is required');
+    }
+
+    const resolvedLayout = this.entityLayoutResolverService.resolveLayout(
+      entityConfig,
+      user,
+      'form',
+      normalizedRecordTypeDeveloperName
+    );
+    const values = await this.normalizeWritePayload(entityConfig, resolvedLayout.layout, payload, 'create');
+    values.RecordTypeId = await this.salesforceService.resolveRecordTypeId(
+      entityConfig.objectApiName,
+      normalizedRecordTypeDeveloperName
+    );
     await this.recordWriteVisibilityAudit(visibility, ENTITY_CREATE_QUERY_KIND);
     const auditId = await this.auditWriteService.createApplicationIntentOrThrow({
       contactId: user.sub,
@@ -761,7 +889,9 @@ export class EntitiesService {
       objectApiName: entityConfig.objectApiName,
       payload: values,
       metadata: {
-        entityId
+        entityId,
+        layoutId: resolvedLayout.layoutId,
+        recordTypeDeveloperName: normalizedRecordTypeDeveloperName
       }
     });
 
@@ -803,6 +933,16 @@ export class EntitiesService {
       entityConfig.objectApiName,
       ENTITY_UPDATE_QUERY_KIND
     );
+    const recordTypeDeveloperName = await this.entityLayoutResolverService.resolveRecordTypeDeveloperName(
+      entityConfig,
+      recordId
+    );
+    const resolvedLayout = this.entityLayoutResolverService.resolveLayout(
+      entityConfig,
+      user,
+      'form',
+      recordTypeDeveloperName
+    );
     await this.assertRecordInWriteScope(
       user,
       entityId,
@@ -812,7 +952,8 @@ export class EntitiesService {
       ENTITY_UPDATE_PREFLIGHT_QUERY_KIND,
       'update'
     );
-    const values = await this.normalizeWritePayload(entityConfig, payload, 'update');
+    this.assertRecordTypeNotProvidedInUpdatePayload(payload);
+    const values = await this.normalizeWritePayload(entityConfig, resolvedLayout.layout, payload, 'update');
     await this.recordWriteVisibilityAudit(visibility, ENTITY_UPDATE_QUERY_KIND);
     const auditId = await this.auditWriteService.createApplicationIntentOrThrow({
       contactId: user.sub,
@@ -823,7 +964,9 @@ export class EntitiesService {
       recordId,
       payload: values,
       metadata: {
-        entityId
+        entityId,
+        layoutId: resolvedLayout.layoutId,
+        recordTypeDeveloperName
       }
     });
 
@@ -1376,8 +1519,8 @@ export class EntitiesService {
     return segments.length > 0 ? ` ORDER BY ${segments.join(', ')}` : '';
   }
 
-  private collectDetailFieldNames(entityConfig: EntityConfig, query: EntityQueryConfig): string[] {
-    const sectionFields = (entityConfig.detail?.sections ?? [])
+  private collectDetailFieldNames(detailConfig: EntityDetailConfig, query: EntityQueryConfig): string[] {
+    const sectionFields = (detailConfig.sections ?? [])
       .flatMap((section) => section.fields ?? [])
       .map((fieldConfig) => fieldConfig.field)
       .filter((fieldName): fieldName is string => typeof fieldName === 'string' && fieldName.trim().length > 0);
@@ -1418,9 +1561,9 @@ export class EntitiesService {
   }
 
   private filterVisibleDetailSections(
-    sections: NonNullable<NonNullable<EntityConfig['detail']>['sections']>,
+    sections: EntityDetailConfig['sections'],
     visibility: VisibilityEvaluation
-  ): NonNullable<NonNullable<EntityConfig['detail']>['sections']> {
+  ): EntityDetailConfig['sections'] {
     return sections
       .map((section) => ({
         ...section,
@@ -1558,7 +1701,7 @@ export class EntitiesService {
   }
 
   private async resolveFormSections(
-    formSections: NonNullable<NonNullable<EntityConfig['form']>['sections']>,
+    formSections: EntityFormConfig['sections'],
     objectApiName: string,
     mode: WriteMode,
   ): Promise<EntityFormSectionResponse[]> {
@@ -1702,7 +1845,7 @@ export class EntitiesService {
 
   private async buildFormFieldDefinitions(
     objectApiName: string,
-    configuredSections: NonNullable<NonNullable<EntityConfig['form']>['sections']>,
+    configuredSections: EntityFormConfig['sections'],
     fields: string[],
     mode: WriteMode,
   ): Promise<EntityFieldDefinition[]> {
@@ -1739,7 +1882,7 @@ export class EntitiesService {
   }
 
   private findConfiguredFormField(
-    sections: NonNullable<NonNullable<EntityConfig['form']>['sections']>,
+    sections: EntityFormConfig['sections'],
     fieldName: string,
   ): EntityFormFieldConfig | null {
     for (const section of sections) {
@@ -1865,6 +2008,7 @@ export class EntitiesService {
 
   private async normalizeWritePayload(
     entityConfig: EntityConfig,
+    layoutConfig: EntityLayoutConfig,
     payload: unknown,
     mode: WriteMode
   ): Promise<Record<string, unknown>> {
@@ -1872,7 +2016,7 @@ export class EntitiesService {
       throw new BadRequestException('Request body must be a JSON object');
     }
 
-    const writableFields = this.resolveConfiguredWriteFieldSet(entityConfig);
+    const writableFields = this.resolveConfiguredWriteFieldSet(layoutConfig);
     if (writableFields.size === 0) {
       throw new BadRequestException('Form writable fields are not configured for this entity');
     }
@@ -1922,13 +2066,26 @@ export class EntitiesService {
     return normalized;
   }
 
-  private resolveConfiguredWriteFieldSet(entityConfig: EntityConfig): Set<string> {
-    const formFields = (entityConfig.form?.sections ?? [])
+  private assertRecordTypeNotProvidedInUpdatePayload(payload: unknown): void {
+    if (!this.isObjectRecord(payload)) {
+      return;
+    }
+
+    if (
+      Object.prototype.hasOwnProperty.call(payload, 'RecordTypeId') ||
+      Object.prototype.hasOwnProperty.call(payload, 'RecordType')
+    ) {
+      throw new BadRequestException('Record type cannot be changed during update');
+    }
+  }
+
+  private resolveConfiguredWriteFieldSet(layoutConfig: EntityLayoutConfig): Set<string> {
+    const formFields = (layoutConfig.form?.sections ?? [])
       .flatMap((section) => section.fields ?? [])
       .map((field) => field.field)
       .filter((fieldName): fieldName is string => typeof fieldName === 'string' && WRITE_FIELD_API_NAME_PATTERN.test(fieldName));
 
-    const pathStatusField = entityConfig.detail?.pathStatus?.field;
+    const pathStatusField = layoutConfig.detail?.pathStatus?.field;
     const fields = pathStatusField ? [...formFields, pathStatusField] : formFields;
 
     return new Set(
@@ -2025,7 +2182,7 @@ export class EntitiesService {
   }
 
   private buildConfiguredFormFieldMap(
-    sections: NonNullable<NonNullable<EntityConfig['form']>['sections']>,
+    sections: EntityFormConfig['sections'],
   ): Map<string, EntityFormFieldConfig> {
     const fieldConfigMap = new Map<string, EntityFormFieldConfig>();
 

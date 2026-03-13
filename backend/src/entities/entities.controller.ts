@@ -7,7 +7,9 @@ import { AclResource } from '../common/decorators/acl-resource.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AclGuard } from '../common/guards/acl.guard';
 
+import { CreateEntityRecordDto } from './dto/create-entity-record.dto';
 import { GetEntityListDto } from './dto/get-entity-list.dto';
+import { GetEntityFormDto } from './dto/get-entity-form.dto';
 import { GetEntityRelatedListDto } from './dto/get-entity-related-list.dto';
 import { PreviewEntityAdminBootstrapDto } from './dto/preview-entity-admin-bootstrap.dto';
 import { SearchEntityFormLookupDto } from './dto/search-entity-form-lookup.dto';
@@ -81,6 +83,16 @@ export class EntitiesController {
     );
   }
 
+  @Get('admin/configs/record-types/suggestions')
+  @AclResource('rest:entities-config-admin')
+  searchSalesforceRecordTypes(@Query() query: SearchSalesforceObjectFieldsDto): Promise<unknown> {
+    return this.entityAdminConfigService.searchSalesforceRecordTypes(
+      query.objectApiName,
+      query.q,
+      query.limit
+    );
+  }
+
   @Get(':entityId/config')
   @AclResource('rest:entities-read')
   getEntityConfig(@CurrentUser() user: SessionUser, @Param('entityId') entityId: string): Promise<unknown> {
@@ -109,8 +121,12 @@ export class EntitiesController {
 
   @Get(':entityId/form')
   @AclResource('rest:entities-read')
-  getEntityCreateForm(@CurrentUser() user: SessionUser, @Param('entityId') entityId: string): Promise<unknown> {
-    return this.entitiesService.getEntityForm(user, entityId);
+  getEntityCreateForm(
+    @CurrentUser() user: SessionUser,
+    @Param('entityId') entityId: string,
+    @Query() query: GetEntityFormDto
+  ): Promise<unknown> {
+    return this.entitiesService.getEntityForm(user, entityId, undefined, query.recordTypeDeveloperName);
   }
 
   @Get(':entityId/form/:recordId')
@@ -118,9 +134,19 @@ export class EntitiesController {
   getEntityEditForm(
     @CurrentUser() user: SessionUser,
     @Param('entityId') entityId: string,
-    @Param('recordId') recordId: string
+    @Param('recordId') recordId: string,
+    @Query() query: GetEntityFormDto
   ): Promise<unknown> {
-    return this.entitiesService.getEntityForm(user, entityId, recordId);
+    return this.entitiesService.getEntityForm(user, entityId, recordId, query.recordTypeDeveloperName);
+  }
+
+  @Get(':entityId/layouts/create-options')
+  @AclResource('rest:entities-read')
+  getEntityCreateLayoutOptions(
+    @CurrentUser() user: SessionUser,
+    @Param('entityId') entityId: string
+  ): Promise<unknown> {
+    return this.entitiesService.getEntityCreateLayoutOptions(user, entityId);
   }
 
   @Post(':entityId/form/lookups/:fieldName/search')
@@ -150,9 +176,10 @@ export class EntitiesController {
   createEntityRecord(
     @CurrentUser() user: SessionUser,
     @Param('entityId') entityId: string,
+    @Query() query: CreateEntityRecordDto,
     @Body() payload: unknown
   ): Promise<Record<string, unknown>> {
-    return this.entitiesService.createEntityRecord(user, entityId, payload);
+    return this.entitiesService.createEntityRecord(user, entityId, payload, query.recordTypeDeveloperName);
   }
 
   @Put(':entityId/records/:recordId')

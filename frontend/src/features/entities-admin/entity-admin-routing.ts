@@ -11,6 +11,7 @@ export const ENTITY_CONFIG_SECTION_ORDER: EntityConfigSectionKey[] = [
   'list',
   'detail',
   'form',
+  'assignments',
 ]
 
 export const ENTITY_CONFIG_SECTION_LABELS: Record<EntityConfigSectionKey, string> = {
@@ -18,6 +19,7 @@ export const ENTITY_CONFIG_SECTION_LABELS: Record<EntityConfigSectionKey, string
   list: 'List',
   detail: 'Detail',
   form: 'Form',
+  assignments: 'Assignments',
 }
 
 export type EntityConfigDetailEditorAreaKey =
@@ -31,6 +33,7 @@ export type EntityConfigFormEditorAreaKey = 'header-query' | 'sections'
 export type EntityConfigEditRouteMatch = {
   entityId: string
   section: EntityConfigSectionKey
+  layoutId: string | null
   detailArea: EntityConfigDetailEditorAreaKey | null
   formArea: EntityConfigFormEditorAreaKey | null
 }
@@ -66,7 +69,13 @@ export const ENTITY_CONFIG_FORM_EDITOR_AREA_LABELS: Record<
 }
 
 export function isEntityConfigSection(value: string | null | undefined): value is EntityConfigSectionKey {
-  return value === 'base' || value === 'list' || value === 'detail' || value === 'form'
+  return (
+    value === 'base' ||
+    value === 'list' ||
+    value === 'detail' ||
+    value === 'form' ||
+    value === 'assignments'
+  )
 }
 
 export function isEntityConfigDetailEditorArea(
@@ -102,28 +111,46 @@ export function buildEntityEditPath(
   entityId: string,
   section: 'detail',
   editorArea?: EntityConfigDetailEditorAreaKey,
+  layoutId?: string | null,
 ): string
 export function buildEntityEditPath(
   entityId: string,
   section: 'form',
   editorArea?: EntityConfigFormEditorAreaKey,
+  layoutId?: string | null,
+): string
+export function buildEntityEditPath(
+  entityId: string,
+  section: 'assignments',
+  editorArea?: undefined,
+  layoutId?: string | null,
 ): string
 export function buildEntityEditPath(
   entityId: string,
   section: EntityConfigSectionKey,
   editorArea?: EntityConfigDetailEditorAreaKey | EntityConfigFormEditorAreaKey,
+  layoutId?: string | null,
 ): string
 export function buildEntityEditPath(
   entityId: string,
   section: EntityConfigSectionKey = 'base',
   editorArea?: EntityConfigDetailEditorAreaKey | EntityConfigFormEditorAreaKey,
+  layoutId?: string | null,
 ): string {
   const encodedEntityId = encodeURIComponent(entityId)
+  const normalizedLayoutId =
+    typeof layoutId === 'string' && layoutId.trim().length > 0
+      ? encodeURIComponent(layoutId.trim())
+      : null
 
   if (section === 'detail') {
     const detailArea = isEntityConfigDetailEditorArea(editorArea)
       ? editorArea
       : DEFAULT_ENTITY_CONFIG_DETAIL_EDITOR_AREA
+
+    if (normalizedLayoutId) {
+      return `/admin/entity-config/${encodedEntityId}/edit/layouts/${normalizedLayoutId}/detail/${detailArea}`
+    }
 
     return `/admin/entity-config/${encodedEntityId}/edit/detail/${detailArea}`
   }
@@ -133,7 +160,19 @@ export function buildEntityEditPath(
       ? editorArea
       : DEFAULT_ENTITY_CONFIG_FORM_EDITOR_AREA
 
+    if (normalizedLayoutId) {
+      return `/admin/entity-config/${encodedEntityId}/edit/layouts/${normalizedLayoutId}/form/${formArea}`
+    }
+
     return `/admin/entity-config/${encodedEntityId}/edit/form/${formArea}`
+  }
+
+  if (section === 'assignments') {
+    if (normalizedLayoutId) {
+      return `/admin/entity-config/${encodedEntityId}/edit/layouts/${normalizedLayoutId}/assignments`
+    }
+
+    return `/admin/entity-config/${encodedEntityId}/edit/assignments`
   }
 
   return `/admin/entity-config/${encodedEntityId}/edit/${section}`
@@ -144,6 +183,56 @@ export function buildEntityCreatePath(): string {
 }
 
 export function parseEntityConfigEditPath(pathname: string): EntityConfigEditRouteMatch | null {
+  const canonicalDetailMatch = matchPath(
+    '/admin/entity-config/:entityId/edit/layouts/:layoutId/detail/:detailArea',
+    pathname,
+  )
+  if (
+    canonicalDetailMatch?.params.entityId &&
+    canonicalDetailMatch.params.layoutId &&
+    isEntityConfigDetailEditorArea(canonicalDetailMatch.params.detailArea)
+  ) {
+    return {
+      entityId: decodeURIComponent(canonicalDetailMatch.params.entityId),
+      section: 'detail',
+      layoutId: decodeURIComponent(canonicalDetailMatch.params.layoutId),
+      detailArea: canonicalDetailMatch.params.detailArea,
+      formArea: null,
+    }
+  }
+
+  const canonicalFormMatch = matchPath(
+    '/admin/entity-config/:entityId/edit/layouts/:layoutId/form/:formArea',
+    pathname,
+  )
+  if (
+    canonicalFormMatch?.params.entityId &&
+    canonicalFormMatch.params.layoutId &&
+    isEntityConfigFormEditorArea(canonicalFormMatch.params.formArea)
+  ) {
+    return {
+      entityId: decodeURIComponent(canonicalFormMatch.params.entityId),
+      section: 'form',
+      layoutId: decodeURIComponent(canonicalFormMatch.params.layoutId),
+      detailArea: null,
+      formArea: canonicalFormMatch.params.formArea,
+    }
+  }
+
+  const canonicalAssignmentsMatch = matchPath(
+    '/admin/entity-config/:entityId/edit/layouts/:layoutId/assignments',
+    pathname,
+  )
+  if (canonicalAssignmentsMatch?.params.entityId && canonicalAssignmentsMatch.params.layoutId) {
+    return {
+      entityId: decodeURIComponent(canonicalAssignmentsMatch.params.entityId),
+      section: 'assignments',
+      layoutId: decodeURIComponent(canonicalAssignmentsMatch.params.layoutId),
+      detailArea: null,
+      formArea: null,
+    }
+  }
+
   const detailMatch = matchPath('/admin/entity-config/:entityId/edit/detail/:detailArea', pathname)
   if (
     detailMatch?.params.entityId &&
@@ -152,6 +241,7 @@ export function parseEntityConfigEditPath(pathname: string): EntityConfigEditRou
     return {
       entityId: decodeURIComponent(detailMatch.params.entityId),
       section: 'detail',
+      layoutId: null,
       detailArea: detailMatch.params.detailArea,
       formArea: null,
     }
@@ -162,8 +252,20 @@ export function parseEntityConfigEditPath(pathname: string): EntityConfigEditRou
     return {
       entityId: decodeURIComponent(formMatch.params.entityId),
       section: 'form',
+      layoutId: null,
       detailArea: null,
       formArea: formMatch.params.formArea,
+    }
+  }
+
+  const assignmentsMatch = matchPath('/admin/entity-config/:entityId/edit/assignments', pathname)
+  if (assignmentsMatch?.params.entityId) {
+    return {
+      entityId: decodeURIComponent(assignmentsMatch.params.entityId),
+      section: 'assignments',
+      layoutId: null,
+      detailArea: null,
+      formArea: null,
     }
   }
 
@@ -175,6 +277,7 @@ export function parseEntityConfigEditPath(pathname: string): EntityConfigEditRou
     return {
       entityId: decodeURIComponent(sectionMatch.params.entityId),
       section: sectionMatch.params.section,
+      layoutId: null,
       detailArea: null,
       formArea: null,
     }

@@ -8,6 +8,8 @@ import type {
   EntityDetailSectionConfig,
   EntityFormConfig,
   EntityFormSectionConfig,
+  EntityLayoutAssignmentConfig,
+  EntityLayoutConfig,
   EntityListConfig,
   EntityListViewConfig,
   EntityRelatedListConfig
@@ -26,25 +28,37 @@ type EntityConfigRecordWithRelations = Prisma.EntityConfigRecordGetPayload<{
         };
       };
     };
-    detailConfig: {
-      include: {
-        sections: {
-          orderBy: {
-            sortOrder: 'asc';
-          };
-        };
-        relatedLists: {
-          orderBy: {
-            sortOrder: 'asc';
-          };
-        };
+    layouts: {
+      orderBy: {
+        sortOrder: 'asc';
       };
-    };
-    formConfig: {
       include: {
-        sections: {
+        assignments: {
           orderBy: {
             sortOrder: 'asc';
+          };
+        };
+        detailConfig: {
+          include: {
+            sections: {
+              orderBy: {
+                sortOrder: 'asc';
+              };
+            };
+            relatedLists: {
+              orderBy: {
+                sortOrder: 'asc';
+              };
+            };
+          };
+        };
+        formConfig: {
+          include: {
+            sections: {
+              orderBy: {
+                sortOrder: 'asc';
+              };
+            };
           };
         };
       };
@@ -53,8 +67,9 @@ type EntityConfigRecordWithRelations = Prisma.EntityConfigRecordGetPayload<{
 }>;
 
 type EntityListConfigRecordWithRelations = NonNullable<EntityConfigRecordWithRelations['listConfig']>;
-type EntityDetailConfigRecordWithRelations = NonNullable<EntityConfigRecordWithRelations['detailConfig']>;
-type EntityFormConfigRecordWithRelations = NonNullable<EntityConfigRecordWithRelations['formConfig']>;
+type EntityLayoutConfigRecordWithRelations = EntityConfigRecordWithRelations['layouts'][number];
+type EntityDetailConfigRecordWithRelations = NonNullable<EntityLayoutConfigRecordWithRelations['detailConfig']>;
+type EntityFormConfigRecordWithRelations = NonNullable<EntityLayoutConfigRecordWithRelations['formConfig']>;
 
 @Injectable()
 export class EntityConfigRepository {
@@ -104,20 +119,28 @@ export class EntityConfigRepository {
             }
           }
         },
-        detailConfig: {
+        layouts: {
+          orderBy: { sortOrder: 'asc' },
           include: {
-            sections: {
+            assignments: {
               orderBy: { sortOrder: 'asc' }
             },
-            relatedLists: {
-              orderBy: { sortOrder: 'asc' }
-            }
-          }
-        },
-        formConfig: {
-          include: {
-            sections: {
-              orderBy: { sortOrder: 'asc' }
+            detailConfig: {
+              include: {
+                sections: {
+                  orderBy: { sortOrder: 'asc' }
+                },
+                relatedLists: {
+                  orderBy: { sortOrder: 'asc' }
+                }
+              }
+            },
+            formConfig: {
+              include: {
+                sections: {
+                  orderBy: { sortOrder: 'asc' }
+                }
+              }
             }
           }
         }
@@ -134,15 +157,18 @@ export class EntityConfigRepository {
   }
 
   private mapEntityConfig(entityConfigRecord: EntityConfigRecordWithRelations): EntityConfig {
-    const id = this.requireString(
-      entityConfigRecord.id,
-      `Entity config is invalid: id is required`
-    );
+    const id = this.requireString(entityConfigRecord.id, 'Entity config is invalid: id is required');
     const objectApiName = this.requireString(
       entityConfigRecord.objectApiName,
       `Entity config ${id} is invalid: objectApiName is required`
     );
     const label = this.requireString(entityConfigRecord.label, `Entity config ${id} is invalid: label is required`);
+    const layouts = entityConfigRecord.layouts.map((layoutRecord) => this.mapLayoutConfig(id, layoutRecord));
+    const defaultLayouts = layouts.filter((layout) => layout.isDefault);
+
+    if (defaultLayouts.length > 1) {
+      throw new BadRequestException(`Entity config ${id} is invalid: multiple default layouts are not allowed`);
+    }
 
     return {
       id,
@@ -151,10 +177,61 @@ export class EntityConfigRepository {
       description: this.asOptionalString(entityConfigRecord.description),
       navigation: this.asNavigation(entityConfigRecord.navigationJson),
       list: entityConfigRecord.listConfig ? this.mapListConfig(id, entityConfigRecord.listConfig) : undefined,
-      detail: entityConfigRecord.detailConfig
-        ? this.mapDetailConfig(id, entityConfigRecord.detailConfig)
-        : undefined,
-      form: entityConfigRecord.formConfig ? this.mapFormConfig(id, entityConfigRecord.formConfig) : undefined
+      layouts
+    };
+  }
+
+  private mapLayoutConfig(entityId: string, layoutRecord: EntityLayoutConfigRecordWithRelations): EntityLayoutConfig {
+    const id = this.requireString(
+      layoutRecord.layoutId,
+      `Entity layout config ${entityId} is invalid: layout.id is required`
+    );
+    const label = this.requireString(
+      layoutRecord.label,
+      `Entity layout config ${entityId}/${id} is invalid: layout.label is required`
+    );
+    const detail = layoutRecord.detailConfig ? this.mapDetailConfig(entityId, id, layoutRecord.detailConfig) : undefined;
+    const form = layoutRecord.formConfig ? this.mapFormConfig(entityId, id, layoutRecord.formConfig) : undefined;
+
+    if (!detail && !form) {
+      throw new BadRequestException(
+        `Entity layout config ${entityId}/${id} is invalid: at least one of detail or form is required`
+      );
+    }
+
+    return {
+      id,
+      label,
+      description: this.asOptionalString(layoutRecord.description),
+      isDefault: layoutRecord.isDefault ? true : undefined,
+      detail,
+      form,
+      assignments: layoutRecord.assignments.map((assignmentRecord, index) =>
+        this.mapLayoutAssignmentConfig(entityId, id, assignmentRecord, index)
+      )
+    };
+  }
+
+  private mapLayoutAssignmentConfig(
+    entityId: string,
+    layoutId: string,
+    assignmentRecord: EntityLayoutConfigRecordWithRelations['assignments'][number],
+    index: number
+  ): EntityLayoutAssignmentConfig {
+    const recordTypeDeveloperName = this.asOptionalString(assignmentRecord.recordTypeDeveloperName);
+    const permissionCode = this.asOptionalString(assignmentRecord.permissionCode);
+    const priority = typeof assignmentRecord.priority === 'number' ? assignmentRecord.priority : 0;
+
+    if (!recordTypeDeveloperName && !permissionCode) {
+      throw new BadRequestException(
+        `Entity layout config ${entityId}/${layoutId} is invalid: assignments[${index}] must declare recordTypeDeveloperName or permissionCode`
+      );
+    }
+
+    return {
+      recordTypeDeveloperName,
+      permissionCode,
+      priority
     };
   }
 
@@ -216,24 +293,25 @@ export class EntityConfigRepository {
 
   private mapDetailConfig(
     entityId: string,
+    layoutId: string,
     detailConfigRecord: EntityDetailConfigRecordWithRelations
   ): EntityDetailConfig {
     const sections = detailConfigRecord.sections.map((sectionConfigRecord) =>
-      this.mapDetailSectionConfig(entityId, sectionConfigRecord)
+      this.mapDetailSectionConfig(entityId, layoutId, sectionConfigRecord)
     );
 
     if (sections.length === 0) {
-      throw new BadRequestException(`Entity detail config ${entityId} is invalid: sections are required`);
+      throw new BadRequestException(`Entity detail config ${entityId}/${layoutId} is invalid: sections are required`);
     }
 
     const relatedLists = detailConfigRecord.relatedLists.map((relatedListConfigRecord) =>
-      this.mapRelatedListConfig(entityId, relatedListConfigRecord)
+      this.mapRelatedListConfig(entityId, layoutId, relatedListConfigRecord)
     );
 
     return {
       query: normalizeEntityQueryConfig(
         detailConfigRecord.queryJson,
-        `Entity detail config ${entityId} is invalid: query`
+        `Entity detail config ${entityId}/${layoutId} is invalid: query`
       ),
       sections,
       relatedLists: relatedLists.length > 0 ? relatedLists : undefined,
@@ -249,16 +327,19 @@ export class EntityConfigRepository {
 
   private mapDetailSectionConfig(
     entityId: string,
+    layoutId: string,
     sectionConfigRecord: EntityDetailConfigRecordWithRelations['sections'][number]
   ): EntityDetailSectionConfig {
     const title = this.requireString(
       sectionConfigRecord.title,
-      `Entity detail section config ${entityId} is invalid: title is required`
+      `Entity detail section config ${entityId}/${layoutId} is invalid: title is required`
     );
     const fields = this.asObjectArray(sectionConfigRecord.fieldsJson);
 
     if (fields.length === 0) {
-      throw new BadRequestException(`Entity detail section config ${entityId}/${title} is invalid: fields are required`);
+      throw new BadRequestException(
+        `Entity detail section config ${entityId}/${layoutId}/${title} is invalid: fields are required`
+      );
     }
 
     return {
@@ -269,20 +350,23 @@ export class EntityConfigRepository {
 
   private mapRelatedListConfig(
     entityId: string,
+    layoutId: string,
     relatedListConfigRecord: EntityDetailConfigRecordWithRelations['relatedLists'][number]
   ): EntityRelatedListConfig {
     const id = this.requireString(
       relatedListConfigRecord.relatedListId,
-      `Entity related-list config ${entityId} is invalid: id is required`
+      `Entity related-list config ${entityId}/${layoutId} is invalid: id is required`
     );
     const label = this.requireString(
       relatedListConfigRecord.label,
-      `Entity related-list config ${entityId}/${id} is invalid: label is required`
+      `Entity related-list config ${entityId}/${layoutId}/${id} is invalid: label is required`
     );
     const columns = this.asStringOrObjectArray(relatedListConfigRecord.columnsJson);
 
     if (columns.length === 0) {
-      throw new BadRequestException(`Entity related-list config ${entityId}/${id} is invalid: columns are required`);
+      throw new BadRequestException(
+        `Entity related-list config ${entityId}/${layoutId}/${id} is invalid: columns are required`
+      );
     }
 
     return {
@@ -290,7 +374,7 @@ export class EntityConfigRepository {
       label,
       query: normalizeEntityQueryConfig(
         relatedListConfigRecord.queryJson,
-        `Entity related-list config ${entityId}/${id} is invalid: query`
+        `Entity related-list config ${entityId}/${layoutId}/${id} is invalid: query`
       ),
       columns: columns as unknown as EntityRelatedListConfig['columns'],
       description: this.asOptionalString(relatedListConfigRecord.description),
@@ -306,21 +390,21 @@ export class EntityConfigRepository {
     };
   }
 
-  private mapFormConfig(entityId: string, formConfigRecord: EntityFormConfigRecordWithRelations): EntityFormConfig {
+  private mapFormConfig(entityId: string, layoutId: string, formConfigRecord: EntityFormConfigRecordWithRelations): EntityFormConfig {
     const createTitle = this.requireString(
       formConfigRecord.createTitle,
-      `Entity form config ${entityId} is invalid: title.create is required`
+      `Entity form config ${entityId}/${layoutId} is invalid: title.create is required`
     );
     const editTitle = this.requireString(
       formConfigRecord.editTitle,
-      `Entity form config ${entityId} is invalid: title.edit is required`
+      `Entity form config ${entityId}/${layoutId} is invalid: title.edit is required`
     );
     const sections = formConfigRecord.sections.map((sectionConfigRecord) =>
-      this.mapFormSectionConfig(entityId, sectionConfigRecord)
+      this.mapFormSectionConfig(entityId, layoutId, sectionConfigRecord)
     );
 
     if (sections.length === 0) {
-      throw new BadRequestException(`Entity form config ${entityId} is invalid: sections are required`);
+      throw new BadRequestException(`Entity form config ${entityId}/${layoutId} is invalid: sections are required`);
     }
 
     return {
@@ -330,7 +414,7 @@ export class EntityConfigRepository {
       },
       query: normalizeEntityQueryConfig(
         formConfigRecord.queryJson,
-        `Entity form config ${entityId} is invalid: query`
+        `Entity form config ${entityId}/${layoutId} is invalid: query`
       ),
       subtitle: this.asOptionalString(formConfigRecord.subtitle),
       sections
@@ -339,16 +423,15 @@ export class EntityConfigRepository {
 
   private mapFormSectionConfig(
     entityId: string,
+    layoutId: string,
     sectionConfigRecord: EntityFormConfigRecordWithRelations['sections'][number]
   ): EntityFormSectionConfig {
     const fields = this.asObjectArray(sectionConfigRecord.fieldsJson).map((field, index) =>
-      normalizeEntityFormFieldConfig(
-        field,
-        `Entity form section config ${entityId}.fields[${index}]`
-      )
+      normalizeEntityFormFieldConfig(field, `Entity form section config ${entityId}/${layoutId}.fields[${index}]`)
     );
+
     if (fields.length === 0) {
-      throw new BadRequestException(`Entity form section config ${entityId} is invalid: fields are required`);
+      throw new BadRequestException(`Entity form section config ${entityId}/${layoutId} is invalid: fields are required`);
     }
 
     return {
@@ -369,15 +452,6 @@ export class EntityConfigRepository {
     }
 
     return { basePath };
-  }
-
-  private requireObject(value: unknown, errorMessage: string): Record<string, unknown> {
-    const objectValue = this.asObject(value);
-    if (!objectValue) {
-      throw new BadRequestException(errorMessage);
-    }
-
-    return objectValue;
   }
 
   private requireString(value: unknown, errorMessage: string): string {
@@ -421,18 +495,18 @@ export class EntityConfigRepository {
     );
   }
 
+  private asOptionalString(value: unknown): string | undefined {
+    const normalized = this.asNonEmptyString(value);
+    return normalized || undefined;
+  }
+
   private asNonEmptyString(value: unknown): string | null {
     if (typeof value !== 'string') {
       return null;
     }
 
-    const trimmed = value.trim();
-    return trimmed.length > 0 ? trimmed : null;
-  }
-
-  private asOptionalString(value: unknown): string | undefined {
-    const normalized = this.asNonEmptyString(value);
-    return normalized ?? undefined;
+    const normalized = value.trim();
+    return normalized.length > 0 ? normalized : null;
   }
 
   private isObjectRecord(value: unknown): value is Record<string, unknown> {

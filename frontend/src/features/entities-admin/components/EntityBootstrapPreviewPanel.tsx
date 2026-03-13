@@ -25,16 +25,18 @@ export function EntityBootstrapPreviewPanel({
   onCreateBaseOnly,
 }: EntityBootstrapPreviewPanelProps) {
   const previewEntity = preview?.entity
+  const previewLayout =
+    previewEntity?.layouts?.find((layout) => layout.isDefault) ?? previewEntity?.layouts?.[0]
   const viewCount = previewEntity?.list?.views?.length ?? 0
-  const detailSectionCount = previewEntity?.detail?.sections?.length ?? 0
-  const formSectionCount = previewEntity?.form?.sections?.length ?? 0
+  const detailSectionCount = previewLayout?.detail?.sections?.length ?? 0
+  const formSectionCount = previewLayout?.form?.sections?.length ?? 0
   const formFieldCount =
-    previewEntity?.form?.sections?.reduce(
+    previewLayout?.form?.sections?.reduce(
       (total, section) => total + (section.fields?.length ?? 0),
       0,
     ) ?? 0
   const listRowActions = previewEntity?.list?.views?.[0]?.rowActions ?? []
-  const detailActions = previewEntity?.detail?.actions ?? []
+  const detailActions = previewLayout?.detail?.actions ?? []
   const canCreateWithPreset = Boolean(preview && previewCurrent && !previewLoading && !saving)
 
   return (
@@ -129,7 +131,7 @@ export function EntityBootstrapPreviewPanel({
             </PreviewBlock>
 
             <PreviewBlock label="Detail preset">
-              <p>Title template: {previewEntity?.detail?.titleTemplate ?? '-'}</p>
+              <p>Title template: {previewLayout?.detail?.titleTemplate ?? '-'}</p>
               <p>Actions: {formatActionLabels(detailActions)}</p>
             </PreviewBlock>
           </div>

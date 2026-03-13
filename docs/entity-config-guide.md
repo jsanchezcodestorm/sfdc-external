@@ -3,8 +3,7 @@
 ## 1) Scopo
 Questo documento definisce il contratto tecnico delle configurazioni entita (`Entity Config`) usate dal backend per:
 - listing (`list`)
-- dettaglio (`detail`)
-- form create/edit (`form`)
+- layout multipli (`layouts[]`) che incapsulano `detail` e `form`
 - related lists
 
 Obiettivo: permettere un progetto nuovo da zero con configurazione versionata, senza hardcode diffuso.
@@ -33,6 +32,8 @@ Nota ACL:
 entity_configs
 entity_list_configs
 entity_list_view_configs
+entity_layout_configs
+entity_layout_assignments
 entity_detail_configs
 entity_detail_section_configs
 entity_related_list_configs
@@ -42,7 +43,10 @@ entity_form_section_configs
 
 Regole:
 - `entity_configs.id` e l identificatore tecnico univoco (`entityId`)
-- blocchi `list`, `detail`, `form` sono opzionali e modellati come record 1:1
+- `list` resta opzionale e modellato 1:1 con l entita
+- `layouts[]` e il layer 1:N tra entity e `detail/form`
+- ogni layout puo contenere `detail` e/o `form`, ma almeno uno dei due deve essere presente
+- gli assignment di layout guidano la selezione runtime per `RecordType.DeveloperName` e permission code utente
 - viste/sezioni/related lists sono modellate come record 1:N con `sortOrder`
 - campi annidati (`query`, `columns`, `actions`, `fields`, `pathStatus`) sono persistiti come JSONB
 
@@ -103,7 +107,30 @@ Nota:
 - `pageSize` e clampato lato API nel range `1..2000`.
 - gli endpoint runtime list usano cursor pagination backend (`cursor` request, `nextCursor` response); `page`/`OFFSET` non fanno parte del contratto runtime.
 
-## 6) Contratto `detail`
+## 6) Contratto `layouts[]`
+Ogni item di `layouts[]` rappresenta una variante coerente `detail + form` per la stessa entity.
+
+Campi:
+- `id` (required)
+- `label` (required)
+- `description` (optional)
+- `isDefault` (optional, max uno a `true`)
+- `detail` (optional)
+- `form` (optional)
+- `assignments[]` (required, puo essere vuoto)
+
+Selezione runtime:
+1. match `recordTypeDeveloperName + permissionCode`
+2. match solo `recordTypeDeveloperName`
+3. match solo `permissionCode`
+4. fallback su `isDefault: true`
+
+Regole:
+- a parita di specificita vince `priority` piu alta
+- parita residua nella stessa specificita = configurazione invalida in save/import
+- `entity.detail` e `entity.form` top-level non sono piu supportati
+
+## 7) Contratto `detail` (interno al layout)
 ### 6.1 Manifest `detail` (`entity_detail_configs`)
 Campi principali:
 - `query` (required)
@@ -137,7 +164,7 @@ Contratto:
 Vincolo importante:
 - aggiornamento stato supportato solo su field diretto (no path con `.`).
 
-## 7) Contratto `form`
+## 8) Contratto `form` (interno al layout)
 ### 7.1 Manifest `form` (`entity_form_configs`)
 Campi:
 - `title.create`, `title.edit` (required)
@@ -190,7 +217,7 @@ Semantica operativa (frontend):
 - se `parentRel` non combacia col contesto (`?parentRel=...`), la condizione viene scartata
 - `prefill: true` prova a valorizzare automaticamente il lookup nel create usando i filtri
 
-## 8) Query DSL supportata (`EntityQueryConfig`)
+## 9) Query DSL supportata (`EntityQueryConfig`)
 Contratto query:
 - `object` (required)
 - `fields[]` (required, ma se vuoto il builder usa `Id`)
@@ -292,8 +319,10 @@ Conseguenza:
 ## 13) Checklist "nuova entita" (da zero)
 1. creare/aggiornare migration Prisma per inserire record in `entity_configs`
 2. inserire blocco `list` in `entity_list_configs` + almeno una view in `entity_list_view_configs`
-3. inserire blocco `detail` in `entity_detail_configs` + sezioni in `entity_detail_section_configs`
-4. inserire blocco `form` in `entity_form_configs` + sezioni in `entity_form_section_configs` (se entita editabile)
+3. inserire almeno un layout in `entity_layout_configs`
+4. inserire eventuale blocco `detail` in `entity_detail_configs` + sezioni/related lists per il layout
+5. inserire eventuale blocco `form` in `entity_form_configs` + sezioni per il layout
+6. inserire eventuali assignment in `entity_layout_assignments`
 5. applicare migrazione (`prisma migrate dev|deploy`) e rigenerare client Prisma
 6. verificare via admin entity o ACL admin che `entity:<entity-id>` sia stata scoperta con stato `disabled/system/present`
 7. assegnare permission e portare `accessMode` a `permission-bound` o `authenticated` secondo il caso d uso
@@ -312,12 +341,12 @@ Conseguenza:
 
 ## 15) Admin configurazione (PostgreSQL)
 Endpoint admin (solo `PORTAL_ADMIN`):
-- `GET /entities/admin/configs`: lista entita configurate con summary (views/sezioni/related/form) + `aclResourceStatus`
+- `GET /entities/admin/configs`: lista entita configurate con summary (views/layout/detail/form/assignment) + `aclResourceStatus`
 - `GET /entities/admin/configs/:entityId`: configurazione completa entity + `aclResourceStatus`
 - `PUT /entities/admin/configs/:entityId`: upsert configurazione completa (`{ "entity": { ... } }`)
 
 UI frontend admin:
-- route hash persistente `#/admin/entity-config/:entityId/:section`
+- route hash persistente layout-aware, con `layoutId` nelle aree `detail`, `form`, `assignments`
 - sidebar sinistra fissa full-height con category `Entity PostgreSQL` e sub category `Base/List/Detail/Form`
 - editor JSON sezione + salvataggio su PostgreSQL
 

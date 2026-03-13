@@ -15,13 +15,18 @@ import {
   updateAclResource,
 } from '../../acl-admin/acl-admin-api'
 import type { AclAdminPermissionSummary } from '../../acl-admin/acl-admin-types'
-import type { EntityConfig } from '../../entities/entity-types'
+import type {
+  EntityConfig,
+  EntityLayoutAssignmentConfig,
+  EntityLayoutConfig,
+} from '../../entities/entity-types'
 import {
   createEntityAdminConfig,
   deleteEntityAdminConfig,
   fetchEntityAdminConfig,
   fetchEntityAdminConfigList,
   previewEntityAdminBootstrap,
+  searchEntityAdminRecordTypes,
   searchEntityAdminObjectApiNames,
   updateEntityAdminConfig,
 } from '../entity-admin-api'
@@ -30,6 +35,7 @@ import type {
   EntityAdminConfigSummary,
   EntityConfigSectionKey,
   SalesforceObjectApiNameSuggestion,
+  SalesforceRecordTypeSuggestion,
 } from '../entity-admin-types'
 import {
   buildEntityCatalogPath,
@@ -78,6 +84,7 @@ type RouteParams = {
   entityId?: string
   detailArea?: string
   formArea?: string
+  layoutId?: string
 }
 
 type EntityAdminLocationState = {
@@ -119,6 +126,7 @@ export function EntityAdminConfigPage() {
       (params.detailArea ? 'detail' : params.formArea ? 'form' : null)
   const activeDetailArea = activeEditRoute?.detailArea ?? null
   const activeFormArea = activeEditRoute?.formArea ?? null
+  const activeLayoutId = activeEditRoute?.layoutId ?? null
   const isEditRoute = Boolean(selectedEntityId) && activeSection !== null
   const isEntityListRoute = selectedEntityId === null && !isCreateRoute
   const isViewRoute = Boolean(selectedEntityId) && !isEditRoute
@@ -127,10 +135,7 @@ export function EntityAdminConfigPage() {
   const [selectedEntityConfig, setSelectedEntityConfig] = useState<EntityConfig | null>(null)
   const [baseFormDraft, setBaseFormDraft] = useState<BaseFormDraft>(createEmptyBaseFormDraft())
   const [listFormDraft, setListFormDraft] = useState<ListFormDraft>(createEmptyListFormDraft())
-  const [detailFormDraft, setDetailFormDraft] = useState<DetailFormDraft>(
-    createEmptyDetailFormDraft(),
-  )
-  const [formFormDraft, setFormFormDraft] = useState<FormFormDraft>(createEmptyFormDraft())
+  const [layoutDrafts, setLayoutDrafts] = useState<EntityLayoutDraft[]>([])
   const [persistedDraftSnapshot, setPersistedDraftSnapshot] =
     useState<EntityConfigDraftSnapshot | null>(null)
   const [selectedListViewIndex, setSelectedListViewIndex] = useState(0)
@@ -143,6 +148,9 @@ export function EntityAdminConfigPage() {
     useState(false)
   const [objectApiNameSuggestionsError, setObjectApiNameSuggestionsError] =
     useState<string | null>(null)
+  const [recordTypeSuggestions, setRecordTypeSuggestions] = useState<SalesforceRecordTypeSuggestion[]>([])
+  const [loadingRecordTypeSuggestions, setLoadingRecordTypeSuggestions] = useState(false)
+  const [recordTypeSuggestionsError, setRecordTypeSuggestionsError] = useState<string | null>(null)
   const [loadingList, setLoadingList] = useState(true)
   const [loadingConfig, setLoadingConfig] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -198,18 +206,32 @@ export function EntityAdminConfigPage() {
       serializeDraftSnapshot({
         base: baseFormDraft,
         list: listFormDraft,
-        detail: detailFormDraft,
-        form: formFormDraft,
+        layouts: layoutDrafts,
       }) !== serializeDraftSnapshot(persistedDraftSnapshot)
     )
   }, [
     baseFormDraft,
-    detailFormDraft,
-    formFormDraft,
     isEditRoute,
+    layoutDrafts,
     listFormDraft,
     persistedDraftSnapshot,
   ])
+
+  const primaryLayoutDraft = useMemo(
+    () => getPreferredEntityLayoutDraft(layoutDrafts),
+    [layoutDrafts],
+  )
+  const activeLayoutDraft = useMemo(() => {
+    if (activeLayoutId) {
+      return layoutDrafts.find((layout) => layout.id === activeLayoutId) ?? null
+    }
+
+    return primaryLayoutDraft
+  }, [activeLayoutId, layoutDrafts, primaryLayoutDraft])
+  const detailFormDraft = activeLayoutDraft?.detail ?? createEmptyDetailFormDraft()
+  const formFormDraft = activeLayoutDraft?.form ?? createEmptyFormDraft()
+  const primaryDetailFormDraft = primaryLayoutDraft?.detail ?? createEmptyDetailFormDraft()
+  const primaryFormFormDraft = primaryLayoutDraft?.form ?? createEmptyFormDraft()
 
   const currentBaseFingerprint = useMemo(
     () => createBaseDraftFingerprint(baseFormDraft),
@@ -223,12 +245,12 @@ export function EntityAdminConfigPage() {
     [baseFormDraft.objectApiName, listFormDraft],
   )
   const detailStructureError = useMemo(
-    () => getDraftSectionValidationMessage('detail', detailFormDraft, baseFormDraft.objectApiName),
-    [baseFormDraft.objectApiName, detailFormDraft],
+    () => getDraftSectionValidationMessage('detail', primaryDetailFormDraft, baseFormDraft.objectApiName),
+    [baseFormDraft.objectApiName, primaryDetailFormDraft],
   )
   const formStructureError = useMemo(
-    () => getDraftSectionValidationMessage('form', formFormDraft, baseFormDraft.objectApiName),
-    [baseFormDraft.objectApiName, formFormDraft],
+    () => getDraftSectionValidationMessage('form', primaryFormFormDraft, baseFormDraft.objectApiName),
+    [baseFormDraft.objectApiName, primaryFormFormDraft],
   )
   const hasGeneratedStructure =
     listStructureError === null &&
@@ -239,8 +261,8 @@ export function EntityAdminConfigPage() {
     [listFormDraft.views],
   )
   const detailActions = useMemo(
-    () => readEntityActionDrafts(detailFormDraft.actionsJson),
-    [detailFormDraft.actionsJson],
+    () => readEntityActionDrafts(primaryDetailFormDraft.actionsJson),
+    [primaryDetailFormDraft.actionsJson],
   )
   const actionsReady = listRowActions.length > 0 || detailActions.length > 0
   const accessReady =
@@ -339,29 +361,35 @@ export function EntityAdminConfigPage() {
     if (!selectedEntityConfig) {
       setBaseFormDraft(createEmptyBaseFormDraft())
       setListFormDraft(createEmptyListFormDraft())
-      setDetailFormDraft(createEmptyDetailFormDraft())
-      setFormFormDraft(createEmptyFormDraft())
+      setLayoutDrafts(isCreateRoute ? [createEmptyEntityLayoutDraft('default', 'Default', true)] : [])
       setPersistedDraftSnapshot(null)
       setSelectedListViewIndex(0)
       setObjectApiNameSearchInput('')
       setObjectApiNameSuggestions([])
       setObjectApiNameSuggestionsError(null)
+      setRecordTypeSuggestions([])
+      setRecordTypeSuggestionsError(null)
+      setLoadingRecordTypeSuggestions(false)
       setBasePathAutoSyncEnabled(isCreateRoute)
       shouldAutoSyncIdRef.current = isCreateRoute
       shouldAutoSyncLabelRef.current = isCreateRoute
       return
     }
 
-    const snapshot = createDraftSnapshot(selectedEntityConfig)
+    const snapshot = createDraftSnapshot(selectedEntityConfig, {
+      createMissingDefaultLayout: isCreateRoute,
+    })
     setBaseFormDraft(snapshot.base)
     setListFormDraft(snapshot.list)
-    setDetailFormDraft(snapshot.detail)
-    setFormFormDraft(snapshot.form)
+    setLayoutDrafts(snapshot.layouts)
     setPersistedDraftSnapshot(snapshot)
     setSelectedListViewIndex(0)
     setObjectApiNameSearchInput('')
     setObjectApiNameSuggestions([])
     setObjectApiNameSuggestionsError(null)
+    setRecordTypeSuggestions([])
+    setRecordTypeSuggestionsError(null)
+    setLoadingRecordTypeSuggestions(false)
     setBasePathAutoSyncEnabled(isCreateRoute)
     shouldAutoSyncIdRef.current = isCreateRoute
     shouldAutoSyncLabelRef.current = isCreateRoute
@@ -375,6 +403,49 @@ export function EntityAdminConfigPage() {
       }))
     }
   }, [aclPermissionOptions, isCreateRoute, selectedEntityConfig])
+
+  useEffect(() => {
+    if (!selectedEntityId) {
+      return
+    }
+
+    if (activeSection !== 'detail' && activeSection !== 'form' && activeSection !== 'assignments') {
+      return
+    }
+
+    if (layoutDrafts.length === 0) {
+      return
+    }
+
+    const targetLayout = activeLayoutDraft ?? getPreferredEntityLayoutDraft(layoutDrafts)
+    if (!targetLayout) {
+      return
+    }
+
+    const targetPath = buildEntityEditPath(
+      selectedEntityId,
+      activeSection,
+      activeSection === 'detail'
+        ? activeDetailArea ?? 'header-query'
+        : activeSection === 'form'
+          ? activeFormArea ?? 'header-query'
+          : undefined,
+      targetLayout.id,
+    )
+
+    if (location.pathname !== targetPath) {
+      navigate(targetPath, { replace: true })
+    }
+  }, [
+    activeDetailArea,
+    activeFormArea,
+    activeLayoutDraft,
+    activeSection,
+    layoutDrafts,
+    location.pathname,
+    navigate,
+    selectedEntityId,
+  ])
 
   useEffect(() => {
     setSelectedListViewIndex((current) => {
@@ -647,6 +718,48 @@ export function EntityAdminConfigPage() {
     }
   }, [canSearchObjectApiNameSuggestions, objectApiNameSearchValue])
 
+  useEffect(() => {
+    const normalizedObjectApiName = baseFormDraft.objectApiName.trim()
+    if (normalizedObjectApiName.length === 0) {
+      setRecordTypeSuggestions([])
+      setRecordTypeSuggestionsError(null)
+      setLoadingRecordTypeSuggestions(false)
+      return
+    }
+
+    let cancelled = false
+    setLoadingRecordTypeSuggestions(true)
+    setRecordTypeSuggestionsError(null)
+
+    void searchEntityAdminRecordTypes(normalizedObjectApiName, '', 50)
+      .then((payload) => {
+        if (cancelled) {
+          return
+        }
+
+        setRecordTypeSuggestions(payload.items ?? [])
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return
+        }
+
+        const message =
+          error instanceof Error ? error.message : 'Errore caricamento record type Salesforce'
+        setRecordTypeSuggestions([])
+        setRecordTypeSuggestionsError(message)
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoadingRecordTypeSuggestions(false)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [baseFormDraft.objectApiName])
+
   const handleSelectEntity = useCallback(
     (entityId: string) => {
       navigate(buildEntityViewPath(entityId))
@@ -896,33 +1009,260 @@ export function EntityAdminConfigPage() {
     setSelectedListViewIndex(index)
   }
 
+  const updateLayoutDraftByClientId = useCallback(
+    (
+      layoutClientId: string,
+      updater: (layout: EntityLayoutDraft) => EntityLayoutDraft,
+    ) => {
+      setLayoutDrafts((current) =>
+        current.map((layout) =>
+          layout.clientId === layoutClientId ? updater(layout) : layout,
+        ),
+      )
+      setSaveInfo(null)
+      setEditorError(null)
+    },
+    [],
+  )
+
   const handleSelectDetailArea = useCallback(
     (nextArea: EntityConfigDetailEditorAreaKey) => {
-      if (!selectedEntityId) {
+      if (!selectedEntityId || !activeLayoutDraft?.id) {
         return
       }
 
-      navigate(buildEntityEditPath(selectedEntityId, 'detail', nextArea))
+      navigate(buildEntityEditPath(selectedEntityId, 'detail', nextArea, activeLayoutDraft.id))
     },
-    [navigate, selectedEntityId],
+    [activeLayoutDraft?.id, navigate, selectedEntityId],
   )
 
   const handleSelectFormArea = useCallback(
     (nextArea: EntityConfigFormEditorAreaKey) => {
+      if (!selectedEntityId || !activeLayoutDraft?.id) {
+        return
+      }
+
+      navigate(buildEntityEditPath(selectedEntityId, 'form', nextArea, activeLayoutDraft.id))
+    },
+    [activeLayoutDraft?.id, navigate, selectedEntityId],
+  )
+
+  const updateDetailDraft = (nextDraft: DetailFormDraft) => {
+    if (!activeLayoutDraft) {
+      return
+    }
+
+    updateLayoutDraftByClientId(activeLayoutDraft.clientId, (layout) => ({
+      ...layout,
+      detail: nextDraft,
+    }))
+  }
+
+  const updateFormDraft = (nextDraft: FormFormDraft) => {
+    if (!activeLayoutDraft) {
+      return
+    }
+
+    updateLayoutDraftByClientId(activeLayoutDraft.clientId, (layout) => ({
+      ...layout,
+      form: nextDraft,
+    }))
+  }
+
+  const updatePrimaryLayoutDraft = useCallback(
+    (updater: (layout: EntityLayoutDraft) => EntityLayoutDraft) => {
+      setLayoutDrafts((current) => {
+        const targetLayout = getPreferredEntityLayoutDraft(current)
+        if (!targetLayout) {
+          return [updater(createEmptyEntityLayoutDraft('default', 'Default', true))]
+        }
+
+        return current.map((layout) =>
+          layout.clientId === targetLayout.clientId ? updater(layout) : layout,
+        )
+      })
+      setSaveInfo(null)
+      setEditorError(null)
+    },
+    [],
+  )
+
+  const handleSelectLayoutSection = useCallback(
+    (
+      layoutId: string,
+      section: 'detail' | 'form' | 'assignments',
+      area?: EntityConfigDetailEditorAreaKey | EntityConfigFormEditorAreaKey,
+    ) => {
       if (!selectedEntityId) {
         return
       }
 
-      navigate(buildEntityEditPath(selectedEntityId, 'form', nextArea))
+      if (section === 'detail') {
+        navigate(buildEntityEditPath(selectedEntityId, section, area as EntityConfigDetailEditorAreaKey, layoutId))
+        return
+      }
+
+      if (section === 'form') {
+        navigate(buildEntityEditPath(selectedEntityId, section, area as EntityConfigFormEditorAreaKey, layoutId))
+        return
+      }
+
+      navigate(buildEntityEditPath(selectedEntityId, section, undefined, layoutId))
     },
     [navigate, selectedEntityId],
   )
 
-  const updateDetailDraft = (nextDraft: DetailFormDraft) => {
-    setDetailFormDraft(nextDraft)
+  const addLayoutDraft = useCallback(() => {
+    const nextLayout = createEmptyEntityLayoutDraft(
+      createSuggestedLayoutId(layoutDrafts),
+      `Layout ${layoutDrafts.length + 1}`,
+      layoutDrafts.length === 0,
+    )
+
+    setLayoutDrafts((current) => [...current, nextLayout])
     setSaveInfo(null)
     setEditorError(null)
-  }
+
+    if (selectedEntityId) {
+      navigate(buildEntityEditPath(selectedEntityId, 'detail', 'header-query', nextLayout.id))
+    }
+  }, [layoutDrafts, navigate, selectedEntityId])
+
+  const removeLayoutDraft = useCallback(
+    async (layoutClientId: string) => {
+      const layout = layoutDrafts.find((entry) => entry.clientId === layoutClientId)
+      if (!layout) {
+        return
+      }
+
+      const confirmed = await confirm({
+        title: 'Rimuovi layout',
+        description: `Vuoi rimuovere il layout ${layout.label || layout.id}?`,
+        confirmLabel: 'Rimuovi',
+        cancelLabel: 'Annulla',
+        tone: 'danger',
+      })
+      if (!confirmed) {
+        return
+      }
+
+      const nextLayouts = normalizeDefaultLayoutSelection(
+        layoutDrafts.filter((entry) => entry.clientId !== layoutClientId),
+      )
+      setLayoutDrafts(nextLayouts)
+      setSaveInfo(null)
+      setEditorError(null)
+
+      if (!selectedEntityId) {
+        return
+      }
+
+      if (nextLayouts.length === 0) {
+        navigate(buildEntityEditPath(selectedEntityId, 'base'))
+        return
+      }
+
+      if (
+        activeSection === 'detail' ||
+        activeSection === 'form' ||
+        activeSection === 'assignments'
+      ) {
+        const fallbackLayout = nextLayouts[0]
+        navigate(
+          buildEntityEditPath(
+            selectedEntityId,
+            activeSection,
+            activeSection === 'detail'
+              ? activeDetailArea ?? 'header-query'
+              : activeSection === 'form'
+                ? activeFormArea ?? 'header-query'
+                : undefined,
+            fallbackLayout.id,
+          ),
+        )
+      }
+    },
+    [
+      activeDetailArea,
+      activeFormArea,
+      activeSection,
+      confirm,
+      layoutDrafts,
+      navigate,
+      selectedEntityId,
+    ],
+  )
+
+  const setDefaultLayoutDraft = useCallback((layoutClientId: string) => {
+    setLayoutDrafts((current) =>
+      current.map((layout) => ({
+        ...layout,
+        isDefault: layout.clientId === layoutClientId,
+      })),
+    )
+    setSaveInfo(null)
+    setEditorError(null)
+  }, [])
+
+  const updateLayoutMetadata = useCallback(
+    (
+      layoutClientId: string,
+      field: 'id' | 'label' | 'description',
+      value: string,
+    ) => {
+      const previousLayout = layoutDrafts.find((entry) => entry.clientId === layoutClientId) ?? null
+      updateLayoutDraftByClientId(layoutClientId, (layout) => ({
+        ...layout,
+        [field]: value,
+      }))
+
+      if (
+        field === 'id' &&
+        previousLayout &&
+        activeLayoutDraft?.clientId === layoutClientId &&
+        selectedEntityId
+      ) {
+        const nextLayoutId = value.trim()
+        if (nextLayoutId.length === 0) {
+          return
+        }
+
+        if (activeSection === 'detail') {
+          navigate(buildEntityEditPath(selectedEntityId, 'detail', activeDetailArea ?? 'header-query', nextLayoutId), {
+            replace: true,
+          })
+        } else if (activeSection === 'form') {
+          navigate(buildEntityEditPath(selectedEntityId, 'form', activeFormArea ?? 'header-query', nextLayoutId), {
+            replace: true,
+          })
+        } else if (activeSection === 'assignments') {
+          navigate(buildEntityEditPath(selectedEntityId, 'assignments', undefined, nextLayoutId), {
+            replace: true,
+          })
+        }
+      }
+    },
+    [
+      activeDetailArea,
+      activeFormArea,
+      activeLayoutDraft?.clientId,
+      activeSection,
+      layoutDrafts,
+      navigate,
+      selectedEntityId,
+      updateLayoutDraftByClientId,
+    ],
+  )
+
+  const updateLayoutAssignments = useCallback(
+    (layoutClientId: string, assignments: EntityLayoutAssignmentDraft[]) => {
+      updateLayoutDraftByClientId(layoutClientId, (layout) => ({
+        ...layout,
+        assignments,
+      }))
+    },
+    [updateLayoutDraftByClientId],
+  )
 
   const generateBootstrapPreview = async () => {
     const nextConfig = createEntityConfigFromBaseDraft(baseFormDraft)
@@ -963,10 +1303,11 @@ export function EntityAdminConfigPage() {
       return
     }
 
-    const snapshot = createDraftSnapshot(bootstrapPreview.entity)
+    const snapshot = createDraftSnapshot(bootstrapPreview.entity, {
+      createMissingDefaultLayout: true,
+    })
     setListFormDraft(snapshot.list)
-    setDetailFormDraft(snapshot.detail)
-    setFormFormDraft(snapshot.form)
+    setLayoutDrafts(snapshot.layouts)
     setSelectedListViewIndex(0)
     setSaveInfo('Preset standard applicato al wizard')
     setEditorError(null)
@@ -976,8 +1317,11 @@ export function EntityAdminConfigPage() {
 
   const applyMinimumStructurePreset = () => {
     setListFormDraft((current) => ensureMinimumListFormDraft(current, baseFormDraft))
-    setDetailFormDraft((current) => ensureMinimumDetailFormDraft(current, baseFormDraft))
-    setFormFormDraft((current) => ensureMinimumFormFormDraft(current, baseFormDraft))
+    updatePrimaryLayoutDraft((layout) => ({
+      ...layout,
+      detail: ensureMinimumDetailFormDraft(layout.detail, baseFormDraft),
+      form: ensureMinimumFormFormDraft(layout.form, baseFormDraft),
+    }))
     setSaveInfo('Struttura minima applicata')
     setEditorError(null)
     setBootstrapPreviewError(null)
@@ -1011,15 +1355,17 @@ export function EntityAdminConfigPage() {
       }
     })
 
-    setDetailFormDraft((current) => ({
-      ...ensureMinimumDetailFormDraft(current, baseFormDraft),
-      actionsJson: serializeEntityActionDrafts([
-        { type: 'edit', label: 'Edit', target: '', entityId: '' },
-        { type: 'delete', label: 'Delete', target: '', entityId: '' },
-      ]),
+    updatePrimaryLayoutDraft((layout) => ({
+      ...layout,
+      detail: {
+        ...ensureMinimumDetailFormDraft(layout.detail, baseFormDraft),
+        actionsJson: serializeEntityActionDrafts([
+          { type: 'edit', label: 'Edit', target: '', entityId: '' },
+          { type: 'delete', label: 'Delete', target: '', entityId: '' },
+        ]),
+      },
+      form: ensureMinimumFormFormDraft(layout.form, baseFormDraft),
     }))
-
-    setFormFormDraft((current) => ensureMinimumFormFormDraft(current, baseFormDraft))
 
     setSaveInfo('Actions standard applicate')
     setEditorError(null)
@@ -1067,13 +1413,19 @@ export function EntityAdminConfigPage() {
         }
       })
     } else {
-      setDetailFormDraft((current) => ({
-        ...ensureMinimumDetailFormDraft(current, baseFormDraft),
-        actionsJson: serializeEntityActionDrafts(
-          applyToggle(readEntityActionDrafts(current.actionsJson)),
-        ),
-      }))
-      setFormFormDraft((current) => ensureMinimumFormFormDraft(current, baseFormDraft))
+      updatePrimaryLayoutDraft((layout) => {
+        const preparedDetail = ensureMinimumDetailFormDraft(layout.detail, baseFormDraft)
+        return {
+          ...layout,
+          detail: {
+            ...preparedDetail,
+            actionsJson: serializeEntityActionDrafts(
+              applyToggle(readEntityActionDrafts(preparedDetail.actionsJson)),
+            ),
+          },
+          form: ensureMinimumFormFormDraft(layout.form, baseFormDraft),
+        }
+      })
     }
 
     setSaveInfo(null)
@@ -1087,8 +1439,7 @@ export function EntityAdminConfigPage() {
       nextConfig = buildEntityConfigFromDrafts(createEmptyEntityConfig(), {
         base: baseFormDraft,
         list: listFormDraft,
-        detail: detailFormDraft,
-        form: formFormDraft,
+        layouts: layoutDrafts,
       })
       setEditorError(null)
     } catch (error) {
@@ -1162,8 +1513,7 @@ export function EntityAdminConfigPage() {
       nextConfig = buildEntityConfigFromDrafts(selectedEntityConfig, {
         base: baseFormDraft,
         list: listFormDraft,
-        detail: detailFormDraft,
-        form: formFormDraft,
+        layouts: layoutDrafts,
       })
       setEditorError(null)
     } catch (error) {
@@ -1172,8 +1522,24 @@ export function EntityAdminConfigPage() {
       setSaveInfo(null)
       setEditorError(validationError.message)
 
-      if (selectedEntityId && validationError.section !== activeSection) {
-        navigate(buildEntityEditPath(selectedEntityId, validationError.section))
+      if (
+        selectedEntityId &&
+        (validationError.section !== activeSection ||
+          (validationError.layoutId &&
+            validationError.layoutId !== activeLayoutDraft?.id))
+      ) {
+        navigate(
+          buildEntityEditPath(
+            selectedEntityId,
+            validationError.section,
+            validationError.section === 'detail'
+              ? activeDetailArea ?? 'header-query'
+              : validationError.section === 'form'
+                ? activeFormArea ?? 'header-query'
+                : undefined,
+            validationError.layoutId ?? activeLayoutDraft?.id ?? undefined,
+          ),
+        )
       }
       return
     }
@@ -1194,6 +1560,7 @@ export function EntityAdminConfigPage() {
           activeSection ?? 'base',
           activeDetailArea,
           activeFormArea,
+          activeLayoutDraft?.id,
         ),
         { replace: true },
       )
@@ -1501,6 +1868,23 @@ export function EntityAdminConfigPage() {
             />
           ) : null}
 
+          <EntityLayoutWorkspace
+            layouts={layoutDrafts}
+            activeLayoutId={activeLayoutDraft?.id ?? null}
+            activeSection={
+              activeSection === 'detail' || activeSection === 'form' || activeSection === 'assignments'
+                ? activeSection
+                : null
+            }
+            onAddLayout={addLayoutDraft}
+            onRemoveLayout={(layoutClientId) => {
+              void removeLayoutDraft(layoutClientId)
+            }}
+            onSetDefaultLayout={setDefaultLayoutDraft}
+            onSelectLayoutSection={handleSelectLayoutSection}
+            onChangeLayoutMetadata={updateLayoutMetadata}
+          />
+
           {activeSection === 'base' ? (
             <EntityConfigBaseForm
               value={baseFormDraft}
@@ -1531,6 +1915,7 @@ export function EntityAdminConfigPage() {
               onToggleViewDefault={toggleListViewDefault}
             />
           ) : activeSection === 'detail' ? (
+            activeLayoutDraft ? (
             <EntityConfigDetailForm
               value={detailFormDraft}
               error={editorError}
@@ -1539,15 +1924,36 @@ export function EntityAdminConfigPage() {
               onChange={updateDetailDraft}
               onAreaChange={handleSelectDetailArea}
             />
+            ) : (
+              <EntityLayoutEmptyState onAddLayout={addLayoutDraft} />
+            )
+          ) : activeSection === 'assignments' ? (
+            activeLayoutDraft ? (
+              <EntityLayoutAssignmentsEditor
+                layout={activeLayoutDraft}
+                recordTypeSuggestions={recordTypeSuggestions}
+                loadingRecordTypeSuggestions={loadingRecordTypeSuggestions}
+                recordTypeSuggestionsError={recordTypeSuggestionsError}
+                onChangeAssignments={(assignments) =>
+                  updateLayoutAssignments(activeLayoutDraft.clientId, assignments)
+                }
+              />
+            ) : (
+              <EntityLayoutEmptyState onAddLayout={addLayoutDraft} />
+            )
           ) : (
-            <EntityConfigFormForm
-              value={formFormDraft}
-              error={editorError}
-              baseObjectApiName={baseFormDraft.objectApiName}
-              activeArea={activeFormArea ?? 'header-query'}
-              onChange={setFormFormDraft}
-              onAreaChange={handleSelectFormArea}
-            />
+            activeLayoutDraft ? (
+              <EntityConfigFormForm
+                value={formFormDraft}
+                error={editorError}
+                baseObjectApiName={baseFormDraft.objectApiName}
+                activeArea={activeFormArea ?? 'header-query'}
+                onChange={updateFormDraft}
+                onAreaChange={handleSelectFormArea}
+              />
+            ) : (
+              <EntityLayoutEmptyState onAddLayout={addLayoutDraft} />
+            )
           )}
         </>
       ) : null}
@@ -1672,6 +2078,384 @@ function EntityAdminCatalog({
           </table>
         </div>
       </div>
+    </section>
+  )
+}
+
+function EntityLayoutWorkspace({
+  layouts,
+  activeLayoutId,
+  activeSection,
+  onAddLayout,
+  onRemoveLayout,
+  onSetDefaultLayout,
+  onSelectLayoutSection,
+  onChangeLayoutMetadata,
+}: {
+  layouts: EntityLayoutDraft[]
+  activeLayoutId: string | null
+  activeSection: 'detail' | 'form' | 'assignments' | null
+  onAddLayout: () => void
+  onRemoveLayout: (layoutClientId: string) => void
+  onSetDefaultLayout: (layoutClientId: string) => void
+  onSelectLayoutSection: (
+    layoutId: string,
+    section: 'detail' | 'form' | 'assignments',
+    area?: EntityConfigDetailEditorAreaKey | EntityConfigFormEditorAreaKey,
+  ) => void
+  onChangeLayoutMetadata: (
+    layoutClientId: string,
+    field: 'id' | 'label' | 'description',
+    value: string,
+  ) => void
+}) {
+  const activeLayout = layouts.find((layout) => layout.id === activeLayoutId) ?? layouts[0] ?? null
+
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex flex-col gap-4 border-b border-slate-200 pb-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+            Layouts
+          </p>
+          <h2 className="mt-1 text-xl font-semibold text-slate-900">Workspace multi-layout</h2>
+          <p className="mt-1 text-sm text-slate-600">
+            Seleziona un layout per modificare detail, form e assignments con URL canonica.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={onAddLayout}
+          className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700"
+        >
+          Aggiungi layout
+        </button>
+      </div>
+
+      <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]">
+        <div className="space-y-3">
+          {layouts.length > 0 ? (
+            layouts.map((layout) => {
+              const isActive = activeLayout?.clientId === layout.clientId
+
+              return (
+                <article
+                  key={layout.clientId}
+                  className={`rounded-2xl border p-4 ${
+                    isActive ? 'border-sky-300 bg-sky-50' : 'border-slate-200 bg-slate-50'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-semibold text-slate-900">
+                          {layout.label || layout.id || 'Nuovo layout'}
+                        </p>
+                        {layout.isDefault ? (
+                          <span className="rounded-full bg-emerald-100 px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-emerald-700">
+                            Default
+                          </span>
+                        ) : null}
+                      </div>
+                      <p className="mt-1 text-xs text-slate-500">{layout.id || 'Id layout mancante'}</p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => onRemoveLayout(layout.clientId)}
+                      className="rounded-md border border-rose-300 px-2 py-1 text-xs font-semibold uppercase tracking-[0.08em] text-rose-700 transition hover:bg-rose-50"
+                    >
+                      Rimuovi
+                    </button>
+                  </div>
+
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => onSelectLayoutSection(layout.id, 'detail', 'header-query')}
+                      className={`rounded-md border px-2.5 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] ${
+                        activeSection === 'detail' && isActive
+                          ? 'border-sky-300 bg-white text-sky-800'
+                          : 'border-slate-300 bg-white text-slate-700'
+                      }`}
+                    >
+                      Detail
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onSelectLayoutSection(layout.id, 'form', 'header-query')}
+                      className={`rounded-md border px-2.5 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] ${
+                        activeSection === 'form' && isActive
+                          ? 'border-sky-300 bg-white text-sky-800'
+                          : 'border-slate-300 bg-white text-slate-700'
+                      }`}
+                    >
+                      Form
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onSelectLayoutSection(layout.id, 'assignments')}
+                      className={`rounded-md border px-2.5 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] ${
+                        activeSection === 'assignments' && isActive
+                          ? 'border-sky-300 bg-white text-sky-800'
+                          : 'border-slate-300 bg-white text-slate-700'
+                      }`}
+                    >
+                      Assignments
+                    </button>
+                  </div>
+
+                  {!layout.isDefault ? (
+                    <button
+                      type="button"
+                      onClick={() => onSetDefaultLayout(layout.clientId)}
+                      className="mt-4 text-xs font-semibold uppercase tracking-[0.08em] text-sky-700"
+                    >
+                      Imposta come default
+                    </button>
+                  ) : null}
+                </article>
+              )
+            })
+          ) : (
+            <EntityLayoutEmptyState onAddLayout={onAddLayout} compact />
+          )}
+        </div>
+
+        {activeLayout ? (
+          <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="grid gap-4 lg:grid-cols-2">
+              <label className="text-sm font-medium text-slate-700">
+                Layout Id <span className="text-rose-600">*</span>
+                <input
+                  type="text"
+                  value={activeLayout.id}
+                  onChange={(event) =>
+                    onChangeLayoutMetadata(activeLayout.clientId, 'id', event.target.value)
+                  }
+                  className="mt-2 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+                />
+              </label>
+
+              <label className="text-sm font-medium text-slate-700">
+                Label <span className="text-rose-600">*</span>
+                <input
+                  type="text"
+                  value={activeLayout.label}
+                  onChange={(event) =>
+                    onChangeLayoutMetadata(activeLayout.clientId, 'label', event.target.value)
+                  }
+                  className="mt-2 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+                />
+              </label>
+
+              <label className="text-sm font-medium text-slate-700 lg:col-span-2">
+                Description
+                <textarea
+                  rows={3}
+                  value={activeLayout.description}
+                  onChange={(event) =>
+                    onChangeLayoutMetadata(activeLayout.clientId, 'description', event.target.value)
+                  }
+                  className="mt-2 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+                />
+              </label>
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              <SummaryChip
+                label="Assignments"
+                value={activeLayout.assignments.filter(hasAnyAssignmentValue).length}
+              />
+              <SummaryChip
+                label="Detail"
+                value={isDetailFormDraftEmpty(activeLayout.detail) ? 0 : 1}
+              />
+              <SummaryChip
+                label="Form"
+                value={isFormFormDraftEmpty(activeLayout.form) ? 0 : 1}
+              />
+            </div>
+          </section>
+        ) : null}
+      </div>
+    </section>
+  )
+}
+
+function EntityLayoutAssignmentsEditor({
+  layout,
+  recordTypeSuggestions,
+  loadingRecordTypeSuggestions,
+  recordTypeSuggestionsError,
+  onChangeAssignments,
+}: {
+  layout: EntityLayoutDraft
+  recordTypeSuggestions: SalesforceRecordTypeSuggestion[]
+  loadingRecordTypeSuggestions: boolean
+  recordTypeSuggestionsError: string | null
+  onChangeAssignments: (assignments: EntityLayoutAssignmentDraft[]) => void
+}) {
+  const assignments =
+    layout.assignments.length > 0 ? layout.assignments : [createEmptyEntityLayoutAssignmentDraft()]
+
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+            Assignments
+          </p>
+          <h2 className="mt-1 text-lg font-semibold text-slate-900">
+            Regole di selezione per {layout.label || layout.id}
+          </h2>
+          <p className="mt-1 text-sm text-slate-600">
+            Precedenza runtime: record type + permission, record type, permission, default layout.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={() =>
+            onChangeAssignments([...assignments, createEmptyEntityLayoutAssignmentDraft()])
+          }
+          className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
+        >
+          Aggiungi assignment
+        </button>
+      </div>
+
+      <div className="mt-5 space-y-4">
+        {recordTypeSuggestionsError ? (
+          <p className="text-sm text-rose-700">{recordTypeSuggestionsError}</p>
+        ) : null}
+
+        {assignments.map((assignment, index) => (
+          <article
+            key={assignment.clientId}
+            className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
+          >
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_10rem_auto]">
+              <label className="text-sm font-medium text-slate-700">
+                Record Type DeveloperName
+                <select
+                  value={assignment.recordTypeDeveloperName}
+                  onChange={(event) =>
+                    onChangeAssignments(
+                      assignments.map((entry) =>
+                        entry.clientId === assignment.clientId
+                          ? { ...entry, recordTypeDeveloperName: event.target.value }
+                          : entry,
+                      ),
+                    )
+                  }
+                  className="mt-2 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+                  disabled={loadingRecordTypeSuggestions || recordTypeSuggestions.length === 0}
+                >
+                  <option value="">Any record type</option>
+                  {recordTypeSuggestions.map((recordType) => (
+                    <option key={recordType.developerName} value={recordType.developerName}>
+                      {recordType.label} ({recordType.developerName})
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-slate-500">
+                  {loadingRecordTypeSuggestions
+                    ? 'Caricamento record type Salesforce...'
+                    : recordTypeSuggestions.length > 0
+                      ? 'Valori letti da Salesforce describe; viene salvato il DeveloperName.'
+                      : 'Nessun record type attivo trovato per questo oggetto.'}
+                </p>
+              </label>
+
+              <label className="text-sm font-medium text-slate-700">
+                Permission Code
+                <input
+                  type="text"
+                  value={assignment.permissionCode}
+                  onChange={(event) =>
+                    onChangeAssignments(
+                      assignments.map((entry) =>
+                        entry.clientId === assignment.clientId
+                          ? { ...entry, permissionCode: event.target.value }
+                          : entry,
+                      ),
+                    )
+                  }
+                  className="mt-2 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+                />
+              </label>
+
+              <label className="text-sm font-medium text-slate-700">
+                Priority
+                <input
+                  type="number"
+                  value={assignment.priority}
+                  onChange={(event) =>
+                    onChangeAssignments(
+                      assignments.map((entry) =>
+                        entry.clientId === assignment.clientId
+                          ? { ...entry, priority: event.target.value }
+                          : entry,
+                      ),
+                    )
+                  }
+                  className="mt-2 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+                />
+              </label>
+
+              <div className="flex items-end">
+                <button
+                  type="button"
+                  onClick={() =>
+                    onChangeAssignments(
+                      assignments.length > 1
+                        ? assignments.filter((entry) => entry.clientId !== assignment.clientId)
+                        : [createEmptyEntityLayoutAssignmentDraft()],
+                    )
+                  }
+                  className="rounded-md border border-rose-300 px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-rose-700 transition hover:bg-rose-50"
+                >
+                  Rimuovi
+                </button>
+              </div>
+            </div>
+
+            <p className="mt-3 text-xs text-slate-500">
+              Assignment {index + 1}. Lascia vuoto uno dei due campi per creare una regola solo record type o solo permission.
+            </p>
+          </article>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function EntityLayoutEmptyState({
+  onAddLayout,
+  compact = false,
+}: {
+  onAddLayout: () => void
+  compact?: boolean
+}) {
+  return (
+    <section
+      className={`rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 ${
+        compact ? '' : 'shadow-sm'
+      }`}
+    >
+      <p className="text-sm font-semibold text-slate-900">Nessun layout disponibile</p>
+      <p className="mt-1 text-sm text-slate-600">
+        Crea un layout per configurare detail, form e assignments per record type.
+      </p>
+      <button
+        type="button"
+        onClick={onAddLayout}
+        className="mt-4 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700"
+      >
+        Aggiungi layout
+      </button>
     </section>
   )
 }
@@ -2578,20 +3362,39 @@ type BaseFormDraft = {
 
 type BaseFormDraftKey = keyof BaseFormDraft
 
+type EntityLayoutAssignmentDraft = {
+  clientId: string
+  recordTypeDeveloperName: string
+  permissionCode: string
+  priority: string
+}
+
+type EntityLayoutDraft = {
+  clientId: string
+  id: string
+  label: string
+  description: string
+  isDefault: boolean
+  detail: DetailFormDraft
+  form: FormFormDraft
+  assignments: EntityLayoutAssignmentDraft[]
+}
+
 type EntityConfigDraftSnapshot = {
   base: BaseFormDraft
   list: ListFormDraft
-  detail: DetailFormDraft
-  form: FormFormDraft
+  layouts: EntityLayoutDraft[]
 }
 
 class EntityConfigDraftValidationError extends Error {
   section: EntityConfigSectionKey
+  layoutId?: string
 
-  constructor(section: EntityConfigSectionKey, message: string) {
+  constructor(section: EntityConfigSectionKey, message: string, layoutId?: string) {
     super(message)
     this.name = 'EntityConfigDraftValidationError'
     this.section = section
+    this.layoutId = layoutId
   }
 }
 
@@ -2603,8 +3406,7 @@ function createEmptyEntityConfig(): EntityConfig {
     objectApiName: '',
     navigation: undefined,
     list: undefined,
-    detail: undefined,
-    form: undefined,
+    layouts: [],
   }
 }
 
@@ -2701,6 +3503,7 @@ function createEntityConfigFromBaseDraft(baseDraft: BaseFormDraft): EntityConfig
     label,
     description: readOptionalString(baseDraft.description),
     objectApiName,
+    layouts: [],
     navigation:
       baseDraft.basePath.trim().length > 0
         ? { basePath: baseDraft.basePath.trim() }
@@ -2718,12 +3521,21 @@ function buildEntityLabelFromObjectApiName(objectApiName: string): string {
   return normalized.length > 0 ? normalized : objectApiName
 }
 
-function createDraftSnapshot(entity: EntityConfig): EntityConfigDraftSnapshot {
+function createDraftSnapshot(
+  entity: EntityConfig,
+  options: { createMissingDefaultLayout?: boolean } = {},
+): EntityConfigDraftSnapshot {
+  const layouts =
+    entity.layouts.length > 0
+      ? entity.layouts.map((layout) => createEntityLayoutDraft(layout))
+      : options.createMissingDefaultLayout
+        ? [createEmptyEntityLayoutDraft('default', 'Default', true)]
+        : []
+
   return {
     base: createBaseFormDraft(entity),
     list: createListFormDraft(entity.list),
-    detail: createDetailFormDraft(entity.detail),
-    form: createFormDraft(entity.form),
+    layouts,
   }
 }
 
@@ -2748,26 +3560,227 @@ function buildEntityConfigFromDrafts(
     persistedEntity.list !== undefined || !isListFormDraftEmpty(drafts.list)
       ? parseDraftSection('list', () => parseListFormDraft(drafts.list, baseObjectApiName))
       : undefined
-  const detail =
-    persistedEntity.detail !== undefined || !isDetailFormDraftEmpty(drafts.detail)
-      ? parseDraftSection('detail', () => parseDetailFormDraft(drafts.detail, baseObjectApiName))
-      : undefined
-  const form =
-    persistedEntity.form !== undefined || !isFormFormDraftEmpty(drafts.form)
-      ? parseDraftSection('form', () => parseFormDraft(drafts.form, baseObjectApiName))
-      : undefined
+  const nextLayouts = drafts.layouts
+    .map((layoutDraft, index) => parseEntityLayoutDraft(layoutDraft, baseObjectApiName, index))
+    .filter((layout): layout is EntityLayoutConfig => layout !== null)
+
+  validateEntityLayoutDrafts(nextLayouts)
 
   return {
     ...baseConfig,
     list,
+    layouts: nextLayouts,
+  }
+}
+
+function createEntityLayoutDraft(layout: EntityLayoutConfig): EntityLayoutDraft {
+  return {
+    clientId: createDraftClientId('layout'),
+    id: layout.id,
+    label: layout.label,
+    description: layout.description ?? '',
+    isDefault: Boolean(layout.isDefault),
+    detail: createDetailFormDraft(layout.detail),
+    form: createFormDraft(layout.form),
+    assignments: (layout.assignments ?? []).map((assignment) => ({
+      clientId: createDraftClientId('assignment'),
+      recordTypeDeveloperName: assignment.recordTypeDeveloperName ?? '',
+      permissionCode: assignment.permissionCode ?? '',
+      priority:
+        typeof assignment.priority === 'number' && Number.isFinite(assignment.priority)
+          ? String(assignment.priority)
+          : '',
+    })),
+  }
+}
+
+function createEmptyEntityLayoutDraft(
+  id = 'default',
+  label = 'Default',
+  isDefault = false,
+): EntityLayoutDraft {
+  return {
+    clientId: createDraftClientId('layout'),
+    id,
+    label,
+    description: '',
+    isDefault,
+    detail: createEmptyDetailFormDraft(),
+    form: createEmptyFormDraft(),
+    assignments: [],
+  }
+}
+
+function createEmptyEntityLayoutAssignmentDraft(): EntityLayoutAssignmentDraft {
+  return {
+    clientId: createDraftClientId('assignment'),
+    recordTypeDeveloperName: '',
+    permissionCode: '',
+    priority: '',
+  }
+}
+
+function getPreferredEntityLayoutDraft(layouts: EntityLayoutDraft[]): EntityLayoutDraft | null {
+  return layouts.find((layout) => layout.isDefault) ?? layouts[0] ?? null
+}
+
+function normalizeDefaultLayoutSelection(layouts: EntityLayoutDraft[]): EntityLayoutDraft[] {
+  if (layouts.length === 0) {
+    return layouts
+  }
+
+  const hasDefault = layouts.some((layout) => layout.isDefault)
+  if (hasDefault) {
+    return layouts
+  }
+
+  return layouts.map((layout, index) => ({
+    ...layout,
+    isDefault: index === 0,
+  }))
+}
+
+function parseEntityLayoutDraft(
+  draft: EntityLayoutDraft,
+  baseObjectApiName: string,
+  index: number,
+): EntityLayoutConfig | null {
+  const rawLayoutId = draft.id.trim()
+  const layoutId = readOptionalString(draft.id)
+  const label = readOptionalString(draft.label)
+
+  if (!layoutId) {
+    throw new EntityConfigDraftValidationError(
+      'assignments',
+      `Layout ${index + 1}: id obbligatorio`,
+      rawLayoutId || undefined,
+    )
+  }
+
+  if (!label) {
+    throw new EntityConfigDraftValidationError(
+      'assignments',
+      `Layout ${layoutId}: label obbligatoria`,
+      layoutId,
+    )
+  }
+
+  const detail = !isDetailFormDraftEmpty(draft.detail)
+    ? parseDraftSection('detail', () => parseDetailFormDraft(draft.detail, baseObjectApiName), layoutId)
+    : undefined
+  const form = !isFormFormDraftEmpty(draft.form)
+    ? parseDraftSection('form', () => parseFormDraft(draft.form, baseObjectApiName), layoutId)
+    : undefined
+
+  if (!detail && !form) {
+    throw new EntityConfigDraftValidationError(
+      'assignments',
+      `Layout ${layoutId}: configura almeno detail o form`,
+      layoutId,
+    )
+  }
+
+  const assignments = draft.assignments
+    .map((assignment, assignmentIndex) => parseLayoutAssignmentDraft(assignment, layoutId, assignmentIndex))
+    .filter((assignment): assignment is EntityLayoutAssignmentConfig => assignment !== null)
+
+  return {
+    id: layoutId,
+    label,
+    description: readOptionalString(draft.description),
+    isDefault: draft.isDefault ? true : undefined,
     detail,
     form,
+    assignments,
   }
+}
+
+function parseLayoutAssignmentDraft(
+  draft: EntityLayoutAssignmentDraft,
+  layoutId: string,
+  index: number,
+): EntityLayoutAssignmentConfig | null {
+  const recordTypeDeveloperName = readOptionalString(draft.recordTypeDeveloperName)
+  const permissionCode = readOptionalString(draft.permissionCode)
+  const priority = draft.priority.trim()
+
+  if (!recordTypeDeveloperName && !permissionCode && priority.length === 0) {
+    return null
+  }
+
+  if (!recordTypeDeveloperName && !permissionCode) {
+    throw new EntityConfigDraftValidationError(
+      'assignments',
+      `Layout ${layoutId} assignment ${index + 1}: record type o permission obbligatori`,
+      layoutId,
+    )
+  }
+
+  let parsedPriority: number | undefined
+  if (priority.length > 0) {
+    parsedPriority = Number.parseInt(priority, 10)
+    if (!Number.isFinite(parsedPriority)) {
+      throw new EntityConfigDraftValidationError(
+        'assignments',
+        `Layout ${layoutId} assignment ${index + 1}: priority non valida`,
+        layoutId,
+      )
+    }
+  }
+
+  return {
+    recordTypeDeveloperName,
+    permissionCode,
+    priority: parsedPriority,
+  }
+}
+
+function validateEntityLayoutDrafts(layouts: EntityLayoutConfig[]): void {
+  const seenIds = new Set<string>()
+  let defaultCount = 0
+
+  for (const layout of layouts) {
+    if (seenIds.has(layout.id)) {
+      throw new EntityConfigDraftValidationError(
+        'assignments',
+        `Layout id duplicato: ${layout.id}`,
+        layout.id,
+      )
+    }
+    seenIds.add(layout.id)
+
+    if (layout.isDefault) {
+      defaultCount += 1
+    }
+  }
+
+  if (defaultCount > 1) {
+    throw new EntityConfigDraftValidationError(
+      'assignments',
+      'Esiste piu di un layout marcato come default',
+    )
+  }
+}
+
+function createDraftClientId(prefix: string): string {
+  return `${prefix}-${Math.random().toString(36).slice(2, 10)}`
+}
+
+function createSuggestedLayoutId(layouts: EntityLayoutDraft[]): string {
+  const existingIds = new Set(layouts.map((layout) => layout.id.trim()).filter(Boolean))
+  let attempt = layouts.length + 1
+
+  while (existingIds.has(`layout-${attempt}`)) {
+    attempt += 1
+  }
+
+  return `layout-${attempt}`
 }
 
 function parseDraftSection<T>(
   section: EntityConfigSectionKey,
   parser: () => T,
+  layoutId?: string,
 ): T {
   try {
     return parser()
@@ -2779,6 +3792,7 @@ function parseDraftSection<T>(
         section,
         error instanceof Error ? error.message : fallback,
       ),
+      layoutId,
     )
   }
 }
@@ -2842,18 +3856,31 @@ function isFormFormDraftEmpty(draft: FormFormDraft): boolean {
   return JSON.stringify(draft) === JSON.stringify(createEmptyFormDraft())
 }
 
+function hasAnyAssignmentValue(draft: EntityLayoutAssignmentDraft): boolean {
+  return (
+    draft.recordTypeDeveloperName.trim().length > 0 ||
+    draft.permissionCode.trim().length > 0 ||
+    draft.priority.trim().length > 0
+  )
+}
+
 function buildEntityEditPathForSection(
   entityId: string,
   section: EntityConfigSectionKey,
   detailArea: EntityConfigDetailEditorAreaKey | null,
   formArea: EntityConfigFormEditorAreaKey | null,
+  layoutId?: string | null,
 ): string {
   if (section === 'detail') {
-    return buildEntityEditPath(entityId, 'detail', detailArea ?? undefined)
+    return buildEntityEditPath(entityId, 'detail', detailArea ?? undefined, layoutId)
   }
 
   if (section === 'form') {
-    return buildEntityEditPath(entityId, 'form', formArea ?? undefined)
+    return buildEntityEditPath(entityId, 'form', formArea ?? undefined, layoutId)
+  }
+
+  if (section === 'assignments') {
+    return buildEntityEditPath(entityId, 'assignments', undefined, layoutId)
   }
 
   return buildEntityEditPath(entityId, section)

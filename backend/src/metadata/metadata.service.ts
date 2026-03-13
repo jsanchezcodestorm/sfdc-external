@@ -1836,6 +1836,12 @@ function normalizeMetadataMemberForComparison(typeName: MetadataTypeName, member
 function normalizeLegacyEntityConfigMetadataPayload(
   payload: Record<string, unknown>
 ): Record<string, unknown> {
+  if (payload.detail !== undefined || payload.form !== undefined) {
+    throw new BadRequestException(
+      'EntityConfig metadata must use entity.layouts; legacy entity.detail/entity.form is no longer supported'
+    );
+  }
+
   const normalized: Record<string, unknown> = {
     ...payload,
     id:
@@ -1844,69 +1850,46 @@ function normalizeLegacyEntityConfigMetadataPayload(
         : payload.id,
   };
 
-  const detail = asRecord(payload.detail);
-  const relatedLists = Array.isArray(detail?.relatedLists)
-    ? detail.relatedLists.map((entry) => {
-        const relatedList = asRecord(entry);
-        if (!relatedList) {
+  const layouts = Array.isArray(payload.layouts)
+    ? payload.layouts.map((entry) => {
+        const layout = asRecord(entry);
+        if (!layout) {
           return entry;
         }
 
-        return {
-          ...relatedList,
-          entityId:
-            typeof relatedList.entityId === 'string'
-              ? normalizeLegacyEntityMetadataId(relatedList.entityId)
-              : relatedList.entityId,
-        };
-      })
-    : undefined;
-
-  if (detail && relatedLists) {
-    normalized.detail = {
-      ...detail,
-      relatedLists,
-    };
-  }
-
-  const form = asRecord(payload.form);
-  const formSections = Array.isArray(form?.sections)
-    ? form.sections.map((entry) => {
-        const section = asRecord(entry);
-        if (!section) {
-          return entry;
-        }
-
-        const fields = Array.isArray(section.fields)
-          ? section.fields.map((fieldEntry) => {
-              const field = asRecord(fieldEntry);
-              if (!field) {
-                return fieldEntry;
+        const detail = asRecord(layout.detail);
+        const relatedLists = Array.isArray(detail?.relatedLists)
+          ? detail.relatedLists.map((relatedEntry) => {
+              const relatedList = asRecord(relatedEntry);
+              if (!relatedList) {
+                return relatedEntry;
               }
 
-              const {
-                label: _legacyLabel,
-                inputType: _legacyInputType,
-                required: _legacyRequired,
-                ...normalizedField
-              } = field;
-
-              return normalizedField;
+              return {
+                ...relatedList,
+                entityId:
+                  typeof relatedList.entityId === 'string'
+                    ? normalizeLegacyEntityMetadataId(relatedList.entityId)
+                    : relatedList.entityId,
+              };
             })
-          : section.fields;
+          : detail?.relatedLists;
 
         return {
-          ...section,
-          fields,
+          ...layout,
+          detail:
+            detail && relatedLists
+              ? {
+                  ...detail,
+                  relatedLists,
+                }
+              : layout.detail,
         };
       })
-    : undefined;
+    : payload.layouts;
 
-  if (form && formSections) {
-    normalized.form = {
-      ...form,
-      sections: formSections,
-    };
+  if (layouts) {
+    normalized.layouts = layouts;
   }
 
   return normalized;

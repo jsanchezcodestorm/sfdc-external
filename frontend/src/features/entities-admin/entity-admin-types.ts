@@ -9,6 +9,10 @@ export type EntityAdminConfigSummary = {
   hasList: boolean
   hasDetail: boolean
   hasForm: boolean
+  layoutCount: number
+  detailLayoutCount: number
+  formLayoutCount: number
+  assignmentCount: number
   viewCount: number
   detailSectionCount: number
   relatedListCount: number
@@ -51,4 +55,17 @@ export type SalesforceObjectFieldSuggestionResponse = {
   items: SalesforceObjectFieldSuggestion[]
 }
 
-export type EntityConfigSectionKey = 'base' | 'list' | 'detail' | 'form'
+export type SalesforceRecordTypeSuggestion = {
+  developerName: string
+  label: string
+  active: boolean
+  available: boolean
+  defaultRecordTypeMapping: boolean
+  master: boolean
+}
+
+export type SalesforceRecordTypeSuggestionResponse = {
+  items: SalesforceRecordTypeSuggestion[]
+}
+
+export type EntityConfigSectionKey = 'base' | 'list' | 'detail' | 'form' | 'assignments'

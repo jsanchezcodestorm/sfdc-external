@@ -242,6 +242,7 @@ function buildEntityConfigModule(
   const editMatch = parseEntityConfigEditPath(pathname)
   const viewMatch = isCreateRoute ? null : matchPath('/admin/entity-config/:entityId', pathname)
   const activeSection = editMatch?.section ?? null
+  const activeLayoutId = editMatch?.layoutId ?? null
   const entityId = editMatch?.entityId
     ? editMatch.entityId
     : viewMatch?.params.entityId
@@ -299,7 +300,7 @@ function buildEntityConfigModule(
       items.push({
         id: `entity-${section}`,
         label: ENTITY_CONFIG_SECTION_LABELS[section],
-        to: buildEntityEditPath(entityId, section),
+        to: buildEntityEditPath(entityId, section, undefined, activeLayoutId),
         caption: 'Editor sezione',
         isActive: activeSection === section,
       })

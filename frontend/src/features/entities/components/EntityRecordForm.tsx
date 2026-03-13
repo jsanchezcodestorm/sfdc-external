@@ -278,9 +278,15 @@ function LookupInput({
     const run = async () => {
       try {
         setLoading(true)
+        const context = buildLookupContext(lookupContext, values)
         const payload = await searchEntityFormLookup(entityId, field.field, {
           q: searchValue,
-          context: buildLookupContext(lookupContext, values),
+          context,
+          recordId: typeof context.recordId === 'string' ? context.recordId : undefined,
+          recordTypeDeveloperName:
+            typeof context.recordTypeDeveloperName === 'string'
+              ? context.recordTypeDeveloperName
+              : undefined,
         })
 
         if (cancelled) {
