@@ -8,39 +8,31 @@ import {
 
 describe('entity-admin-routing', () => {
   it('builds default nested paths for detail and form editors', () => {
-    expect(buildEntityEditPath('account', 'detail')).toBe(
-      '/admin/entity-config/account/edit/detail/header-query',
+    expect(buildEntityEditPath('account', 'object')).toBe(
+      '/admin/entity-config/account/object',
     )
-    expect(buildEntityEditPath('account', 'form')).toBe(
-      '/admin/entity-config/account/edit/form/header-query',
+    expect(buildEntityEditPath('account', 'layouts')).toBe(
+      '/admin/entity-config/account/layouts',
     )
     expect(buildEntityEditPath('account', 'detail', 'sections', 'sales')).toBe(
-      '/admin/entity-config/account/edit/layouts/sales/detail/sections',
+      '/admin/entity-config/account/layouts/sales/detail/sections',
     )
     expect(buildEntityEditPath('account', 'assignments', undefined, 'sales')).toBe(
-      '/admin/entity-config/account/edit/layouts/sales/assignments',
+      '/admin/entity-config/account/layouts/sales/assignments',
     )
   })
 
   it('parses nested detail and form editor paths', () => {
-    expect(parseEntityConfigEditPath('/admin/entity-config/account/edit/detail/sections')).toEqual({
+    expect(parseEntityConfigEditPath('/admin/entity-config/account/object')).toEqual({
       entityId: 'account',
-      section: 'detail',
+      section: 'object',
       layoutId: null,
-      detailArea: 'sections',
+      detailArea: null,
       formArea: null,
     })
 
-    expect(parseEntityConfigEditPath('/admin/entity-config/account/edit/form/sections')).toEqual({
-      entityId: 'account',
-      section: 'form',
-      layoutId: null,
-      detailArea: null,
-      formArea: 'sections',
-    })
-
     expect(
-      parseEntityConfigEditPath('/admin/entity-config/account/edit/layouts/sales/detail/sections'),
+      parseEntityConfigEditPath('/admin/entity-config/account/layouts/sales/detail/sections'),
     ).toEqual({
       entityId: 'account',
       section: 'detail',
@@ -51,14 +43,14 @@ describe('entity-admin-routing', () => {
   })
 
   it('treats nested editor areas as part of the same edit session', () => {
-    expect(isEntityConfigEditSessionPath('/admin/entity-config/account/edit/detail/sections', 'account')).toBe(true)
-    expect(isEntityConfigEditSessionPath('/admin/entity-config/account/edit/form/sections', 'account')).toBe(true)
+    expect(isEntityConfigEditSessionPath('/admin/entity-config/account/object', 'account')).toBe(true)
+    expect(isEntityConfigEditSessionPath('/admin/entity-config/account/layouts/sales/form/sections', 'account')).toBe(true)
     expect(
       isEntityConfigEditSessionPath(
-        '/admin/entity-config/account/edit/layouts/sales/assignments',
+        '/admin/entity-config/account/layouts/sales/assignments',
         'account',
       ),
     ).toBe(true)
-    expect(isEntityConfigEditSessionPath('/admin/entity-config/contact/edit/form/sections', 'account')).toBe(false)
+    expect(isEntityConfigEditSessionPath('/admin/entity-config/contact/layouts/sales/form/sections', 'account')).toBe(false)
   })
 })

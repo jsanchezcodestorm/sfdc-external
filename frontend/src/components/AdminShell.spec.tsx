@@ -43,10 +43,9 @@ function renderAdminShell(
             <Route path="/admin" element={<AdminShell />}>
               <Route path="apps" element={<div>Apps page</div>} />
               <Route path="auth/providers/:providerId/edit" element={<div>Auth provider edit</div>} />
-              <Route path="entity-config/:entityId/edit/detail/:detailArea" element={<div>Detail page</div>} />
-              <Route path="entity-config/:entityId/edit/form/:formArea" element={<div>Form page</div>} />
-              <Route path="entity-config/:entityId/edit/layouts/:layoutId/detail/:detailArea" element={<div>Detail page</div>} />
-              <Route path="entity-config/:entityId/edit/layouts/:layoutId/form/:formArea" element={<div>Form page</div>} />
+              <Route path="entity-config/:entityId/object" element={<div>Object page</div>} />
+              <Route path="entity-config/:entityId/layouts/:layoutId/detail/:detailArea" element={<div>Detail page</div>} />
+              <Route path="entity-config/:entityId/layouts/:layoutId/form/:formArea" element={<div>Form page</div>} />
               <Route path="query-templates" element={<div>Query templates page</div>} />
             </Route>
           </Routes>
@@ -81,7 +80,7 @@ describe('AdminShell', () => {
 
   it('keeps detail section active on nested detail editor routes', () => {
     const { container } = renderAdminShell(
-      '/admin/entity-config/account/edit/layouts/sales/detail/sections',
+      '/admin/entity-config/account/layouts/sales/detail/sections',
       createRouteAccessValue({
         allowedRouteIds: [ADMIN_ENTITY_CONFIG_ROUTE_ID],
         allowedAdminRouteIds: [ADMIN_ENTITY_CONFIG_ROUTE_ID],
@@ -92,7 +91,7 @@ describe('AdminShell', () => {
     )
 
     const detailLink = container.querySelector(
-      'a[href="/admin/entity-config/account/edit/layouts/sales/detail/header-query"]',
+      'a[href="/admin/entity-config/account/layouts"]',
     )
 
     expect(detailLink).not.toBeNull()
@@ -101,7 +100,7 @@ describe('AdminShell', () => {
 
   it('keeps form section active on nested form editor routes', () => {
     const { container } = renderAdminShell(
-      '/admin/entity-config/account/edit/layouts/sales/form/sections',
+      '/admin/entity-config/account/layouts/sales/form/sections',
       createRouteAccessValue({
         allowedRouteIds: [ADMIN_ENTITY_CONFIG_ROUTE_ID],
         allowedAdminRouteIds: [ADMIN_ENTITY_CONFIG_ROUTE_ID],
@@ -112,7 +111,7 @@ describe('AdminShell', () => {
     )
 
     const formLink = container.querySelector(
-      'a[href="/admin/entity-config/account/edit/layouts/sales/form/header-query"]',
+      'a[href="/admin/entity-config/account/layouts"]',
     )
 
     expect(formLink).not.toBeNull()

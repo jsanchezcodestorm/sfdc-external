@@ -68,4 +68,13 @@ export type SalesforceRecordTypeSuggestionResponse = {
   items: SalesforceRecordTypeSuggestion[]
 }
 
-export type EntityConfigSectionKey = 'base' | 'list' | 'detail' | 'form' | 'assignments'
+export type EntityConfigSectionKey =
+  | 'object'
+  | 'fields'
+  | 'access'
+  | 'record-types'
+  | 'layouts'
+  | 'preview'
+  | 'detail'
+  | 'form'
+  | 'assignments'

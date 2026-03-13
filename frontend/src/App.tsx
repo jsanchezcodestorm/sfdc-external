@@ -112,34 +112,17 @@ const router = createHashRouter(
 
               <Route element={<RequireRouteAccess routeId={ADMIN_ENTITY_CONFIG_ROUTE_ID} />}>
                 <Route path="entity-config" element={<EntityAdminConfigPage />} />
-                <Route path="entity-config/__new__/base" element={<EntityAdminConfigPage />} />
+                <Route path="entity-config/__new__/object" element={<EntityAdminConfigPage />} />
                 <Route path="entity-config/:entityId" element={<EntityAdminConfigPage />} />
-                <Route path="entity-config/:entityId/edit/base" element={<EntityAdminConfigPage />} />
-                <Route path="entity-config/:entityId/edit/list" element={<EntityAdminConfigPage />} />
-                <Route
-                  path="entity-config/:entityId/edit/assignments"
-                  element={<EntityAdminConfigPage />}
-                />
-                <Route
-                  path="entity-config/:entityId/edit/detail/:detailArea"
-                  element={<EntityAdminConfigPage />}
-                />
-                <Route
-                  path="entity-config/:entityId/edit/form/:formArea"
-                  element={<EntityAdminConfigPage />}
-                />
-                <Route
-                  path="entity-config/:entityId/edit/layouts/:layoutId/assignments"
-                  element={<EntityAdminConfigPage />}
-                />
-                <Route
-                  path="entity-config/:entityId/edit/layouts/:layoutId/detail/:detailArea"
-                  element={<EntityAdminConfigPage />}
-                />
-                <Route
-                  path="entity-config/:entityId/edit/layouts/:layoutId/form/:formArea"
-                  element={<EntityAdminConfigPage />}
-                />
+                <Route path="entity-config/:entityId/object" element={<EntityAdminConfigPage />} />
+                <Route path="entity-config/:entityId/fields" element={<EntityAdminConfigPage />} />
+                <Route path="entity-config/:entityId/access" element={<EntityAdminConfigPage />} />
+                <Route path="entity-config/:entityId/record-types" element={<EntityAdminConfigPage />} />
+                <Route path="entity-config/:entityId/layouts" element={<EntityAdminConfigPage />} />
+                <Route path="entity-config/:entityId/preview" element={<EntityAdminConfigPage />} />
+                <Route path="entity-config/:entityId/layouts/:layoutId/assignments" element={<EntityAdminConfigPage />} />
+                <Route path="entity-config/:entityId/layouts/:layoutId/detail/:detailArea" element={<EntityAdminConfigPage />} />
+                <Route path="entity-config/:entityId/layouts/:layoutId/form/:formArea" element={<EntityAdminConfigPage />} />
               </Route>
 
               <Route element={<RequireRouteAccess routeId={ADMIN_APPS_ROUTE_ID} />}>

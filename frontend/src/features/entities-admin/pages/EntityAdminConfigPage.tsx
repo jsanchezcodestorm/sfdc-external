@@ -26,6 +26,7 @@ import {
   fetchEntityAdminConfig,
   fetchEntityAdminConfigList,
   previewEntityAdminBootstrap,
+  searchEntityAdminObjectFields,
   searchEntityAdminRecordTypes,
   searchEntityAdminObjectApiNames,
   updateEntityAdminConfig,
@@ -35,8 +36,14 @@ import type {
   EntityAdminConfigSummary,
   EntityConfigSectionKey,
   SalesforceObjectApiNameSuggestion,
+  SalesforceObjectFieldSuggestion,
   SalesforceRecordTypeSuggestion,
 } from '../entity-admin-types'
+import {
+  fetchEntityCreateLayoutOptions,
+  fetchEntityForm,
+} from '../../entities/entity-api'
+import type { EntityCreateLayoutOption, EntityFormResponse } from '../../entities/entity-types'
 import {
   buildEntityCatalogPath,
   buildEntityCreatePath,
@@ -98,6 +105,11 @@ type EntityCreationAclDraft = {
   permissionCodes: string[]
 }
 
+type EntityAccessDraft = {
+  accessMode: 'disabled' | 'authenticated' | 'permission-bound'
+  permissionCodes: string[]
+}
+
 export function EntityAdminConfigPage() {
   const { confirm, alert } = useAppDialog()
   const location = useLocation()
@@ -121,7 +133,7 @@ export function EntityAdminConfigPage() {
       ? decodeURIComponent(params.entityId)
       : null)
   const activeSection = isCreateRoute
-    ? 'base'
+    ? 'object'
     : activeEditRoute?.section ??
       (params.detailArea ? 'detail' : params.formArea ? 'form' : null)
   const activeDetailArea = activeEditRoute?.detailArea ?? null
@@ -151,9 +163,19 @@ export function EntityAdminConfigPage() {
   const [recordTypeSuggestions, setRecordTypeSuggestions] = useState<SalesforceRecordTypeSuggestion[]>([])
   const [loadingRecordTypeSuggestions, setLoadingRecordTypeSuggestions] = useState(false)
   const [recordTypeSuggestionsError, setRecordTypeSuggestionsError] = useState<string | null>(null)
+  const [fieldsCatalog, setFieldsCatalog] = useState<SalesforceObjectFieldSuggestion[]>([])
+  const [loadingFieldsCatalog, setLoadingFieldsCatalog] = useState(false)
+  const [fieldsCatalogError, setFieldsCatalogError] = useState<string | null>(null)
   const [loadingList, setLoadingList] = useState(true)
   const [loadingConfig, setLoadingConfig] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [accessDraft, setAccessDraft] = useState<EntityAccessDraft>({
+    accessMode: 'disabled',
+    permissionCodes: [],
+  })
+  const [loadingAccessDraft, setLoadingAccessDraft] = useState(false)
+  const [savingAccessDraft, setSavingAccessDraft] = useState(false)
+  const [accessDraftError, setAccessDraftError] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [pageError, setPageError] = useState<string | null>(null)
   const [editorError, setEditorError] = useState<string | null>(null)
@@ -264,6 +286,11 @@ export function EntityAdminConfigPage() {
     () => readEntityActionDrafts(primaryDetailFormDraft.actionsJson),
     [primaryDetailFormDraft.actionsJson],
   )
+  const isLayoutWorkspaceSection =
+    activeSection === 'layouts' ||
+    activeSection === 'detail' ||
+    activeSection === 'form' ||
+    activeSection === 'assignments'
   const actionsReady = listRowActions.length > 0 || detailActions.length > 0
   const accessReady =
     creationAclDraft.accessMode === 'authenticated' ||
@@ -498,7 +525,7 @@ export function EntityAdminConfigPage() {
   }, [isCreateRoute])
 
   useEffect(() => {
-    if (!isCreateRoute) {
+    if (!(isCreateRoute || activeSection === 'access')) {
       setAclPermissionOptions([])
       setAclPermissionOptionsError(null)
       setLoadingAclPermissionOptions(false)
@@ -548,7 +575,7 @@ export function EntityAdminConfigPage() {
     return () => {
       cancelled = true
     }
-  }, [isCreateRoute])
+  }, [activeSection, isCreateRoute])
 
   useEffect(() => {
     const focusError = (node: HTMLElement | null) => {
@@ -657,7 +684,7 @@ export function EntityAdminConfigPage() {
   )
 
   const canSearchObjectApiNameSuggestions =
-    (isCreateRoute || isEditRoute) && activeSection === 'base' && selectedEntityConfig !== null
+    (isCreateRoute || isEditRoute) && activeSection === 'object' && selectedEntityConfig !== null
   const objectApiNameSearchValue = objectApiNameSearchInput.trim()
   const shouldShowObjectApiNameSuggestions =
     canSearchObjectApiNameSuggestions &&
@@ -759,6 +786,93 @@ export function EntityAdminConfigPage() {
       cancelled = true
     }
   }, [baseFormDraft.objectApiName])
+
+  useEffect(() => {
+    const normalizedObjectApiName = baseFormDraft.objectApiName.trim()
+    if (activeSection !== 'fields' || normalizedObjectApiName.length === 0) {
+      setFieldsCatalog([])
+      setFieldsCatalogError(null)
+      setLoadingFieldsCatalog(false)
+      return
+    }
+
+    let cancelled = false
+    setLoadingFieldsCatalog(true)
+    setFieldsCatalogError(null)
+
+    void searchEntityAdminObjectFields(normalizedObjectApiName, '', 200)
+      .then((payload) => {
+        if (cancelled) {
+          return
+        }
+
+        setFieldsCatalog(payload.items ?? [])
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return
+        }
+
+        const message =
+          error instanceof Error ? error.message : 'Errore caricamento campi Salesforce'
+        setFieldsCatalog([])
+        setFieldsCatalogError(message)
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoadingFieldsCatalog(false)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [activeSection, baseFormDraft.objectApiName])
+
+  useEffect(() => {
+    if (!selectedEntityId) {
+      setAccessDraft({
+        accessMode: 'disabled',
+        permissionCodes: [],
+      })
+      setAccessDraftError(null)
+      setLoadingAccessDraft(false)
+      return
+    }
+
+    let cancelled = false
+    setLoadingAccessDraft(true)
+    setAccessDraftError(null)
+
+    void fetchAclResource(`entity:${selectedEntityId}`)
+      .then((payload) => {
+        if (cancelled) {
+          return
+        }
+
+        setAccessDraft({
+          accessMode: payload.resource.accessMode,
+          permissionCodes: payload.resource.permissions ?? [],
+        })
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return
+        }
+
+        const message = error instanceof Error ? error.message : 'Errore caricamento ACL resource'
+        setAccessDraftError(message)
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoadingAccessDraft(false)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [selectedEntityId])
 
   const handleSelectEntity = useCallback(
     (entityId: string) => {
@@ -1158,7 +1272,7 @@ export function EntityAdminConfigPage() {
       }
 
       if (nextLayouts.length === 0) {
-        navigate(buildEntityEditPath(selectedEntityId, 'base'))
+        navigate(buildEntityEditPath(selectedEntityId, 'object'))
         return
       }
 
@@ -1445,7 +1559,7 @@ export function EntityAdminConfigPage() {
     } catch (error) {
       const validationError = normalizeDraftValidationError(error)
       setEditorError(validationError.message)
-      setCreationWizardStep(validationError.section === 'base' ? 'identity' : 'bootstrap')
+      setCreationWizardStep(validationError.section === 'object' ? 'identity' : 'bootstrap')
       return
     }
 
@@ -1481,7 +1595,7 @@ export function EntityAdminConfigPage() {
         syncState: 'present',
       })
       await refreshEntityList()
-      navigate(buildEntityEditPath(payload.entity.id, 'base'), {
+      navigate(buildEntityEditPath(payload.entity.id, 'object'), {
         replace: true,
         state: {
           saveInfo: 'Entity creata con wizard guidato',
@@ -1557,7 +1671,7 @@ export function EntityAdminConfigPage() {
       navigate(
         buildEntityEditPathForSection(
           payload.entity.id,
-          activeSection ?? 'base',
+          activeSection ?? 'object',
           activeDetailArea,
           activeFormArea,
           activeLayoutDraft?.id,
@@ -1598,7 +1712,7 @@ export function EntityAdminConfigPage() {
       setSelectedEntityConfig(payload.entity)
       setAclResourceStatus(payload.aclResourceStatus)
       await refreshEntityList()
-      navigate(buildEntityEditPath(payload.entity.id, 'base'), {
+      navigate(buildEntityEditPath(payload.entity.id, 'object'), {
         replace: true,
         state: {
           saveInfo: 'Entity creata',
@@ -1656,6 +1770,176 @@ export function EntityAdminConfigPage() {
     }
   }
 
+  const saveAccessSection = async () => {
+    if (!selectedEntityId) {
+      return
+    }
+
+    setSavingAccessDraft(true)
+    setAccessDraftError(null)
+    setSaveInfo(null)
+
+    try {
+      const resourceId = `entity:${selectedEntityId}`
+      const payload = await fetchAclResource(resourceId)
+      await updateAclResource(resourceId, {
+        ...payload.resource,
+        accessMode: accessDraft.accessMode,
+        permissions: [...accessDraft.permissionCodes],
+      })
+      setAclResourceStatus({
+        id: resourceId,
+        accessMode: accessDraft.accessMode,
+        managedBy: payload.resource.managedBy,
+        syncState: payload.resource.syncState,
+      })
+      setSaveInfo('Configurazione accesso salvata')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Errore salvataggio accesso'
+      setAccessDraftError(message)
+    } finally {
+      setSavingAccessDraft(false)
+    }
+  }
+
+  const renderEditSection = () => {
+    if (activeSection === 'object') {
+      return (
+        <EntityConfigBaseForm
+          value={baseFormDraft}
+          error={editorError}
+          onChange={updateBaseDraftField}
+          suggestions={objectApiNameSuggestions}
+          suggestionsLoading={loadingObjectApiNameSuggestions}
+          suggestionsError={objectApiNameSuggestionsError}
+          showSuggestions={shouldShowObjectApiNameSuggestions}
+          onSelectSuggestion={selectObjectApiNameSuggestion}
+          disableIdField
+          idHelperText="L'entity id è immutabile dopo la creazione."
+        />
+      )
+    }
+
+    if (activeSection === 'fields') {
+      return (
+        <EntityFieldsCatalogSection
+          objectApiName={baseFormDraft.objectApiName}
+          fields={fieldsCatalog}
+          loading={loadingFieldsCatalog}
+          error={fieldsCatalogError}
+        />
+      )
+    }
+
+    if (activeSection === 'access') {
+      return (
+        <EntityAccessSection
+          value={accessDraft}
+          aclPermissionOptions={aclPermissionOptions}
+          loading={loadingAccessDraft || loadingAclPermissionOptions}
+          error={accessDraftError ?? aclPermissionOptionsError}
+          saving={savingAccessDraft}
+          onChange={setAccessDraft}
+          onSave={() => {
+            void saveAccessSection()
+          }}
+        />
+      )
+    }
+
+    if (activeSection === 'record-types') {
+      return (
+        <EntityRecordTypesSection
+          objectApiName={baseFormDraft.objectApiName}
+          recordTypes={recordTypeSuggestions}
+          loading={loadingRecordTypeSuggestions}
+          error={recordTypeSuggestionsError}
+        />
+      )
+    }
+
+    if (activeSection === 'preview') {
+      return selectedEntityId ? <EntityPreviewSection entityId={selectedEntityId} /> : null
+    }
+
+    if (activeSection === 'layouts') {
+      return (
+        <div className="space-y-5">
+          <EntityConfigListForm
+            value={listFormDraft}
+            error={editorError}
+            baseObjectApiName={baseFormDraft.objectApiName}
+            selectedViewIndex={selectedListViewIndex}
+            onChangeField={updateListField}
+            onChangePrimaryAction={updateListPrimaryActionField}
+            onSelectView={handleSelectListView}
+            onAddView={addListViewDraft}
+            onRemoveView={removeListViewDraft}
+            onChangeViewField={updateListViewField}
+            onChangeViewSelectionField={updateListViewSelectionField}
+            onChangeViewPrimaryAction={updateListViewPrimaryActionField}
+            onToggleViewDefault={toggleListViewDefault}
+          />
+
+          <section className="rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm">
+            <p className="text-sm font-semibold text-slate-900">Layout workspace</p>
+            <p className="mt-1 text-sm text-slate-600">
+              Seleziona un layout dal catalogo sopra per aprire assignments, detail o form.
+            </p>
+          </section>
+        </div>
+      )
+    }
+
+    if (activeSection === 'detail') {
+      return activeLayoutDraft ? (
+        <EntityConfigDetailForm
+          value={detailFormDraft}
+          error={editorError}
+          baseObjectApiName={baseFormDraft.objectApiName}
+          activeArea={activeDetailArea ?? 'header-query'}
+          onChange={updateDetailDraft}
+          onAreaChange={handleSelectDetailArea}
+        />
+      ) : (
+        <EntityLayoutEmptyState onAddLayout={addLayoutDraft} />
+      )
+    }
+
+    if (activeSection === 'assignments') {
+      return activeLayoutDraft ? (
+        <EntityLayoutAssignmentsEditor
+          layout={activeLayoutDraft}
+          recordTypeSuggestions={recordTypeSuggestions}
+          loadingRecordTypeSuggestions={loadingRecordTypeSuggestions}
+          recordTypeSuggestionsError={recordTypeSuggestionsError}
+          onChangeAssignments={(assignments) =>
+            updateLayoutAssignments(activeLayoutDraft.clientId, assignments)
+          }
+        />
+      ) : (
+        <EntityLayoutEmptyState onAddLayout={addLayoutDraft} />
+      )
+    }
+
+    if (activeSection === 'form') {
+      return activeLayoutDraft ? (
+        <EntityConfigFormForm
+          value={formFormDraft}
+          error={editorError}
+          baseObjectApiName={baseFormDraft.objectApiName}
+          activeArea={activeFormArea ?? 'header-query'}
+          onChange={updateFormDraft}
+          onAreaChange={handleSelectFormArea}
+        />
+      ) : (
+        <EntityLayoutEmptyState onAddLayout={addLayoutDraft} />
+      )
+    }
+
+    return null
+  }
+
   return (
     <div className="flex w-full flex-col gap-5">
       <header className="rounded-2xl border border-slate-200 bg-white/90 p-6 shadow-sm backdrop-blur-sm">
@@ -1699,7 +1983,7 @@ export function EntityAdminConfigPage() {
               </button>
               <button
                 type="button"
-                onClick={() => navigate(buildEntityEditPath(selectedEntityId, 'base'))}
+                onClick={() => navigate(buildEntityEditPath(selectedEntityId, 'object'))}
                 className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
               >
                 Modifica
@@ -1868,93 +2152,28 @@ export function EntityAdminConfigPage() {
             />
           ) : null}
 
-          <EntityLayoutWorkspace
-            layouts={layoutDrafts}
-            activeLayoutId={activeLayoutDraft?.id ?? null}
-            activeSection={
-              activeSection === 'detail' || activeSection === 'form' || activeSection === 'assignments'
-                ? activeSection
-                : null
-            }
-            onAddLayout={addLayoutDraft}
-            onRemoveLayout={(layoutClientId) => {
-              void removeLayoutDraft(layoutClientId)
-            }}
-            onSetDefaultLayout={setDefaultLayoutDraft}
-            onSelectLayoutSection={handleSelectLayoutSection}
-            onChangeLayoutMetadata={updateLayoutMetadata}
-          />
+          {isLayoutWorkspaceSection ? (
+            <EntityLayoutWorkspace
+              layouts={layoutDrafts}
+              activeLayoutId={activeLayoutDraft?.id ?? null}
+              activeSection={
+                activeSection === 'detail' ||
+                activeSection === 'form' ||
+                activeSection === 'assignments'
+                  ? activeSection
+                  : null
+              }
+              onAddLayout={addLayoutDraft}
+              onRemoveLayout={(layoutClientId) => {
+                void removeLayoutDraft(layoutClientId)
+              }}
+              onSetDefaultLayout={setDefaultLayoutDraft}
+              onSelectLayoutSection={handleSelectLayoutSection}
+              onChangeLayoutMetadata={updateLayoutMetadata}
+            />
+          ) : null}
 
-          {activeSection === 'base' ? (
-            <EntityConfigBaseForm
-              value={baseFormDraft}
-              error={editorError}
-              onChange={updateBaseDraftField}
-              suggestions={objectApiNameSuggestions}
-              suggestionsLoading={loadingObjectApiNameSuggestions}
-              suggestionsError={objectApiNameSuggestionsError}
-              showSuggestions={shouldShowObjectApiNameSuggestions}
-              onSelectSuggestion={selectObjectApiNameSuggestion}
-              disableIdField
-              idHelperText="L'entity id è immutabile dopo la creazione."
-            />
-          ) : activeSection === 'list' ? (
-            <EntityConfigListForm
-              value={listFormDraft}
-              error={editorError}
-              baseObjectApiName={baseFormDraft.objectApiName}
-              selectedViewIndex={selectedListViewIndex}
-              onChangeField={updateListField}
-              onChangePrimaryAction={updateListPrimaryActionField}
-              onSelectView={handleSelectListView}
-              onAddView={addListViewDraft}
-              onRemoveView={removeListViewDraft}
-              onChangeViewField={updateListViewField}
-              onChangeViewSelectionField={updateListViewSelectionField}
-              onChangeViewPrimaryAction={updateListViewPrimaryActionField}
-              onToggleViewDefault={toggleListViewDefault}
-            />
-          ) : activeSection === 'detail' ? (
-            activeLayoutDraft ? (
-            <EntityConfigDetailForm
-              value={detailFormDraft}
-              error={editorError}
-              baseObjectApiName={baseFormDraft.objectApiName}
-              activeArea={activeDetailArea ?? 'header-query'}
-              onChange={updateDetailDraft}
-              onAreaChange={handleSelectDetailArea}
-            />
-            ) : (
-              <EntityLayoutEmptyState onAddLayout={addLayoutDraft} />
-            )
-          ) : activeSection === 'assignments' ? (
-            activeLayoutDraft ? (
-              <EntityLayoutAssignmentsEditor
-                layout={activeLayoutDraft}
-                recordTypeSuggestions={recordTypeSuggestions}
-                loadingRecordTypeSuggestions={loadingRecordTypeSuggestions}
-                recordTypeSuggestionsError={recordTypeSuggestionsError}
-                onChangeAssignments={(assignments) =>
-                  updateLayoutAssignments(activeLayoutDraft.clientId, assignments)
-                }
-              />
-            ) : (
-              <EntityLayoutEmptyState onAddLayout={addLayoutDraft} />
-            )
-          ) : (
-            activeLayoutDraft ? (
-              <EntityConfigFormForm
-                value={formFormDraft}
-                error={editorError}
-                baseObjectApiName={baseFormDraft.objectApiName}
-                activeArea={activeFormArea ?? 'header-query'}
-                onChange={updateFormDraft}
-                onAreaChange={handleSelectFormArea}
-              />
-            ) : (
-              <EntityLayoutEmptyState onAddLayout={addLayoutDraft} />
-            )
-          )}
+          {renderEditSection()}
         </>
       ) : null}
     </div>
@@ -2456,6 +2675,392 @@ function EntityLayoutEmptyState({
       >
         Aggiungi layout
       </button>
+    </section>
+  )
+}
+
+function EntityFieldsCatalogSection({
+  objectApiName,
+  fields,
+  loading,
+  error,
+}: {
+  objectApiName: string
+  fields: SalesforceObjectFieldSuggestion[]
+  loading: boolean
+  error: string | null
+}) {
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="border-b border-slate-200 pb-4">
+        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Fields</p>
+        <h2 className="mt-1 text-lg font-semibold text-slate-900">Catalogo campi Salesforce</h2>
+        <p className="mt-1 text-sm text-slate-600">
+          Campi letti da describe per {objectApiName || 'oggetto non selezionato'}. Qui non crei metadata: scegli solo cosa usare nell’app.
+        </p>
+      </div>
+
+      {loading ? <p className="mt-4 text-sm text-slate-600">Caricamento campi...</p> : null}
+      {error ? <p className="mt-4 text-sm text-rose-700">{error}</p> : null}
+
+      {!loading && !error ? (
+        <div className="mt-4 overflow-hidden rounded-xl border border-slate-200">
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-slate-200 text-sm">
+              <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
+                <tr>
+                  <th className="px-4 py-3 text-left">API Name</th>
+                  <th className="px-4 py-3 text-left">Label</th>
+                  <th className="px-4 py-3 text-left">Type</th>
+                  <th className="px-4 py-3 text-left">Filterable</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {fields.map((field) => (
+                  <tr key={field.name} className="bg-white">
+                    <td className="px-4 py-3 font-mono text-slate-900">{field.name}</td>
+                    <td className="px-4 py-3 text-slate-700">{field.label}</td>
+                    <td className="px-4 py-3 text-slate-700">{field.type}</td>
+                    <td className="px-4 py-3 text-slate-700">{field.filterable ? 'Yes' : 'No'}</td>
+                  </tr>
+                ))}
+                {fields.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="px-4 py-8 text-sm text-slate-500">
+                      Nessun campo disponibile.
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
+    </section>
+  )
+}
+
+function EntityAccessSection({
+  value,
+  aclPermissionOptions,
+  loading,
+  error,
+  saving,
+  onChange,
+  onSave,
+}: {
+  value: EntityAccessDraft
+  aclPermissionOptions: AclAdminPermissionSummary[]
+  loading: boolean
+  error: string | null
+  saving: boolean
+  onChange: Dispatch<SetStateAction<EntityAccessDraft>>
+  onSave: () => void
+}) {
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Access</p>
+          <h2 className="mt-1 text-lg font-semibold text-slate-900">ACL e CRUD applicativo</h2>
+          <p className="mt-1 text-sm text-slate-600">
+            Qui configuri l’accesso applicativo all’entity, non i permessi metadata Salesforce.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={loading || saving}
+          className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-65"
+        >
+          {saving ? 'Salvataggio...' : 'Salva accesso'}
+        </button>
+      </div>
+
+      {error ? <p className="mt-4 text-sm text-rose-700">{error}</p> : null}
+      {loading ? <p className="mt-4 text-sm text-slate-600">Caricamento accesso...</p> : null}
+
+      {!loading ? (
+        <div className="mt-5 space-y-5">
+          <section className="grid gap-3 md:grid-cols-3">
+            {(['disabled', 'authenticated', 'permission-bound'] as const).map((mode) => (
+              <label
+                key={mode}
+                className={`rounded-2xl border px-4 py-4 text-sm ${
+                  value.accessMode === mode
+                    ? 'border-sky-300 bg-sky-50 text-sky-900'
+                    : 'border-slate-200 bg-slate-50 text-slate-700'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="access-mode"
+                  checked={value.accessMode === mode}
+                  onChange={() =>
+                    onChange((current) => ({
+                      ...current,
+                      accessMode: mode,
+                    }))
+                  }
+                  className="mr-2"
+                />
+                {mode}
+              </label>
+            ))}
+          </section>
+
+          {value.accessMode === 'permission-bound' ? (
+            <section>
+              <p className="text-sm font-semibold text-slate-900">ACL permissions</p>
+              <div className="mt-3 grid gap-2 md:grid-cols-2">
+                {aclPermissionOptions.map((permission) => {
+                  const checked = value.permissionCodes.includes(permission.code)
+                  return (
+                    <label
+                      key={permission.code}
+                      className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(event) =>
+                          onChange((current) => ({
+                            ...current,
+                            permissionCodes: event.target.checked
+                              ? [...current.permissionCodes, permission.code]
+                              : current.permissionCodes.filter((code) => code !== permission.code),
+                          }))
+                        }
+                        className="mt-0.5 h-4 w-4"
+                      />
+                      <span>
+                        <span className="block font-semibold text-slate-900">{permission.code}</span>
+                        {permission.label ? (
+                          <span className="mt-1 block text-xs text-slate-500">{permission.label}</span>
+                        ) : null}
+                      </span>
+                    </label>
+                  )
+                })}
+              </div>
+            </section>
+          ) : null}
+        </div>
+      ) : null}
+    </section>
+  )
+}
+
+function EntityRecordTypesSection({
+  objectApiName,
+  recordTypes,
+  loading,
+  error,
+}: {
+  objectApiName: string
+  recordTypes: SalesforceRecordTypeSuggestion[]
+  loading: boolean
+  error: string | null
+}) {
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="border-b border-slate-200 pb-4">
+        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Record Types</p>
+        <h2 className="mt-1 text-lg font-semibold text-slate-900">Record type disponibili</h2>
+        <p className="mt-1 text-sm text-slate-600">
+          Record type letti da Salesforce per {objectApiName || 'oggetto non selezionato'}. I layout applicativi li usano tramite `DeveloperName`.
+        </p>
+      </div>
+
+      {loading ? <p className="mt-4 text-sm text-slate-600">Caricamento record type...</p> : null}
+      {error ? <p className="mt-4 text-sm text-rose-700">{error}</p> : null}
+
+      {!loading && !error ? (
+        <div className="mt-4 overflow-hidden rounded-xl border border-slate-200">
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-slate-200 text-sm">
+              <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
+                <tr>
+                  <th className="px-4 py-3 text-left">Label</th>
+                  <th className="px-4 py-3 text-left">DeveloperName</th>
+                  <th className="px-4 py-3 text-left">Available</th>
+                  <th className="px-4 py-3 text-left">Default</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {recordTypes.map((recordType) => (
+                  <tr key={recordType.developerName} className="bg-white">
+                    <td className="px-4 py-3 text-slate-700">{recordType.label}</td>
+                    <td className="px-4 py-3 font-mono text-slate-900">{recordType.developerName}</td>
+                    <td className="px-4 py-3 text-slate-700">{recordType.available ? 'Yes' : 'No'}</td>
+                    <td className="px-4 py-3 text-slate-700">{recordType.defaultRecordTypeMapping ? 'Yes' : 'No'}</td>
+                  </tr>
+                ))}
+                {recordTypes.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="px-4 py-8 text-sm text-slate-500">
+                      Nessun record type attivo disponibile.
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
+    </section>
+  )
+}
+
+function EntityPreviewSection({ entityId }: { entityId: string }) {
+  const [options, setOptions] = useState<EntityCreateLayoutOption[]>([])
+  const [selectedRecordType, setSelectedRecordType] = useState('')
+  const [previewForm, setPreviewForm] = useState<EntityFormResponse | null>(null)
+  const [loadingOptions, setLoadingOptions] = useState(true)
+  const [loadingPreview, setLoadingPreview] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const loading = loadingOptions || loadingPreview
+
+  useEffect(() => {
+    let cancelled = false
+    const loadOptions = async () => {
+      setLoadingOptions(true)
+      setError(null)
+
+      try {
+        const payload = await fetchEntityCreateLayoutOptions(entityId)
+        if (cancelled) {
+          return
+        }
+
+        const nextOptions = payload.items ?? []
+        setOptions(nextOptions)
+        setSelectedRecordType((current) => {
+          if (
+            current &&
+            nextOptions.some((option) => option.recordTypeDeveloperName === current)
+          ) {
+            return current
+          }
+
+          return nextOptions[0]?.recordTypeDeveloperName ?? ''
+        })
+
+        if (nextOptions.length === 0) {
+          setPreviewForm(null)
+        }
+      } catch (previewError) {
+        if (!cancelled) {
+          setError(previewError instanceof Error ? previewError.message : 'Errore preview entity')
+          setOptions([])
+          setSelectedRecordType('')
+          setPreviewForm(null)
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingOptions(false)
+        }
+      }
+    }
+
+    void loadOptions()
+
+    return () => {
+      cancelled = true
+    }
+  }, [entityId])
+
+  useEffect(() => {
+    if (!selectedRecordType) {
+      return
+    }
+
+    let cancelled = false
+    const loadPreview = async () => {
+      setLoadingPreview(true)
+      setError(null)
+
+      try {
+        const payload = await fetchEntityForm(entityId, undefined, selectedRecordType)
+        if (!cancelled) {
+          setPreviewForm(payload)
+        }
+      } catch (previewError) {
+        if (!cancelled) {
+          setError(previewError instanceof Error ? previewError.message : 'Errore preview form')
+          setPreviewForm(null)
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingPreview(false)
+        }
+      }
+    }
+
+    void loadPreview()
+
+    return () => {
+      cancelled = true
+    }
+  }, [entityId, selectedRecordType])
+
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="border-b border-slate-200 pb-4">
+        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Preview</p>
+        <h2 className="mt-1 text-lg font-semibold text-slate-900">Preview runtime create</h2>
+        <p className="mt-1 text-sm text-slate-600">
+          Simula il create flow per l’utente corrente e verifica il layout risolto dal backend.
+        </p>
+      </div>
+
+      <label className="mt-4 block text-sm font-medium text-slate-700">
+        Record Type
+        <select
+          value={selectedRecordType}
+          onChange={(event) => {
+            const nextRecordType = event.target.value
+            setSelectedRecordType(nextRecordType)
+            if (!nextRecordType) {
+              setPreviewForm(null)
+            }
+          }}
+          className="mt-2 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"
+        >
+          <option value="">Seleziona un record type</option>
+          {options.map((option) => (
+            <option key={option.recordTypeDeveloperName} value={option.recordTypeDeveloperName}>
+              {option.label} ({option.layoutId})
+            </option>
+          ))}
+        </select>
+      </label>
+
+      {loading ? <p className="mt-4 text-sm text-slate-600">Caricamento preview...</p> : null}
+      {error ? <p className="mt-4 text-sm text-rose-700">{error}</p> : null}
+
+      {!loading && !error && previewForm ? (
+        <div className="mt-5 grid gap-3 md:grid-cols-3">
+          <SummaryChip label="Layout" value={previewForm.layoutId ? 1 : 0} />
+          <SummaryChip label="Record Type" value={previewForm.recordTypeDeveloperName ? 1 : 0} />
+          <SummaryChip label="Sections" value={previewForm.sections?.length ?? 0} />
+        </div>
+      ) : null}
+
+      {!loading && !error && previewForm ? (
+        <section className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+          <p>
+            <strong>layoutId:</strong> {previewForm.layoutId ?? '-'}
+          </p>
+          <p className="mt-2">
+            <strong>recordTypeDeveloperName:</strong> {previewForm.recordTypeDeveloperName ?? '-'}
+          </p>
+          <p className="mt-2">
+            <strong>title:</strong> {previewForm.title ?? '-'}
+          </p>
+        </section>
+      ) : null}
     </section>
   )
 }
@@ -3550,15 +4155,15 @@ function buildEntityConfigFromDrafts(
   const baseConfig = createEntityConfigFromBaseDraft(drafts.base)
   if (!baseConfig) {
     throw new EntityConfigDraftValidationError(
-      'base',
-      getPrefixedSectionMessage('base', getBaseDraftValidationMessage(drafts.base, 'salvare')),
+      'object',
+      getPrefixedSectionMessage('object', getBaseDraftValidationMessage(drafts.base, 'salvare')),
     )
   }
 
   const baseObjectApiName = baseConfig.objectApiName ?? ''
   const list =
     persistedEntity.list !== undefined || !isListFormDraftEmpty(drafts.list)
-      ? parseDraftSection('list', () => parseListFormDraft(drafts.list, baseObjectApiName))
+      ? parseDraftSection('layouts', () => parseListFormDraft(drafts.list, baseObjectApiName))
       : undefined
   const nextLayouts = drafts.layouts
     .map((layoutDraft, index) => parseEntityLayoutDraft(layoutDraft, baseObjectApiName, index))
@@ -3803,9 +4408,9 @@ function normalizeDraftValidationError(error: unknown): EntityConfigDraftValidat
   }
 
   return new EntityConfigDraftValidationError(
-    'base',
+    'object',
     getPrefixedSectionMessage(
-      'base',
+      'object',
       error instanceof Error ? error.message : 'Valori form non validi',
     ),
   )

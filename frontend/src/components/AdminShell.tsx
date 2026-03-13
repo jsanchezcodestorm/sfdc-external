@@ -262,27 +262,15 @@ function buildEntityConfigModule(
   if (isCreateRoute) {
     items.push(
       {
-        id: 'entity-base',
-        label: 'Base',
+        id: 'entity-object',
+        label: 'Object',
         to: buildEntityCreatePath(),
-        caption: 'Prima configurazione',
+        caption: 'Collega l’oggetto Salesforce',
         isActive: true,
       },
       {
-        id: 'entity-list',
-        label: 'List',
-        caption: 'Disponibile dopo il primo salvataggio',
-        isDisabled: true,
-      },
-      {
-        id: 'entity-detail',
-        label: 'Detail',
-        caption: 'Disponibile dopo il primo salvataggio',
-        isDisabled: true,
-      },
-      {
-        id: 'entity-form',
-        label: 'Form',
+        id: 'entity-next-steps',
+        label: 'Workspace',
         caption: 'Disponibile dopo il primo salvataggio',
         isDisabled: true,
       },
@@ -301,8 +289,14 @@ function buildEntityConfigModule(
         id: `entity-${section}`,
         label: ENTITY_CONFIG_SECTION_LABELS[section],
         to: buildEntityEditPath(entityId, section, undefined, activeLayoutId),
-        caption: 'Editor sezione',
-        isActive: activeSection === section,
+        caption: section === 'layouts' ? 'List, assignments, detail e form' : 'Editor sezione',
+        isActive:
+          section === 'layouts'
+            ? activeSection === 'layouts' ||
+              activeSection === 'detail' ||
+              activeSection === 'form' ||
+              activeSection === 'assignments'
+            : activeSection === section,
       })
     }
   }
