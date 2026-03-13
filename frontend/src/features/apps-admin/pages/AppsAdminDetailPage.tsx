@@ -13,6 +13,7 @@ import {
 import type { AppConfig } from '../apps-admin-types'
 import {
   buildAppsAdminEditPath,
+  buildAppsAdminHomeBuilderPath,
   buildAppsAdminListPath,
 } from '../apps-admin-utils'
 
@@ -135,6 +136,15 @@ export function AppsAdminDetailPage() {
           {appId ? (
             <button
               type="button"
+              onClick={() => navigate(buildAppsAdminHomeBuilderPath(appId))}
+              className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
+            >
+              Home Builder
+            </button>
+          ) : null}
+          {appId ? (
+            <button
+              type="button"
               onClick={() => navigate(buildAppsAdminEditPath(appId))}
               className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
             >
@@ -215,6 +225,15 @@ export function AppsAdminDetailPage() {
                     <pre className="mt-3 overflow-x-auto rounded-xl bg-slate-950 px-4 py-3 text-xs text-slate-100">
                       {JSON.stringify(item.page, null, 2)}
                     </pre>
+                  ) : null}
+                  {item.kind === 'home' && appId ? (
+                    <button
+                      type="button"
+                      onClick={() => navigate(buildAppsAdminHomeBuilderPath(appId))}
+                      className="mt-3 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
+                    >
+                      Apri Home Builder
+                    </button>
                   ) : null}
 
                   {item.kind === 'external-link' ? (

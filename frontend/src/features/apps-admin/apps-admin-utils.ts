@@ -40,6 +40,10 @@ export function buildAppsAdminEditPath(appId: string): string {
   return `/admin/apps/${encodeURIComponent(appId)}/edit`
 }
 
+export function buildAppsAdminHomeBuilderPath(appId: string): string {
+  return `/admin/apps/${encodeURIComponent(appId)}/home-builder`
+}
+
 export function createEmptyAppItemDraft(kind: AppItemKind = 'custom-page'): AppItemDraft {
   return {
     id: kind === 'home' ? 'home' : '',
