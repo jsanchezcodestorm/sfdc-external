@@ -18,6 +18,11 @@ function createService() {
         async findMany() {
           return [
             {
+              id: 'Contact',
+              label: 'Contact',
+              objectApiName: 'Contact'
+            },
+            {
               id: 'account',
               label: 'Account',
               objectApiName: 'Account'
@@ -75,7 +80,7 @@ test('syncSystemResources creates discovered route/entity resources and marks re
 
   const result = await harness.service.syncSystemResources();
 
-  assert.equal(result.createdCount, 10);
+  assert.equal(result.createdCount, 11);
   assert.equal(result.staleCount, 1);
   assert.equal(harness.replaceCalls.length, 1);
   assert.equal(harness.reloaded.length, 1);
@@ -87,6 +92,7 @@ test('syncSystemResources creates discovered route/entity resources and marks re
     syncState: string;
   }>;
   const discoveredRoute = resources.find((resource) => resource.id === 'route:admin-auth');
+  const normalizedLegacyEntity = resources.find((resource) => resource.id === 'entity:contact');
   const discoveredEntity = resources.find((resource) => resource.id === 'entity:account');
   const staleQuery = resources.find((resource) => resource.id === 'query:legacy-missing');
 
@@ -104,5 +110,17 @@ test('syncSystemResources creates discovered route/entity resources and marks re
   });
   assert.equal(discoveredEntity?.accessMode, 'disabled');
   assert.equal(discoveredEntity?.managedBy, 'system');
+  assert.deepEqual(normalizedLegacyEntity, {
+    id: 'entity:contact',
+    type: 'entity',
+    accessMode: 'disabled',
+    managedBy: 'system',
+    syncState: 'present',
+    sourceType: 'entity',
+    sourceRef: 'contact',
+    target: 'Contact',
+    description: 'Entity Contact (Contact)',
+    permissions: []
+  });
   assert.equal(staleQuery?.syncState, 'stale');
 });

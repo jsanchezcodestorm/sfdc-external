@@ -7,6 +7,7 @@ import {
 } from '@sfdc-external/shared';
 
 import { ACL_METADATA_KEY } from '../app.constants';
+import { normalizeLegacyEntityMetadataId } from '../entities/entity-id-normalization';
 import { PrismaService } from '../prisma/prisma.service';
 
 import { AclAdminConfigRepository } from './acl-admin-config.repository';
@@ -197,13 +198,20 @@ export class AclResourceSyncService implements OnApplicationBootstrap {
     }
 
     for (const entity of entityRows) {
-      resources.set(`entity:${entity.id}`, {
-        id: `entity:${entity.id}`,
+      const normalizedEntityId = normalizeLegacyEntityMetadataId(entity.id);
+      if (normalizedEntityId !== entity.id) {
+        this.logger.warn(
+          `Normalizing legacy entity config id ${entity.id} to ${normalizedEntityId} during ACL resource discovery.`
+        );
+      }
+
+      resources.set(`entity:${normalizedEntityId}`, {
+        id: `entity:${normalizedEntityId}`,
         type: 'entity',
         target: entity.objectApiName,
         description: `Entity ${entity.label} (${entity.objectApiName})`,
         sourceType: 'entity',
-        sourceRef: entity.id
+        sourceRef: normalizedEntityId
       });
     }
 
