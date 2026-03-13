@@ -31,46 +31,19 @@ export function RowActionsJsonArrayEditor({
   addLabel = 'Aggiungi Action',
   emptyMessage = 'Nessuna row action configurata.',
 }: RowActionsJsonArrayEditorProps) {
-  return (
-    <RowActionsJsonArrayEditorBody
-      key={value}
-      value={value}
-      onChange={onChange}
-      legend={legend}
-      description={description}
-      addLabel={addLabel}
-      emptyMessage={emptyMessage}
-    />
-  )
-}
-
-function RowActionsJsonArrayEditorBody({
-  value,
-  onChange,
-  legend = 'Row Actions',
-  description = 'Azioni riga strutturate (`type`, `label`, `target`, `entityId`).',
-  addLabel = 'Aggiungi Action',
-  emptyMessage = 'Nessuna row action configurata.',
-}: RowActionsJsonArrayEditorProps) {
-  const [rows, setRows] = useState<RowActionDraft[]>(() => parseRowActions(value).rows)
-  const { error } = parseRowActions(value)
+  const parsedValue = parseRowActions(value)
+  const [pendingRows, setPendingRows] = useState<RowActionDraft[]>([])
+  const rows = [...parsedValue.rows, ...pendingRows]
+  const error = parsedValue.error
 
   const emitRows = (nextRows: RowActionDraft[]) => {
-    const serialized = serializeRowActions(nextRows)
-    setRows(nextRows)
-    onChange(serialized)
+    const nextPendingRows = nextRows.filter((row) => isRowActionDraftEmpty(row))
+    setPendingRows(nextPendingRows)
+    onChange(serializeRowActions(nextRows))
   }
 
   const addRow = () => {
-    emitRows([
-      ...rows,
-      {
-        type: '',
-        label: '',
-        target: '',
-        entityId: '',
-      },
-    ])
+    setPendingRows((current) => [...current, createEmptyRowActionDraft()])
   }
 
   const updateRow = (index: number, patch: Partial<RowActionDraft>) => {
@@ -230,6 +203,24 @@ function serializeRowActions(rows: RowActionDraft[]): string {
     .filter((entry) => entry !== null)
 
   return payload.length > 0 ? JSON.stringify(payload, null, 2) : ''
+}
+
+function createEmptyRowActionDraft(): RowActionDraft {
+  return {
+    type: '',
+    label: '',
+    target: '',
+    entityId: '',
+  }
+}
+
+function isRowActionDraftEmpty(row: RowActionDraft): boolean {
+  return (
+    normalizeActionType(row.type).length === 0 &&
+    row.label.trim().length === 0 &&
+    row.target.trim().length === 0 &&
+    row.entityId.trim().length === 0
+  )
 }
 
 function mapRowActionEntry(entry: unknown): RowActionDraft | null {
