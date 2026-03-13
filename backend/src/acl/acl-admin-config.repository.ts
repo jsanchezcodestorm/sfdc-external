@@ -7,7 +7,7 @@ import {
   AclResourceManagedBy,
   AclResourceSyncState,
   Prisma
-} from '@prisma/client';
+} from '../prisma/generated/client';
 
 import { PrismaService } from '../prisma/prisma.service';
 

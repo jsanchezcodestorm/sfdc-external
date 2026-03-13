@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
+import type { Prisma } from '../prisma/generated/client';
 
 import { LocalCredentialPasswordService } from './local-credential-password.service';
 import { LocalCredentialRepository } from './local-credential.repository';

@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma } from '../../prisma/generated/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
 import type { QueryTemplate } from '../query.types';

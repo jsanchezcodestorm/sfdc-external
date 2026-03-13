@@ -6,7 +6,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Prisma, type ApplicationAuditStatus } from '@prisma/client';
+import { Prisma, type ApplicationAuditStatus } from '../prisma/generated/client';
 
 import { PrismaService } from '../prisma/prisma.service';
 

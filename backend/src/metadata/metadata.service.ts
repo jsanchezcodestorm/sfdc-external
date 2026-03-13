@@ -6,7 +6,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, VisibilityRuleEffect } from '@prisma/client';
+import { Prisma, VisibilityRuleEffect } from '../prisma/generated/client';
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import { dump as dumpYaml, load as loadYaml } from 'js-yaml';
 

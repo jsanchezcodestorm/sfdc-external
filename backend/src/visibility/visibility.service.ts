@@ -6,7 +6,7 @@ import {
   Prisma,
   VisibilityPolicyDefinitionCacheStatus,
   VisibilityRuleEffect,
-} from '@prisma/client';
+} from '../prisma/generated/client';
 
 import { AuditWriteService } from '../audit/audit-write.service';
 import type { SessionUser } from '../auth/session-user.interface';

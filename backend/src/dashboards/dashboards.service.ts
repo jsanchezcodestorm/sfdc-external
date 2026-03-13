@@ -4,7 +4,7 @@ import {
   ReportShareMode,
   ReportShareSubjectType,
   type Prisma
-} from '@prisma/client';
+} from '../prisma/generated/client';
 
 import { AclConfigRepository } from '../acl/acl-config.repository';
 import { AclService } from '../acl/acl.service';

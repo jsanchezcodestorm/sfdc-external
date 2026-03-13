@@ -5,7 +5,7 @@ import type {
   AclResourceManagedBy as PrismaAclResourceManagedBy,
   AclResourceSyncState as PrismaAclResourceSyncState,
   Prisma
-} from '@prisma/client';
+} from '../prisma/generated/client';
 
 import { PrismaService } from '../prisma/prisma.service';
 

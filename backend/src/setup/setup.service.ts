@@ -4,7 +4,7 @@ import {
   Injectable,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { SetupSalesforceMode as PrismaSetupSalesforceMode } from '@prisma/client';
+import { SetupSalesforceMode as PrismaSetupSalesforceMode } from '../prisma/generated/client';
 import jsforce, { type Connection } from 'jsforce';
 
 import { LocalCredentialProvisioningService } from '../auth/local-credential-provisioning.service';

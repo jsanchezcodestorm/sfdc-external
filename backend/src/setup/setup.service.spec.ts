@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { BadRequestException, ConflictException, ServiceUnavailableException } from '@nestjs/common';
-import { SetupSalesforceMode } from '@prisma/client';
+import { SetupSalesforceMode } from '../prisma/generated/client';
 
 import { SetupService } from './setup.service';
 

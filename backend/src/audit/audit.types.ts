@@ -1,4 +1,4 @@
-import type { ApplicationAuditStatus, Prisma, VisibilityDecision } from '@prisma/client';
+import type { ApplicationAuditStatus, Prisma, VisibilityDecision } from '../prisma/generated/client';
 
 import type { VisibilityEvaluation } from '../visibility/visibility.types';
 

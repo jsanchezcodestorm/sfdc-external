@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma, SetupSalesforceMode } from '@prisma/client';
+import { Prisma, SetupSalesforceMode } from '../prisma/generated/client';
 
 import { PrismaService } from '../prisma/prisma.service';
 

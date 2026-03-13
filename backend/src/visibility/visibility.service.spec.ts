@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { VisibilityPolicyDefinitionCacheStatus } from '@prisma/client';
+import { VisibilityPolicyDefinitionCacheStatus } from '../prisma/generated/client';
 
 import { VisibilityService } from './visibility.service';
 

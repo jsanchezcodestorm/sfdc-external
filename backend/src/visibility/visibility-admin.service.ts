@@ -6,7 +6,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, VisibilityRuleEffect } from '@prisma/client';
+import { Prisma, VisibilityRuleEffect } from '../prisma/generated/client';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { SalesforceService } from '../salesforce/salesforce.service';

@@ -6,7 +6,7 @@ import type {
   SecurityAuditLog,
   VisibilityAuditLog,
   VisibilityDecision,
-} from '@prisma/client';
+} from '../prisma/generated/client';
 
 import { PrismaService } from '../prisma/prisma.service';
 

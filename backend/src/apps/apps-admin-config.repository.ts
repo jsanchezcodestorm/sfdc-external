@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { AppItemKind, type Prisma } from '@prisma/client';
+import { AppItemKind, type Prisma } from '../prisma/generated/client';
 
 import { PrismaService } from '../prisma/prisma.service';
 
