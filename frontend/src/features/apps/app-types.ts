@@ -6,6 +6,11 @@ export type AppUrlOpenMode = 'same-tab' | 'new-tab'
 
 export type AppEmbedOpenMode = 'new-tab' | 'iframe'
 
+export type AppPageBlockLayout = {
+  colSpan: number
+  rowSpan: number
+}
+
 export type AppPageAction = {
   label: string
   targetType: AppItemTargetType
@@ -14,24 +19,41 @@ export type AppPageAction = {
 }
 
 export type AppPageHeroBlock = {
+  id: string
   type: 'hero'
+  layout: AppPageBlockLayout
   title: string
   body?: string
   action?: AppPageAction
 }
 
 export type AppPageMarkdownBlock = {
+  id: string
   type: 'markdown'
+  layout: AppPageBlockLayout
   markdown: string
 }
 
 export type AppPageLinkListBlock = {
+  id: string
   type: 'link-list'
+  layout: AppPageBlockLayout
   title?: string
   links: AppPageAction[]
 }
 
-export type AppPageBlock = AppPageHeroBlock | AppPageMarkdownBlock | AppPageLinkListBlock
+export type AppPageDashboardBlock = {
+  id: string
+  type: 'dashboard'
+  layout: AppPageBlockLayout
+  dashboardId: string
+}
+
+export type AppPageBlock =
+  | AppPageHeroBlock
+  | AppPageMarkdownBlock
+  | AppPageLinkListBlock
+  | AppPageDashboardBlock
 
 export type AppPageConfig = {
   blocks: AppPageBlock[]

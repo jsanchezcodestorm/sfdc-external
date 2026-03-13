@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import {
   ReportFolderAccessMode,
   ReportShareMode,
@@ -520,6 +520,7 @@ export class DashboardsService {
     await this.assertAppExists(appId);
     const existing = await this.getDashboardOrThrow(appId, dashboardId);
     this.assertCanManageDashboard(user, existing);
+    await this.assertDashboardNotReferencedByHome(existing.appId, dashboardId);
 
     await this.prismaService.dashboardDefinitionRecord.delete({
       where: { id: dashboardId }
@@ -887,6 +888,18 @@ export class DashboardsService {
     this.resourceAccessService.assertKebabCaseId(appId, 'appId');
     if (!(await this.appsAdminConfigRepository.hasApp(appId))) {
       throw new NotFoundException(`App config ${appId} not found`);
+    }
+  }
+
+  private async assertDashboardNotReferencedByHome(appId: string, dashboardId: string): Promise<void> {
+    const app = await this.appsAdminConfigRepository.getApp(appId);
+    const home = app.items.find((item) => item.kind === 'home');
+    const isReferenced = home?.page.blocks.some(
+      (block) => block.type === 'dashboard' && block.dashboardId === dashboardId
+    );
+
+    if (isReferenced) {
+      throw new ConflictException(`Dashboard ${dashboardId} is referenced by app home ${appId}`);
     }
   }
 

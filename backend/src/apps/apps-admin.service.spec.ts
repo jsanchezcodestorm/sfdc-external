@@ -17,6 +17,7 @@ function createService(overrides?: {
     async assertEntityIdsExist() {},
     async assertResourceIdsExist() {},
     async assertPermissionCodesExist() {},
+    async assertDashboardIdsExist() {},
     async upsertApp() {},
     async getApp() {
       return null;
@@ -46,6 +47,39 @@ function createService(overrides?: {
     auditWriteService as never,
     configService as never,
   );
+}
+
+function createPageBlock(type: 'markdown' | 'link-list' | 'dashboard', overrides: Record<string, unknown> = {}) {
+  const base = {
+    id: `${type}-block`,
+    type,
+    layout: {
+      colSpan: 12,
+      rowSpan: type === 'dashboard' ? 4 : 2,
+    },
+  };
+
+  if (type === 'markdown') {
+    return {
+      ...base,
+      markdown: 'Welcome',
+      ...overrides,
+    };
+  }
+
+  if (type === 'link-list') {
+    return {
+      ...base,
+      links: [{ label: 'Accounts', targetType: 'app-item', target: 'account' }],
+      ...overrides,
+    };
+  }
+
+  return {
+    ...base,
+    dashboardId: '7a68dbe0-7e75-4a8d-9fd3-0d8a4d516760',
+    ...overrides,
+  };
 }
 
 test('createApp rejects duplicate item ids', async () => {
@@ -172,7 +206,7 @@ test('createApp persists normalized payload and records audit metadata', async (
         kind: 'home',
         label: 'Home',
         page: {
-          blocks: [{ type: 'markdown', markdown: 'Welcome' }],
+          blocks: [createPageBlock('markdown')],
         },
       },
       {
@@ -188,10 +222,7 @@ test('createApp persists normalized payload and records audit metadata', async (
         resourceId: 'route:sales-kpi',
         page: {
           blocks: [
-            {
-              type: 'link-list',
-              links: [{ label: 'Accounts', targetType: 'app-item', target: 'account' }],
-            },
+            createPageBlock('link-list'),
           ],
         },
       },
@@ -215,7 +246,19 @@ test('createApp persists normalized payload and records audit metadata', async (
         kind: 'home',
         label: 'Home',
         description: undefined,
-        page: { blocks: [{ type: 'markdown', markdown: 'Welcome' }] },
+        page: {
+          blocks: [
+            {
+              id: 'markdown-block',
+              type: 'markdown',
+              layout: {
+                colSpan: 12,
+                rowSpan: 2,
+              },
+              markdown: 'Welcome',
+            },
+          ],
+        },
       },
       {
         id: 'account',
@@ -234,7 +277,12 @@ test('createApp persists normalized payload and records audit metadata', async (
         page: {
           blocks: [
             {
+              id: 'link-list-block',
               type: 'link-list',
+              layout: {
+                colSpan: 12,
+                rowSpan: 2,
+              },
               title: undefined,
               links: [{ label: 'Accounts', targetType: 'app-item', target: 'account', openMode: undefined }],
             },
@@ -283,6 +331,10 @@ test('createApp accepts dashboard items as internal workspace modules', async ()
       async assertPermissionCodesExist(permissionCodes: string[]) {
         assert.deepEqual(permissionCodes, ['PORTAL_USER']);
       },
+      async assertDashboardIdsExist(appId: string, dashboardIds: string[]) {
+        assert.deepEqual(appId, 'operations');
+        assert.deepEqual(dashboardIds, []);
+      },
       async upsertApp(app: Record<string, unknown>) {
         storedApps.set(String(app.id), app);
       },
@@ -325,4 +377,75 @@ test('createApp accepts dashboard items as internal workspace modules', async ()
       resourceId: 'rest:dashboards-read',
     },
   ]);
+});
+
+test('createApp accepts dashboard blocks inside home page', async () => {
+  const service = createService({
+    repository: {
+      async assertEntityIdsExist() {},
+      async assertResourceIdsExist() {},
+      async assertPermissionCodesExist(permissionCodes: string[]) {
+        assert.deepEqual(permissionCodes, ['PORTAL_USER']);
+      },
+      async assertDashboardIdsExist(appId: string, dashboardIds: string[]) {
+        assert.deepEqual(appId, 'operations');
+        assert.deepEqual(dashboardIds, ['7a68dbe0-7e75-4a8d-9fd3-0d8a4d516760']);
+      },
+      async upsertApp() {},
+      async getApp() {
+        return {
+          id: 'operations',
+          label: 'Operations',
+          sortOrder: 0,
+          items: [],
+          permissionCodes: ['PORTAL_USER'],
+        };
+      },
+    },
+  });
+
+  await assert.doesNotReject(() =>
+    service.createApp({
+      id: 'operations',
+      label: 'Operations',
+      items: [
+        {
+          id: 'home',
+          kind: 'home',
+          label: 'Home',
+          page: {
+            blocks: [createPageBlock('dashboard')],
+          },
+        },
+      ],
+      permissionCodes: ['PORTAL_USER'],
+    }),
+  );
+});
+
+test('createApp rejects dashboard blocks on custom pages', async () => {
+  const service = createService();
+
+  await assert.rejects(
+    () =>
+      service.createApp({
+        id: 'sales',
+        label: 'Sales',
+        items: [
+          { id: 'home', kind: 'home', label: 'Home', page: { blocks: [] } },
+          {
+            id: 'overview',
+            kind: 'custom-page',
+            label: 'Overview',
+            page: {
+              blocks: [createPageBlock('dashboard')],
+            },
+          },
+        ],
+        permissionCodes: ['PORTAL_USER'],
+      }),
+    (error: unknown) =>
+      error instanceof BadRequestException &&
+      error.message === 'app.items[1].page.blocks[0].type dashboard is not allowed here',
+  );
 });

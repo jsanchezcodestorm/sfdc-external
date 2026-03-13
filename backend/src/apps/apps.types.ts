@@ -6,25 +6,50 @@ export type AppUrlOpenMode = 'same-tab' | 'new-tab';
 
 export type AppEmbedOpenMode = 'new-tab' | 'iframe';
 
+export interface AppPageBlockLayout {
+  colSpan: number;
+  rowSpan: number;
+}
+
+interface AppPageBlockBase {
+  id: string;
+  layout: AppPageBlockLayout;
+}
+
 export interface AppPageHeroBlock {
+  id: string;
   type: 'hero';
+  layout: AppPageBlockLayout;
   title: string;
   body?: string;
   action?: AppPageAction;
 }
 
 export interface AppPageMarkdownBlock {
+  id: string;
   type: 'markdown';
+  layout: AppPageBlockLayout;
   markdown: string;
 }
 
 export interface AppPageLinkListBlock {
+  id: string;
   type: 'link-list';
+  layout: AppPageBlockLayout;
   title?: string;
   links: AppPageAction[];
 }
 
-export type AppPageBlock = AppPageHeroBlock | AppPageMarkdownBlock | AppPageLinkListBlock;
+export interface AppPageDashboardBlock extends AppPageBlockBase {
+  type: 'dashboard';
+  dashboardId: string;
+}
+
+export type AppPageBlock =
+  | AppPageHeroBlock
+  | AppPageMarkdownBlock
+  | AppPageLinkListBlock
+  | AppPageDashboardBlock;
 
 export interface AppPageAction {
   label: string;
@@ -110,6 +135,26 @@ export interface AppAdminListResponse {
 
 export interface AppAdminResponse {
   app: AppConfig;
+}
+
+export interface AppHomeUpdateInput {
+  label: string;
+  description?: string;
+  page: AppPageConfig;
+}
+
+export interface AppDashboardOption {
+  id: string;
+  label: string;
+  folderId: string;
+  folderLabel: string;
+  sourceReportLabel: string;
+  widgetCount: number;
+  updatedAt: string;
+}
+
+export interface AppDashboardOptionsResponse {
+  items: AppDashboardOption[];
 }
 
 export interface AvailableAppItemBase {
