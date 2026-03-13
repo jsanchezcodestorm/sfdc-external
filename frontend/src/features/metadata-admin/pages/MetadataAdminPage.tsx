@@ -66,6 +66,10 @@ const DEFAULT_SELECTION = Object.fromEntries(
   SECTION_OPTIONS.map((option) => [option.id, true]),
 ) as Record<MetadataSectionName, boolean>
 
+const EMPTY_SELECTION = Object.fromEntries(
+  SECTION_OPTIONS.map((option) => [option.id, false]),
+) as Record<MetadataSectionName, boolean>
+
 function downloadBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
@@ -100,6 +104,9 @@ export function MetadataAdminPage() {
       SECTION_OPTIONS.filter((option) => selectedSections[option.id]).map((option) => option.id),
     [selectedSections],
   )
+
+  const allSelected = selectedSectionIds.length === SECTION_OPTIONS.length
+  const noneSelected = selectedSectionIds.length === 0
 
   async function handleExport() {
     setExportError(null)
@@ -154,11 +161,36 @@ export function MetadataAdminPage() {
       </section>
 
       <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h2 className="text-lg font-semibold text-slate-950">Contenuto export</h2>
-        <p className="mt-2 text-sm text-slate-600">
-          Scegli le sezioni da includere nello zip. Le sezioni manual-only vengono esportate
-          come inventory, ma non sono deployabili.
-        </p>
+        <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-950">Contenuto export</h2>
+            <p className="mt-2 text-sm text-slate-600">
+              Scegli le sezioni da includere nello zip. Le sezioni manual-only vengono esportate
+              come inventory, ma non sono deployabili.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+              {selectedSectionIds.length}/{SECTION_OPTIONS.length} selezionate
+            </span>
+            <button
+              type="button"
+              onClick={() => setSelectedSections(DEFAULT_SELECTION)}
+              disabled={allSelected}
+              className="rounded-xl border border-slate-300 px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-slate-700 transition hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Seleziona tutte
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedSections(EMPTY_SELECTION)}
+              disabled={noneSelected}
+              className="rounded-xl border border-slate-300 px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-slate-700 transition hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Deseleziona tutte
+            </button>
+          </div>
+        </div>
         <div className="mt-5 grid gap-3">
           {SECTION_OPTIONS.map((option) => (
             <label

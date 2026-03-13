@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 
+import { AclResourceStatusNotice } from '../../../components/AclResourceStatusNotice'
 import {
-  describeAclResourceStatus,
   formatAclResourceManagedBy,
   formatAclResourceSyncState,
 } from '../../../lib/acl-resource-status'
@@ -24,6 +24,7 @@ type RouteParams = {
 }
 
 export function AclResourceEditorPage({ mode }: AclResourceEditorPageProps) {
+  const location = useLocation()
   const navigate = useNavigate()
   const params = useParams<RouteParams>()
   const previousId = params.resourceId ? decodeURIComponent(params.resourceId) : null
@@ -80,6 +81,26 @@ export function AclResourceEditorPage({ mode }: AclResourceEditorPageProps) {
       cancelled = true
     }
   }, [mode, previousId])
+
+  useEffect(() => {
+    if (loading) {
+      return
+    }
+
+    const anchorId = location.hash.replace(/^#/, '').trim()
+    if (!anchorId) {
+      return
+    }
+
+    const node = document.getElementById(anchorId)
+    if (!node) {
+      return
+    }
+
+    requestAnimationFrame(() => {
+      node.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+  }, [loading, location.hash])
 
   const saveResource = async () => {
     const normalized = normalizeResource(draft)
@@ -160,7 +181,11 @@ export function AclResourceEditorPage({ mode }: AclResourceEditorPageProps) {
         <div className="mt-5 space-y-5">
           {mode === 'edit' ? (
             <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-800">
-              <p>{describeAclResourceStatus(draft)}</p>
+              <AclResourceStatusNotice
+                status={draft}
+                permissionCount={draft.permissions.length}
+                className=""
+              />
               <p className="mt-1">
                 Managed by {formatAclResourceManagedBy(draft.managedBy)} /{' '}
                 {formatAclResourceSyncState(draft.syncState)}
@@ -248,7 +273,7 @@ export function AclResourceEditorPage({ mode }: AclResourceEditorPageProps) {
             />
           </label>
 
-          <div className="space-y-3">
+          <div id="resource-permissions" className="space-y-3">
             <div>
               <p className="text-sm font-medium text-slate-700">Permissions</p>
               <p className="mt-1 text-xs text-slate-500">

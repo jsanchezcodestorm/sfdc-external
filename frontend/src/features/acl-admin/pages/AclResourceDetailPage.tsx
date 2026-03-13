@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
+import { AclResourceStatusNotice } from '../../../components/AclResourceStatusNotice'
 import { useAppDialog } from '../../../components/app-dialog'
 import {
-  describeAclResourceStatus,
   formatAclResourceAccessMode,
   formatAclResourceManagedBy,
   formatAclResourceSyncState,
@@ -144,9 +144,10 @@ export function AclResourceDetailPage() {
         <p className="mt-4 text-sm text-slate-600">Caricamento resource...</p>
       ) : payload ? (
         <div className="mt-5 space-y-5">
-          <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-            {describeAclResourceStatus(payload.resource)}
-          </p>
+          <AclResourceStatusNotice
+            status={payload.resource}
+            permissionCount={payload.resource.permissions.length}
+          />
 
           <div className="grid gap-3 sm:grid-cols-5">
             <DetailMetric label="Type" value={payload.resource.type} />

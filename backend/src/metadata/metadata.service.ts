@@ -956,7 +956,8 @@ export class MetadataAdminService {
 
     for (const entry of coneEntries) {
       const cone = this.visibilityAdminService.normalizeConeForPersistence(entry.parsedData);
-      if (cone.code !== entry.member) {
+      const normalizedMember = normalizeLegacyEntityBootstrapConeCode(entry.member);
+      if (cone.code !== normalizedMember) {
         throw new BadRequestException(`${entry.path} cone.code must match file name`);
       }
 
@@ -1479,33 +1480,37 @@ export class MetadataAdminService {
         return payload;
       }
       case 'VisibilityCone': {
-        const code = this.requireString(payload.code, 'cone.code is required');
-        if (code !== member) {
+        const normalizedPayload = normalizeLegacyVisibilityConeMetadataPayload(payload);
+        const code = this.requireString(normalizedPayload.code, 'cone.code is required');
+        const normalizedMember = normalizeLegacyEntityBootstrapConeCode(member);
+        if (code !== normalizedMember) {
           throw new BadRequestException(`visibility/cones/${member}.yaml must contain matching cone.code`);
         }
-        return payload;
+        return normalizedPayload;
       }
       case 'VisibilityRule': {
-        const id = this.requireString(payload.id, 'rule.id is required');
+        const normalizedPayload = normalizeLegacyVisibilityRuleMetadataPayload(payload);
+        const id = this.requireString(normalizedPayload.id, 'rule.id is required');
         if (id !== member) {
           throw new BadRequestException(`visibility/rules/${member}.yaml must contain matching rule.id`);
         }
-        this.requireString(payload.coneCode, 'rule.coneCode is required');
-        return payload;
+        this.requireString(normalizedPayload.coneCode, 'rule.coneCode is required');
+        return normalizedPayload;
       }
       case 'VisibilityAssignment': {
-        const id = this.requireString(payload.id, 'assignment.id is required');
+        const normalizedPayload = normalizeLegacyVisibilityAssignmentMetadataPayload(payload);
+        const id = this.requireString(normalizedPayload.id, 'assignment.id is required');
         if (id !== member) {
           throw new BadRequestException(
             `visibility/assignments/${member}.yaml must contain matching assignment.id`,
           );
         }
-        this.requireString(payload.coneCode, 'assignment.coneCode is required');
+        this.requireString(normalizedPayload.coneCode, 'assignment.coneCode is required');
         return {
-          ...payload,
-          contactRef: isRecord(payload.contactRef)
+          ...normalizedPayload,
+          contactRef: isRecord(normalizedPayload.contactRef)
             ? {
-                email: this.normalizeEmail(payload.contactRef.email, 'contactRef.email is required'),
+                email: this.normalizeEmail(normalizedPayload.contactRef.email, 'contactRef.email is required'),
               }
             : undefined,
         };
@@ -1864,6 +1869,46 @@ function normalizeLegacyEntityConfigMetadataPayload(
     };
   }
 
+  const form = asRecord(payload.form);
+  const formSections = Array.isArray(form?.sections)
+    ? form.sections.map((entry) => {
+        const section = asRecord(entry);
+        if (!section) {
+          return entry;
+        }
+
+        const fields = Array.isArray(section.fields)
+          ? section.fields.map((fieldEntry) => {
+              const field = asRecord(fieldEntry);
+              if (!field) {
+                return fieldEntry;
+              }
+
+              const {
+                label: _legacyLabel,
+                inputType: _legacyInputType,
+                required: _legacyRequired,
+                ...normalizedField
+              } = field;
+
+              return normalizedField;
+            })
+          : section.fields;
+
+        return {
+          ...section,
+          fields,
+        };
+      })
+    : undefined;
+
+  if (form && formSections) {
+    normalized.form = {
+      ...form,
+      sections: formSections,
+    };
+  }
+
   return normalized;
 }
 
@@ -1887,11 +1932,87 @@ function normalizeLegacyAclResourceMetadataPayload(
   };
 }
 
+function normalizeLegacyVisibilityConeMetadataPayload(
+  payload: Record<string, unknown>
+): Record<string, unknown> {
+  return {
+    ...payload,
+    code:
+      typeof payload.code === 'string'
+        ? normalizeLegacyEntityBootstrapConeCode(payload.code)
+        : payload.code,
+  };
+}
+
+function normalizeLegacyVisibilityRuleMetadataPayload(
+  payload: Record<string, unknown>
+): Record<string, unknown> {
+  return {
+    ...payload,
+    coneCode:
+      typeof payload.coneCode === 'string'
+        ? normalizeLegacyEntityBootstrapConeCode(payload.coneCode)
+        : payload.coneCode,
+  };
+}
+
+function normalizeLegacyVisibilityAssignmentMetadataPayload(
+  payload: Record<string, unknown>
+): Record<string, unknown> {
+  return {
+    ...payload,
+    coneCode:
+      typeof payload.coneCode === 'string'
+        ? normalizeLegacyEntityBootstrapConeCode(payload.coneCode)
+        : payload.coneCode,
+  };
+}
+
+function normalizeLegacyEntityBootstrapConeCode(value: string): string {
+  const trimmed = value.trim();
+  const match = trimmed.match(/^entity-(.+)-bootstrap$/);
+  if (!match?.[1]) {
+    return trimmed;
+  }
+
+  return `entity-${normalizeLegacyEntityMetadataId(match[1])}-bootstrap`;
+}
+
 function normalizeLegacyAppConfigMetadataPayload(
   payload: Record<string, unknown>
 ): Record<string, unknown> {
   if (!Array.isArray(payload.items)) {
-    return payload;
+    const entityIds = Array.isArray(payload.entityIds)
+      ? payload.entityIds
+          .filter((entry): entry is string => typeof entry === 'string')
+          .map((entry) => entry.trim())
+          .filter(Boolean)
+      : [];
+
+    if (entityIds.length === 0) {
+      return payload;
+    }
+
+    return {
+      ...payload,
+      items: [
+        {
+          id: 'home',
+          kind: 'home',
+          label: 'Home',
+          page: {
+            blocks: [],
+          },
+        },
+        ...entityIds.map((entityId) => ({
+          id: normalizeLegacyEntityMetadataId(entityId),
+          kind: 'entity',
+          label: entityId,
+          entityId: normalizeLegacyEntityMetadataId(entityId),
+          resourceId: normalizeLegacyEntityResourceId(`entity:${entityId}`),
+        })),
+      ],
+    };
   }
 
   return {
