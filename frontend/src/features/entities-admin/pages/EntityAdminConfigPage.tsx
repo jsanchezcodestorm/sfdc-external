@@ -218,10 +218,22 @@ export function EntityAdminConfigPage() {
   const hasCurrentBootstrapPreview =
     bootstrapPreview !== null && bootstrapPreviewFingerprint === currentBaseFingerprint
   const canCreateBaseEntity = createEntityConfigFromBaseDraft(baseFormDraft) !== null
+  const listStructureError = useMemo(
+    () => getDraftSectionValidationMessage('list', listFormDraft, baseFormDraft.objectApiName),
+    [baseFormDraft.objectApiName, listFormDraft],
+  )
+  const detailStructureError = useMemo(
+    () => getDraftSectionValidationMessage('detail', detailFormDraft, baseFormDraft.objectApiName),
+    [baseFormDraft.objectApiName, detailFormDraft],
+  )
+  const formStructureError = useMemo(
+    () => getDraftSectionValidationMessage('form', formFormDraft, baseFormDraft.objectApiName),
+    [baseFormDraft.objectApiName, formFormDraft],
+  )
   const hasGeneratedStructure =
-    !isListFormDraftEmpty(listFormDraft) ||
-    !isDetailFormDraftEmpty(detailFormDraft) ||
-    !isFormFormDraftEmpty(formFormDraft)
+    listStructureError === null &&
+    detailStructureError === null &&
+    formStructureError === null
   const listRowActions = useMemo(
     () => readEntityActionDrafts(listFormDraft.views[0]?.rowActionsJson ?? ''),
     [listFormDraft.views],
@@ -962,18 +974,28 @@ export function EntityAdminConfigPage() {
     setCreationWizardStep('actions')
   }
 
+  const applyMinimumStructurePreset = () => {
+    setListFormDraft((current) => ensureMinimumListFormDraft(current, baseFormDraft))
+    setDetailFormDraft((current) => ensureMinimumDetailFormDraft(current, baseFormDraft))
+    setFormFormDraft((current) => ensureMinimumFormFormDraft(current, baseFormDraft))
+    setSaveInfo('Struttura minima applicata')
+    setEditorError(null)
+    setBootstrapPreviewError(null)
+  }
+
   const applyRecommendedActionsPreset = () => {
     setListFormDraft((current) => {
+      const preparedDraft = ensureMinimumListFormDraft(current, baseFormDraft)
       const nextViews =
-        current.views.length > 0
-          ? current.views
+        preparedDraft.views.length > 0
+          ? preparedDraft.views
           : [createEmptyListViewDraft()]
 
       const defaultViewIndex = nextViews.findIndex((view) => view.default)
       const targetIndex = defaultViewIndex >= 0 ? defaultViewIndex : 0
 
       return {
-        ...current,
+        ...preparedDraft,
         views: nextViews.map((view, index) =>
           index === targetIndex
             ? {
@@ -990,12 +1012,14 @@ export function EntityAdminConfigPage() {
     })
 
     setDetailFormDraft((current) => ({
-      ...current,
+      ...ensureMinimumDetailFormDraft(current, baseFormDraft),
       actionsJson: serializeEntityActionDrafts([
         { type: 'edit', label: 'Edit', target: '', entityId: '' },
         { type: 'delete', label: 'Delete', target: '', entityId: '' },
       ]),
     }))
+
+    setFormFormDraft((current) => ensureMinimumFormFormDraft(current, baseFormDraft))
 
     setSaveInfo('Actions standard applicate')
     setEditorError(null)
@@ -1017,15 +1041,16 @@ export function EntityAdminConfigPage() {
 
     if (scope === 'list') {
       setListFormDraft((current) => {
+        const preparedDraft = ensureMinimumListFormDraft(current, baseFormDraft)
         const nextViews =
-          current.views.length > 0
-            ? current.views
+          preparedDraft.views.length > 0
+            ? preparedDraft.views
             : [createEmptyListViewDraft()]
         const defaultViewIndex = nextViews.findIndex((view) => view.default)
         const targetIndex = defaultViewIndex >= 0 ? defaultViewIndex : 0
 
         return {
-          ...current,
+          ...preparedDraft,
           views: nextViews.map((view, index) => {
             if (index !== targetIndex) {
               return view
@@ -1043,11 +1068,12 @@ export function EntityAdminConfigPage() {
       })
     } else {
       setDetailFormDraft((current) => ({
-        ...current,
+        ...ensureMinimumDetailFormDraft(current, baseFormDraft),
         actionsJson: serializeEntityActionDrafts(
           applyToggle(readEntityActionDrafts(current.actionsJson)),
         ),
       }))
+      setFormFormDraft((current) => ensureMinimumFormFormDraft(current, baseFormDraft))
     }
 
     setSaveInfo(null)
@@ -1412,6 +1438,9 @@ export function EntityAdminConfigPage() {
           hasCurrentBootstrapPreview={hasCurrentBootstrapPreview}
           loadingBootstrapPreview={loadingBootstrapPreview}
           bootstrapPreviewError={bootstrapPreviewError}
+          listStructureError={listStructureError}
+          detailStructureError={detailStructureError}
+          formStructureError={formStructureError}
           objectApiNameSuggestions={objectApiNameSuggestions}
           loadingObjectApiNameSuggestions={loadingObjectApiNameSuggestions}
           objectApiNameSuggestionsError={objectApiNameSuggestionsError}
@@ -1434,6 +1463,7 @@ export function EntityAdminConfigPage() {
             void generateBootstrapPreview()
           }}
           onApplyBootstrapPreview={applyBootstrapPreviewToDrafts}
+          onApplyMinimumStructure={applyMinimumStructurePreset}
           onApplyRecommendedActions={applyRecommendedActionsPreset}
           onToggleRecommendedAction={toggleRecommendedAction}
           onChangeCreationAclDraft={setCreationAclDraft}
@@ -1742,6 +1772,9 @@ type EntityCreationWizardProps = {
   hasCurrentBootstrapPreview: boolean
   loadingBootstrapPreview: boolean
   bootstrapPreviewError: string | null
+  listStructureError: string | null
+  detailStructureError: string | null
+  formStructureError: string | null
   objectApiNameSuggestions: SalesforceObjectApiNameSuggestion[]
   loadingObjectApiNameSuggestions: boolean
   objectApiNameSuggestionsError: string | null
@@ -1762,6 +1795,7 @@ type EntityCreationWizardProps = {
   onSelectObjectApiNameSuggestion: (value: string) => void
   onGenerateBootstrapPreview: () => void
   onApplyBootstrapPreview: () => void
+  onApplyMinimumStructure: () => void
   onApplyRecommendedActions: () => void
   onToggleRecommendedAction: (
     scope: 'list' | 'detail',
@@ -1781,6 +1815,9 @@ function EntityCreationWizard({
   hasCurrentBootstrapPreview,
   loadingBootstrapPreview,
   bootstrapPreviewError,
+  listStructureError,
+  detailStructureError,
+  formStructureError,
   objectApiNameSuggestions,
   loadingObjectApiNameSuggestions,
   objectApiNameSuggestionsError,
@@ -1801,6 +1838,7 @@ function EntityCreationWizard({
   onSelectObjectApiNameSuggestion,
   onGenerateBootstrapPreview,
   onApplyBootstrapPreview,
+  onApplyMinimumStructure,
   onApplyRecommendedActions,
   onToggleRecommendedAction,
   onChangeCreationAclDraft,
@@ -1821,7 +1859,9 @@ function EntityCreationWizard({
       ready: hasGeneratedStructure,
       detail: hasGeneratedStructure
         ? `${listFormDraft.views.length} views, ${detailFormDraft.sections.length} detail sections, ${formFormDraft.sections.length} form sections`
-        : 'Applica il preset standard',
+        : [listStructureError, detailStructureError, formStructureError]
+            .filter((entry): entry is string => Boolean(entry))
+            .join(' | '),
     },
     {
       label: 'Actions',
@@ -1919,10 +1959,37 @@ function EntityCreationWizard({
           />
 
           <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-sm text-slate-600">
-              Il preset standard genera list, detail e form minimi a partire dal describe Salesforce.
-              Dopo l&apos;applicazione puoi rifinire tutto dall&apos;editor tradizionale.
-            </p>
+            <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm text-slate-600">
+                Il preset standard genera list, detail e form minimi a partire dal describe Salesforce.
+                Se vuoi partire comunque, puoi applicare anche una struttura minima locale con i campi obbligatori.
+              </p>
+              <button
+                type="button"
+                onClick={onApplyMinimumStructure}
+                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
+              >
+                Applica struttura minima
+              </button>
+            </div>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-3">
+              <StructureStatusCard
+                label="List"
+                error={listStructureError}
+                successLabel="Query e view minime valide"
+              />
+              <StructureStatusCard
+                label="Detail"
+                error={detailStructureError}
+                successLabel="Query e sezione minima valide"
+              />
+              <StructureStatusCard
+                label="Form"
+                error={formStructureError}
+                successLabel="Query e form minimo validi"
+              />
+            </div>
           </section>
 
           <WizardStepFooter
@@ -2262,6 +2329,38 @@ function WizardStepFooter({
   )
 }
 
+function StructureStatusCard({
+  label,
+  error,
+  successLabel,
+}: {
+  label: string
+  error: string | null
+  successLabel: string
+}) {
+  const ready = error === null
+
+  return (
+    <article
+      className={`rounded-2xl border px-4 py-4 ${
+        ready ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'
+      }`}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm font-semibold text-slate-900">{label}</p>
+        <span
+          className={`rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] ${
+            ready ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+          }`}
+        >
+          {ready ? 'Ready' : 'Fix needed'}
+        </span>
+      </div>
+      <p className="mt-2 text-sm text-slate-600">{ready ? successLabel : error}</p>
+    </article>
+  )
+}
+
 const ENTITY_CREATION_WIZARD_STEPS: Array<{
   id: EntityCreationWizardStep
   label: string
@@ -2272,6 +2371,129 @@ const ENTITY_CREATION_WIZARD_STEPS: Array<{
   { id: 'access', label: 'Accesso' },
   { id: 'review', label: 'Review' },
 ]
+
+function ensureMinimumListFormDraft(
+  draft: ListFormDraft,
+  baseDraft: BaseFormDraft,
+): ListFormDraft {
+  const nextViews = draft.views.length > 0 ? draft.views : [createEmptyListViewDraft()]
+  const targetIndex = Math.max(
+    nextViews.findIndex((view) => view.default),
+    0,
+  )
+
+  return {
+    ...draft,
+    title: draft.title.trim() || `${baseDraft.label.trim() || 'Entity'} List`,
+    views: nextViews.map((view, index) =>
+      index === targetIndex
+        ? {
+            ...view,
+            id: view.id.trim() || 'all',
+            label: view.label.trim() || 'All records',
+            default: true,
+            queryFields: view.queryFields.length > 0 ? view.queryFields : ['Id'],
+            columns: view.columns.trim() || 'Id',
+          }
+        : view,
+    ),
+  }
+}
+
+function ensureMinimumDetailFormDraft(
+  draft: DetailFormDraft,
+  baseDraft: BaseFormDraft,
+): DetailFormDraft {
+  const nextSections = draft.sections.length > 0 ? draft.sections : createEmptyDetailFormDraft().sections
+  const firstSection = nextSections[0]
+  const nextFields =
+    firstSection && firstSection.fields.length > 0
+      ? firstSection.fields
+      : createEmptyDetailFormDraft().sections[0].fields
+
+  return {
+    ...draft,
+    fallbackTitle: draft.fallbackTitle.trim() || baseDraft.label.trim() || 'Detail',
+    queryFields: draft.queryFields.length > 0 ? draft.queryFields : ['Id'],
+    sections: nextSections.map((section, index) =>
+      index === 0
+        ? {
+            ...section,
+            title: section.title.trim() || 'Main',
+            fields: nextFields.map((field, fieldIndex) =>
+              fieldIndex === 0
+                ? {
+                    ...field,
+                    sourceMode: 'field',
+                    field: field.field.trim() || 'Id',
+                    template: '',
+                  }
+                : field,
+            ),
+          }
+        : section,
+    ),
+  }
+}
+
+function ensureMinimumFormFormDraft(
+  draft: FormFormDraft,
+  baseDraft: BaseFormDraft,
+): FormFormDraft {
+  const nextSections = draft.sections.length > 0 ? draft.sections : createEmptyFormDraft().sections
+  const firstSection = nextSections[0]
+  const nextFields =
+    firstSection && firstSection.fields.length > 0
+      ? firstSection.fields
+      : createEmptyFormDraft().sections[0].fields
+
+  return {
+    ...draft,
+    createTitle: draft.createTitle.trim() || `Nuovo ${baseDraft.label.trim() || 'record'}`,
+    editTitle: draft.editTitle.trim() || `Modifica ${baseDraft.label.trim() || 'record'}`,
+    queryFields: draft.queryFields.length > 0 ? draft.queryFields : ['Id'],
+    sections: nextSections.map((section, index) =>
+      index === 0
+        ? {
+            ...section,
+            title: section.title.trim() || 'Main',
+            fields: nextFields.map((field, fieldIndex) =>
+              fieldIndex === 0
+                ? {
+                    ...field,
+                    field: field.field.trim() || 'Id',
+                  }
+                : field,
+            ),
+          }
+        : section,
+    ),
+  }
+}
+
+function getDraftSectionValidationMessage(
+  section: 'list' | 'detail' | 'form',
+  draft: ListFormDraft | DetailFormDraft | FormFormDraft,
+  baseObjectApiName: string,
+): string | null {
+  if (baseObjectApiName.trim().length === 0) {
+    return 'Compila objectApiName nello step Identita'
+  }
+
+  try {
+    if (section === 'list') {
+      parseListFormDraft(draft as ListFormDraft, baseObjectApiName)
+    } else if (section === 'detail') {
+      parseDetailFormDraft(draft as DetailFormDraft, baseObjectApiName)
+    } else {
+      parseFormDraft(draft as FormFormDraft, baseObjectApiName)
+    }
+
+    return null
+  } catch (error) {
+    return error instanceof Error ? error.message : `Sezione ${section} non valida`
+  }
+}
 
 function selectSuggestedPortalPermissionCodes(
   permissions: AclAdminPermissionSummary[],
