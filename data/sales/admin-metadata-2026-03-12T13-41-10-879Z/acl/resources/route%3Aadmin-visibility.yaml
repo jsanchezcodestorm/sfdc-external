@@ -1,0 +1,6 @@
+description: Pagina admin visibility
+id: route:admin-visibility
+permissions:
+  - PORTAL_ADMIN
+target: /admin/visibility
+type: route

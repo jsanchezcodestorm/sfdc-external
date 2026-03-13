@@ -1,0 +1,41 @@
+detail:
+  query:
+    fields:
+      - Id
+      - LastName
+    object: Contact
+  sections:
+    - fields:
+        - field: Id
+          label: Contact
+      title: Section 1
+  titleTemplate: Contact
+id: Contact
+label: Contact
+list:
+  subtitle: Contact
+  title: Contact
+  views:
+    - columns:
+        - Id
+      default: true
+      id: all
+      label: all contact
+      query:
+        fields:
+          - Id
+          - FirstName
+          - LastName
+          - AccountId
+          - Email
+        object: Contact
+      search:
+        fields:
+          - Id
+          - FirstName
+          - LastName
+          - AccountId
+          - Email
+navigation:
+  basePath: /s/contact
+objectApiName: Contact

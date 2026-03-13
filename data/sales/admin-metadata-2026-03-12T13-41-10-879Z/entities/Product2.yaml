@@ -1,0 +1,35 @@
+detail:
+  fallbackTitle: Product
+  query:
+    fields:
+      - IsActive
+      - Name
+      - Id
+    object: Product2
+  sections:
+    - fields:
+        - field: Name
+      title: Section 1
+id: Product2
+label: Product2
+list:
+  title: Product
+  views:
+    - columns:
+        - Id
+        - IsActive
+        - Name
+        - CreatedDate
+      default: true
+      id: all
+      label: all Product
+      query:
+        fields:
+          - Id
+          - Name
+          - IsActive
+          - CreatedDate
+        object: Product2
+navigation:
+  basePath: /s/product2
+objectApiName: Product2

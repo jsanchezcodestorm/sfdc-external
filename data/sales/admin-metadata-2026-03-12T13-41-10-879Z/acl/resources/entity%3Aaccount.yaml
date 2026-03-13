@@ -1,0 +1,7 @@
+description: Accesso entity account
+id: entity:account
+permissions:
+  - PORTAL_USER
+  - PORTAL_ADMIN
+target: /entities/account
+type: entity

@@ -1,0 +1,6 @@
+description: Pagina admin autenticazione
+id: route:admin-auth
+permissions:
+  - PORTAL_ADMIN
+target: /admin/auth/providers
+type: route

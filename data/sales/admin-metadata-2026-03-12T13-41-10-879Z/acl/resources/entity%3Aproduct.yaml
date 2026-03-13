@@ -1,0 +1,4 @@
+description: Auto-provisioned ACL resource for entity product
+id: entity:product
+permissions: []
+type: entity

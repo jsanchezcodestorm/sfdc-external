@@ -1,0 +1,6 @@
+contactRef:
+  email: antonio.carmellino@codestorm.it
+  sourceId: 003gK00000TbW9tQAF
+enabled: true
+reason: 'Manual step: recreate or reset the local password in the target environment.'
+username: antonio.carmellino@codestorm.it

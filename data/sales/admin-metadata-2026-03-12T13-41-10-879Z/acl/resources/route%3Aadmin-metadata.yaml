@@ -1,0 +1,6 @@
+description: Pagina admin metadata package
+id: route:admin-metadata
+permissions:
+  - PORTAL_ADMIN
+target: /admin/metadata
+type: route

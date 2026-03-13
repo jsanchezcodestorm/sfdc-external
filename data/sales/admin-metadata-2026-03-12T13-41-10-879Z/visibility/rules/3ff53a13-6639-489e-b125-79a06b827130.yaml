@@ -1,0 +1,10 @@
+active: true
+condition:
+  field: Id
+  op: '!='
+  value: null
+coneCode: entity-Listino-bootstrap
+description: Auto bootstrap visibility ALLOW rule for entity Listino
+effect: ALLOW
+id: 3ff53a13-6639-489e-b125-79a06b827130
+objectApiName: PricebookEntry

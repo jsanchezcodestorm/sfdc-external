@@ -1,0 +1,6 @@
+aliases:
+  - ADMIN
+  - SUPERUSER
+code: PORTAL_ADMIN
+description: Accesso amministrativo completo
+label: Portal Admin

@@ -1,0 +1,7 @@
+description: Ricerca globale applicativa
+id: rest:global-search
+permissions:
+  - PORTAL_USER
+  - PORTAL_ADMIN
+target: /global-search
+type: rest

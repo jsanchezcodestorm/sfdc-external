@@ -1,0 +1,9 @@
+description: Legge il catalogo app disponibile per l'utente
+id: rest:apps-read
+permissions:
+  - PORTAL_USER
+  - PORTAL_OPERATIONS
+  - PORTAL_HR
+  - PORTAL_ADMIN
+target: /apps/available
+type: rest

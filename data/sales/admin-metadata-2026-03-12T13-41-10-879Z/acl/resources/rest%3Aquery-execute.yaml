@@ -1,0 +1,7 @@
+description: Esecuzione query template
+id: rest:query-execute
+permissions:
+  - PORTAL_USER
+  - PORTAL_ADMIN
+target: /query/template/:templateId
+type: rest

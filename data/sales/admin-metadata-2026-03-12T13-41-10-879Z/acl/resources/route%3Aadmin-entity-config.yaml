@@ -1,0 +1,6 @@
+description: Pagina admin configurazione entita PostgreSQL
+id: route:admin-entity-config
+permissions:
+  - PORTAL_ADMIN
+target: /admin/entity-config
+type: route

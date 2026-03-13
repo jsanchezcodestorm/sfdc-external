@@ -1,0 +1,6 @@
+description: Gestione amministrativa provider auth e credenziali locali
+id: rest:auth-admin
+permissions:
+  - PORTAL_ADMIN
+target: /auth/admin
+type: rest

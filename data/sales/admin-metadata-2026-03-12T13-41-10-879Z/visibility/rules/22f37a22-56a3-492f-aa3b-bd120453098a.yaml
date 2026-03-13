@@ -1,0 +1,8 @@
+active: true
+condition:
+  field: Id
+  op: IS_NOT_NULL
+coneCode: account
+effect: ALLOW
+id: 22f37a22-56a3-492f-aa3b-bd120453098a
+objectApiName: Account

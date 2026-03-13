@@ -1,0 +1,6 @@
+description: Gestione amministrativa entity config su PostgreSQL
+id: rest:entities-config-admin
+permissions:
+  - PORTAL_ADMIN
+target: /entities/admin/configs
+type: rest

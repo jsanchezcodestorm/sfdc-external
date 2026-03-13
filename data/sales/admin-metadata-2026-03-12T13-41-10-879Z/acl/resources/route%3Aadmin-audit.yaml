@@ -1,0 +1,6 @@
+description: Pagina admin consultazione audit centralizzato
+id: route:admin-audit
+permissions:
+  - PORTAL_ADMIN
+target: /admin/audit
+type: route

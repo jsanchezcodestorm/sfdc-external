@@ -1,0 +1,7 @@
+description: Lettura metadata e dati entity
+id: rest:entities-read
+permissions:
+  - PORTAL_USER
+  - PORTAL_ADMIN
+target: /entities/:entityId
+type: rest

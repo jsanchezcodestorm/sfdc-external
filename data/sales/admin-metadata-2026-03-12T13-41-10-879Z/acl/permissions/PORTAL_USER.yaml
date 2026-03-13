@@ -1,0 +1,5 @@
+aliases:
+  - USER
+code: PORTAL_USER
+description: Accesso base utente
+label: Portal User
