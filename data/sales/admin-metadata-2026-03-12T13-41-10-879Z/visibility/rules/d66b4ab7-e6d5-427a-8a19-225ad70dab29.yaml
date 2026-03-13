@@ -1,0 +1,10 @@
+active: true
+condition:
+  field: Id
+  op: '!='
+  value: null
+coneCode: entity-Contact-bootstrap
+description: Auto bootstrap visibility ALLOW rule for entity Contact
+effect: ALLOW
+id: d66b4ab7-e6d5-427a-8a19-225ad70dab29
+objectApiName: Contact

@@ -1,0 +1,6 @@
+description: Gestione amministrativa catalogo app
+id: rest:apps-admin
+permissions:
+  - PORTAL_ADMIN
+target: /apps/admin
+type: rest

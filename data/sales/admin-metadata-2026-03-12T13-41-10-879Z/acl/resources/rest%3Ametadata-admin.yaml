@@ -1,0 +1,6 @@
+description: Retrieve, preview e deploy dei package metadata zip
+id: rest:metadata-admin
+permissions:
+  - PORTAL_ADMIN
+target: /metadata/admin
+type: rest

@@ -1,0 +1,6 @@
+description: Gestione amministrativa configurazione ACL
+id: rest:acl-config-admin
+permissions:
+  - PORTAL_ADMIN
+target: /acl/admin/config
+type: rest

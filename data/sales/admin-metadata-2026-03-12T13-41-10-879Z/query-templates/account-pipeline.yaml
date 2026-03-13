@@ -1,0 +1,8 @@
+defaultParams:
+  industry: Technology
+  limit: 50
+description: Account list per industry
+id: account-pipeline
+maxLimit: 200
+objectApiName: Account
+soql: SELECT Id, Name, Industry, OwnerId FROM Account WHERE Industry = {{industry}} LIMIT {{limit}}

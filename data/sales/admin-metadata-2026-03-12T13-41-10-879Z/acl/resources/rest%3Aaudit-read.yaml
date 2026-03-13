@@ -1,0 +1,6 @@
+description: Consultazione read-only degli stream audit PostgreSQL
+id: rest:audit-read
+permissions:
+  - PORTAL_ADMIN
+target: /audit
+type: rest

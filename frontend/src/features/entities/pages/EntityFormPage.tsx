@@ -17,8 +17,8 @@ import type {
   EntityConfigEnvelope,
   EntityRecord,
   EntityFormResponse,
-  FormSectionConfig,
   LookupCondition,
+  RuntimeFormSectionConfig,
 } from '../entity-types'
 import { EntityPageFrame } from '../components/EntityPageFrame'
 import { EntityRecordForm } from '../components/EntityRecordForm'
@@ -82,17 +82,10 @@ export function EntityFormPage() {
   const entityLabel = config?.entity.label ?? toTitleCase(entityId)
   const baseEntityPath = appId ? buildAppEntityBasePath(appId, entityId) : ''
 
-  const sections = useMemo<FormSectionConfig[]>(() => {
-    if (formResponse?.sections && formResponse.sections.length > 0) {
-      return formResponse.sections
-    }
-
-    if (config?.entity.form?.sections && config.entity.form.sections.length > 0) {
-      return config.entity.form.sections
-    }
-
-    return []
-  }, [config?.entity.form?.sections, formResponse?.sections])
+  const sections = useMemo<RuntimeFormSectionConfig[]>(
+    () => formResponse?.sections ?? [],
+    [formResponse?.sections],
+  )
 
   const lookupContext = useMemo<EntityRecord>(() => {
     const context: EntityRecord = {
@@ -110,13 +103,21 @@ export function EntityFormPage() {
     return context
   }, [entityId, recordId, searchParams])
 
-  const initialValuesWithLookupPrefill = useMemo(() => {
+  const initialValuesWithDefaults = useMemo(() => {
     if (mode !== 'create') {
       return initialValues
     }
 
-    return applyLookupPrefill(initialValues, sections, lookupContext)
-  }, [initialValues, lookupContext, mode, sections])
+    return applyFieldDefaults(initialValues, sections)
+  }, [initialValues, mode, sections])
+
+  const initialValuesWithLookupPrefill = useMemo(() => {
+    if (mode !== 'create') {
+      return initialValuesWithDefaults
+    }
+
+    return applyLookupPrefill(initialValuesWithDefaults, sections, lookupContext)
+  }, [initialValuesWithDefaults, lookupContext, mode, sections])
 
   const title =
     formResponse?.title ??
@@ -165,8 +166,10 @@ export function EntityFormPage() {
       )}
       {!loading && !error && (
         <EntityRecordForm
+          entityId={entityId}
           sections={sections}
           initialValues={initialValuesWithLookupPrefill}
+          lookupContext={lookupContext}
           submitLabel={mode === 'edit' ? 'Save changes' : 'Create record'}
           isSubmitting={submitting}
           onSubmit={async (values) => {
@@ -203,27 +206,50 @@ export function EntityFormPage() {
   )
 }
 
-function filterFormValues(values: EntityRecord, sections: FormSectionConfig[]): EntityRecord {
-  const allowedFields = new Set(
-    sections.flatMap((section) => section.fields.map((field) => field.field)),
-  )
-
+function filterFormValues(values: EntityRecord, sections: RuntimeFormSectionConfig[]): EntityRecord {
   const payload: EntityRecord = {}
 
-  for (const [key, value] of Object.entries(values)) {
-    if (!allowedFields.has(key)) {
-      continue
-    }
-
-    payload[key] = value
+  for (const field of sections.flatMap((section) => section.fields)) {
+    payload[field.field] = normalizeSubmittedFieldValue(values[field.field], field.inputType)
   }
 
   return payload
 }
 
+function applyFieldDefaults(
+  values: EntityRecord,
+  sections: RuntimeFormSectionConfig[],
+): EntityRecord {
+  const nextValues: EntityRecord = { ...values }
+
+  for (const field of sections.flatMap((section) => section.fields)) {
+    if (hasPrefilledValue(nextValues[field.field])) {
+      continue
+    }
+
+    if (field.inputType === 'select') {
+      const defaultOption = field.options?.find((option) => option.default)
+      if (defaultOption) {
+        nextValues[field.field] = defaultOption.value
+      }
+      continue
+    }
+
+    if (field.inputType === 'multiselect') {
+      const defaultOptions =
+        field.options?.filter((option) => option.default).map((option) => option.value) ?? []
+      if (defaultOptions.length > 0) {
+        nextValues[field.field] = defaultOptions
+      }
+    }
+  }
+
+  return nextValues
+}
+
 function applyLookupPrefill(
   values: EntityRecord,
-  sections: FormSectionConfig[],
+  sections: RuntimeFormSectionConfig[],
   context: EntityRecord,
 ): EntityRecord {
   const nextValues: EntityRecord = { ...values }
@@ -319,4 +345,55 @@ function resolveLookupConditions(
   }
 
   return resolved
+}
+
+function normalizeSubmittedFieldValue(
+  value: unknown,
+  inputType: RuntimeFormSectionConfig['fields'][number]['inputType'],
+): unknown {
+  if (inputType === 'checkbox') {
+    return Boolean(value)
+  }
+
+  if (inputType === 'multiselect') {
+    if (Array.isArray(value)) {
+      return value.map((entry) => String(entry).trim()).filter(Boolean)
+    }
+
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return value.split(';').map((entry) => entry.trim()).filter(Boolean)
+    }
+
+    return []
+  }
+
+  if (inputType === 'number') {
+    if (value === null || value === undefined) {
+      return null
+    }
+
+    if (typeof value === 'number') {
+      return Number.isFinite(value) ? value : null
+    }
+
+    if (typeof value === 'string') {
+      const normalized = value.trim()
+      if (normalized.length === 0) {
+        return null
+      }
+
+      const parsed = Number(normalized)
+      return Number.isFinite(parsed) ? parsed : normalized
+    }
+  }
+
+  if (typeof value === 'string') {
+    return value.trim().length === 0 ? null : value
+  }
+
+  if (value === undefined) {
+    return null
+  }
+
+  return value
 }

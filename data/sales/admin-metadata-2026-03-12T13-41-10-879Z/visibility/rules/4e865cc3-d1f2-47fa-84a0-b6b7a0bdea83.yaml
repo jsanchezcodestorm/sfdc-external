@@ -1,0 +1,8 @@
+active: true
+condition:
+  field: Email
+  op: IS_NOT_NULL
+coneCode: entity-Contact-bootstrap
+effect: ALLOW
+id: 4e865cc3-d1f2-47fa-84a0-b6b7a0bdea83
+objectApiName: Contact

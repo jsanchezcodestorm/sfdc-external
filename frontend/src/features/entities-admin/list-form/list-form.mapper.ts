@@ -56,7 +56,7 @@ export function parseListFormDraft(
   draft: ListFormDraft,
   baseObjectApiName: string,
 ): EntityListConfig {
-  const title = readRequiredString(draft.title, 'List title obbligatorio')
+  const title = readOptionalString(draft.title) ?? 'List'
   const normalizedBaseObjectApiName = readRequiredString(
     baseObjectApiName,
     'Base objectApiName obbligatorio per la sezione List',
@@ -170,8 +170,8 @@ function parseListViewDraft(
   baseObjectApiName: string,
 ): EntityListViewConfig {
   const viewPath = `View ${index + 1}`
-  const id = readRequiredString(draft.id, `${viewPath}: id obbligatorio`)
-  const label = readRequiredString(draft.label, `${viewPath}: label obbligatorio`)
+  const id = readOptionalString(draft.id) ?? `view-${index + 1}`
+  const label = readOptionalString(draft.label) ?? toTitleLabelFromId(id)
 
   const queryFields = draft.queryFields
     .map((field) => field.trim())
@@ -246,11 +246,18 @@ function parseListViewDraft(
   }
 }
 
+function toTitleLabelFromId(value: string): string {
+  return value
+    .replace(/[-_]+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (char) => char.toUpperCase()) || 'View'
+}
+
 function parseListActionDraft(
   draft: ListActionDraft,
   label: string,
 ): EntityAction | undefined {
-  const type = draft.type
+  const type = normalizeActionType(draft.type)
   const actionLabel = readOptionalString(draft.label)
   const target = readOptionalString(draft.target)
   const entityId = readOptionalString(draft.entityId)
@@ -270,6 +277,20 @@ function parseListActionDraft(
     target,
     entityId,
   }
+}
+
+function normalizeActionType(value: string): '' | 'edit' | 'delete' | 'link' {
+  const normalized = value.trim().toLowerCase()
+
+  if (normalized === '' || normalized === 'none') {
+    return ''
+  }
+
+  if (normalized === 'edit' || normalized === 'delete' || normalized === 'link') {
+    return normalized
+  }
+
+  return normalized as '' | 'edit' | 'delete' | 'link'
 }
 
 function parseColumnsDraft(value: string, label: string): EntityListViewConfig['columns'] {

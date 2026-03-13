@@ -75,6 +75,7 @@ function createHarness(rawResult: Record<string, unknown>, queryMoreResults: Rec
   );
 
   const resourceAccessService = {
+    assertEntityId() {},
     async authorizeObjectAccess() {
       return visibility;
     },
@@ -573,7 +574,8 @@ test('getEntityForm edit mode records query audit metadata and counters', async 
     isFieldVisible: () => true,
     collectFormFieldNames: () => ['Name'],
     ensureVisibleFields() {},
-    buildFieldDefinitions: async () => [],
+    buildFormFieldDefinitions: async () => [],
+    resolveLookupProjectionFields: async () => [],
     buildSoqlFromQueryConfig: async () => ({
       soql: `SELECT Id, Name FROM Account WHERE Id = '${recordId}'`,
       baseWhere: `Id = '${recordId}'`,
@@ -594,6 +596,342 @@ test('getEntityForm edit mode records query audit metadata and counters', async 
   });
   assert.equal(harness.completeCalls[0].rowCount, 1);
   assert.equal(harness.visibilityAuditCalls[0].rowCount, 1);
+});
+
+test('getEntityForm create mode derives runtime field metadata from Salesforce describe', async () => {
+  const harness = createHarness({
+    totalSize: 0,
+    done: true,
+    records: [],
+  });
+
+  (harness.service as unknown as {
+    salesforceService: { describeObjectFields: (objectApiName: string) => Promise<unknown[]> };
+  }).salesforceService.describeObjectFields = async (objectApiName: string) => {
+    if (objectApiName === 'Account') {
+      return [
+        {
+          name: 'Id',
+          label: 'Record ID',
+          type: 'id',
+          nillable: false,
+          createable: false,
+          updateable: false,
+          filterable: true,
+          defaultedOnCreate: false,
+          calculated: false,
+          autoNumber: false,
+        },
+        {
+          name: 'Name',
+          label: 'Account Name',
+          type: 'string',
+          nillable: false,
+          createable: true,
+          updateable: true,
+          filterable: true,
+          defaultedOnCreate: false,
+          calculated: false,
+          autoNumber: false,
+        },
+        {
+          name: 'Industry',
+          label: 'Industry',
+          type: 'picklist',
+          nillable: true,
+          createable: true,
+          updateable: true,
+          filterable: true,
+          defaultedOnCreate: false,
+          calculated: false,
+          autoNumber: false,
+          picklistValues: [
+            { value: 'Technology', label: 'Technology', active: true, defaultValue: true },
+            { value: 'Finance', label: 'Finance', active: true, defaultValue: false },
+          ],
+        },
+        {
+          name: 'OwnerId',
+          label: 'Owner',
+          type: 'reference',
+          nillable: true,
+          createable: true,
+          updateable: true,
+          filterable: true,
+          defaultedOnCreate: false,
+          calculated: false,
+          autoNumber: false,
+          relationshipName: 'Owner',
+          referenceTo: ['User'],
+        },
+      ];
+    }
+
+    if (objectApiName === 'User') {
+      return [
+        {
+          name: 'Name',
+          label: 'Full Name',
+          type: 'string',
+          nillable: false,
+          createable: false,
+          updateable: false,
+          filterable: true,
+          defaultedOnCreate: false,
+          calculated: false,
+          autoNumber: false,
+        },
+      ];
+    }
+
+    return [];
+  };
+
+  patchServiceMethods(harness.service, {
+    loadEntityConfig: async () => ({
+      id: 'account',
+      objectApiName: 'Account',
+      label: 'Accounts',
+      form: {
+        title: {
+          create: 'New Account',
+          edit: 'Edit Account',
+        },
+        subtitle: 'Account form',
+        query: { object: 'Account', fields: ['Id', 'Name', 'Industry', 'OwnerId'] },
+        sections: [{ title: 'Main', fields: [{ field: 'Name' }, { field: 'Industry' }, { field: 'OwnerId' }] }],
+      },
+    }),
+    isFieldVisible: () => true,
+    ensureVisibleFields() {},
+  });
+
+  const response = await harness.service.getEntityForm(user as never, 'account');
+
+  assert.deepEqual(
+    response.sections[0]?.fields.map((field) => field.field),
+    ['Name', 'Industry'],
+  );
+  assert.deepEqual(response.fieldDefinitions.map((field) => field.field), ['Name', 'Industry']);
+  assert.equal(response.sections[0]?.fields[0]?.label, 'Account Name');
+  assert.equal(response.sections[0]?.fields[0]?.required, true);
+  assert.equal(response.sections[0]?.fields[1]?.inputType, 'select');
+  assert.deepEqual(response.sections[0]?.fields[1]?.options, [
+    { value: 'Technology', label: 'Technology', default: true },
+    { value: 'Finance', label: 'Finance', default: undefined },
+  ]);
+  assert.equal(harness.createCalls.length, 0);
+  assert.equal(harness.visibilityAuditCalls[0].queryKind, 'ENTITY_FORM');
+});
+
+test('getEntityForm edit mode projects lookup labels for reference fields', async () => {
+  const harness = createHarness({
+    totalSize: 1,
+    done: true,
+    records: [
+      {
+        Id: '001000000000001',
+        Name: 'Acme',
+        ParentId: '001000000000999',
+        Parent: { Name: 'Global Parent' },
+      },
+    ],
+  });
+  const recordId = '001000000000001';
+  const buildSoqlOptions: Array<Record<string, unknown>> = [];
+
+  (harness.service as unknown as {
+    salesforceService: { describeObjectFields: (objectApiName: string) => Promise<unknown[]> };
+  }).salesforceService.describeObjectFields = async () => [
+    {
+      name: 'Id',
+      label: 'Record ID',
+      type: 'id',
+      nillable: false,
+      createable: false,
+      updateable: false,
+      filterable: true,
+      defaultedOnCreate: false,
+      calculated: false,
+      autoNumber: false,
+    },
+    {
+      name: 'Name',
+      label: 'Account Name',
+      type: 'string',
+      nillable: false,
+      createable: true,
+      updateable: true,
+      filterable: true,
+      defaultedOnCreate: false,
+      calculated: false,
+      autoNumber: false,
+    },
+    {
+      name: 'ParentId',
+      label: 'Parent Account',
+      type: 'reference',
+      nillable: true,
+      createable: true,
+      updateable: true,
+      filterable: true,
+      defaultedOnCreate: false,
+      calculated: false,
+      autoNumber: false,
+      relationshipName: 'Parent',
+      referenceTo: ['Account'],
+    },
+  ];
+
+  patchServiceMethods(harness.service, {
+    loadEntityConfig: async () => ({
+      id: 'account',
+      objectApiName: 'Account',
+      label: 'Accounts',
+      form: {
+        title: {
+          create: 'New Account',
+          edit: 'Edit Account',
+        },
+        subtitle: 'Account form',
+        query: { object: 'Account', fields: ['Id', 'Name', 'ParentId'] },
+        sections: [{ title: 'Main', fields: [{ field: 'Name' }, { field: 'ParentId' }] }],
+      },
+    }),
+    isFieldVisible: () => true,
+    ensureVisibleFields() {},
+    buildSoqlFromQueryConfig: async (_query: unknown, options: Record<string, unknown>) => {
+      buildSoqlOptions.push(options);
+      return {
+        soql: `SELECT Id, Name, ParentId, Parent.Name FROM Account WHERE Id = '${recordId}'`,
+        baseWhere: `Id = '${recordId}'`,
+        finalWhere: `(Id = '${recordId}') AND (OwnerId = '005000000000001')`,
+        selectFields: ['Id', 'Name', 'ParentId', 'Parent.Name'],
+      };
+    },
+    renderRecordTemplate: () => 'Form subtitle',
+  });
+
+  const response = await harness.service.getEntityForm(user as never, 'account', recordId);
+
+  assert.equal(String(response.record?.ParentId), '001000000000999');
+  assert.equal(response.sections[0]?.fields[1]?.inputType, 'lookup');
+  assert.deepEqual(response.sections[0]?.fields[1]?.lookup, {
+    referenceTo: ['Account'],
+    searchField: 'Name',
+    where: undefined,
+    orderBy: undefined,
+    prefill: undefined,
+  });
+  assert.deepEqual(buildSoqlOptions[0].extraFields, ['Parent.Name']);
+});
+
+test('searchEntityFormLookup returns describe-driven lookup options', async () => {
+  const harness = createHarness({
+    totalSize: 1,
+    done: true,
+    records: [{ Id: '005000000000001', Name: 'Mario Rossi', Username: 'mario@example.com' }],
+  });
+
+  patchServiceMethods(harness.service, {
+    loadEntityConfig: async () => ({
+      id: 'account',
+      objectApiName: 'Account',
+      form: {
+        title: { create: 'New', edit: 'Edit' },
+        query: { object: 'Account', fields: ['Id'] },
+        sections: [
+          {
+            title: 'Main',
+            fields: [
+              {
+                field: 'OwnerCustom__c',
+                lookup: {
+                  searchField: 'Username',
+                },
+              },
+            ],
+          },
+        ],
+      },
+    }),
+    getDescribeFieldMap: async (objectApiName: string) =>
+      new Map(
+        objectApiName === 'Account'
+          ? [
+              [
+                'OwnerCustom__c',
+                {
+                  name: 'OwnerCustom__c',
+                  label: 'Owner',
+                  type: 'reference',
+                  nillable: true,
+                  createable: true,
+                  updateable: true,
+                  filterable: true,
+                  defaultedOnCreate: false,
+                  calculated: false,
+                  autoNumber: false,
+                  relationshipName: 'OwnerCustom__r',
+                  referenceTo: ['User'],
+                },
+              ],
+            ]
+          : [
+              [
+                'Username',
+                {
+                  name: 'Username',
+                  label: 'Username',
+                  type: 'string',
+                  nillable: false,
+                  createable: false,
+                  updateable: false,
+                  filterable: true,
+                  defaultedOnCreate: false,
+                  calculated: false,
+                  autoNumber: false,
+                },
+              ],
+              [
+                'Name',
+                {
+                  name: 'Name',
+                  label: 'Full Name',
+                  type: 'string',
+                  nillable: false,
+                  createable: false,
+                  updateable: false,
+                  filterable: true,
+                  defaultedOnCreate: false,
+                  calculated: false,
+                  autoNumber: false,
+                },
+              ],
+            ],
+      ),
+    buildSoqlFromQueryConfig: async () => ({
+      soql: "SELECT Id, Name, Username FROM User WHERE Username LIKE '%mario%'",
+      baseWhere: "Username LIKE '%mario%'",
+      finalWhere: "(Username LIKE '%mario%') AND (OwnerId = '005000000000001')",
+      selectFields: ['Id', 'Name', 'Username'],
+    }),
+    isFieldVisible: () => true,
+  });
+
+  const response = await harness.service.searchEntityFormLookup(user as never, 'account', 'OwnerCustom__c', {
+    q: 'mario',
+  });
+
+  assert.deepEqual(response.items, [
+    {
+      id: '005000000000001',
+      label: 'Mario Rossi',
+      objectApiName: 'User',
+      subtitle: 'mario@example.com',
+    },
+  ]);
+  assert.equal(harness.createCalls[0].queryKind, 'ENTITY_FORM_LOOKUP');
 });
 
 test('getEntityRelatedList records query audit metadata and counters', async () => {
@@ -745,6 +1083,7 @@ function createWriteHarness(options?: {
   );
 
   const resourceAccessService = {
+    assertEntityId() {},
     async authorizeObjectAccess(
       currentUser: Record<string, unknown>,
       aclResourceId: string,

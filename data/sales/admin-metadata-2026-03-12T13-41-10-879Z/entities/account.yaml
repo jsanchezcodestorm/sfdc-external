@@ -1,0 +1,123 @@
+description: Salesforce Account entity
+detail:
+  actions:
+    - label: Edit
+      type: edit
+    - label: Delete
+      type: delete
+  fallbackTitle: Account Detail
+  query:
+    fields:
+      - Id
+      - Name
+      - Type
+      - Industry
+      - OwnerId
+      - CreatedDate
+    limit: 1
+    object: Account
+    where:
+      - field: Id
+        operator: '='
+        value: '{{id}}'
+  sections:
+    - fields:
+        - field: Name
+          highlight: true
+          label: Account Name
+        - field: Type
+          label: Type
+        - field: Industry
+          label: Industry
+        - field: OwnerId
+          label: Owner
+        - field: CreatedDate
+          format: datetime
+          label: Created
+      title: Account Overview
+  titleTemplate: '{{Name || Id}}'
+form:
+  query:
+    fields:
+      - Id
+      - Name
+      - Type
+      - Industry
+      - OwnerId
+    limit: 1
+    object: Account
+    where:
+      - field: Id
+        operator: '='
+        value: '{{id}}'
+  sections:
+    - fields:
+        - field: Name
+          inputType: text
+          label: Name
+          required: true
+        - field: Type
+          inputType: text
+          label: Type
+        - field: Industry
+          inputType: text
+          label: Industry
+        - field: OwnerId
+          inputType: text
+          label: Owner Id
+      title: Main Information
+  subtitle: Manage account data
+  title:
+    create: New Account
+    edit: Edit Account
+id: account
+label: Accounts
+list:
+  primaryAction:
+    label: New Account
+    target: new
+    type: link
+  subtitle: Account records
+  title: Accounts List
+  views:
+    - columns:
+        - field: Name
+          label: Name
+        - field: Type
+          label: Type
+        - field: Industry
+          label: Industry
+        - field: OwnerId
+          label: Owner
+        - field: CreatedDate
+          label: Created
+      default: true
+      id: all
+      label: All Accounts
+      pageSize: 25
+      query:
+        fields:
+          - Id
+          - Name
+          - Type
+          - Industry
+          - OwnerId
+          - CreatedDate
+        object: Account
+        orderBy:
+          - direction: ASC
+            field: Name
+      rowActions:
+        - label: Edit
+          type: edit
+        - label: Delete
+          type: delete
+      search:
+        fields:
+          - Name
+          - Industry
+          - Type
+        minLength: 2
+navigation:
+  basePath: /s/account
+objectApiName: Account

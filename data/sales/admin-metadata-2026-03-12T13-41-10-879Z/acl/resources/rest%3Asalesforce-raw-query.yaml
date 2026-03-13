@@ -1,0 +1,6 @@
+description: Query SOQL raw read-only
+id: rest:salesforce-raw-query
+permissions:
+  - PORTAL_ADMIN
+target: /salesforce/query
+type: rest

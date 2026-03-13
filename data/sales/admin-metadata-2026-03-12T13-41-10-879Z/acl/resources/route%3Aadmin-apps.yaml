@@ -1,0 +1,6 @@
+description: Pagina admin catalogo app
+id: route:admin-apps
+permissions:
+  - PORTAL_ADMIN
+target: /admin/apps
+type: route

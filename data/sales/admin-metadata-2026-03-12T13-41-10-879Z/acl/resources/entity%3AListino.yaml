@@ -1,0 +1,5 @@
+description: Auto-provisioned ACL resource for entity Listino
+id: entity:Listino
+permissions:
+  - PORTAL_ADMIN
+type: entity

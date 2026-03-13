@@ -128,6 +128,7 @@ export interface EntityLookupCondition {
   field?: string;
   operator?: string;
   value?: string | number | boolean | null;
+  parentRel?: string;
 }
 
 export interface EntityLookupOrderBy {
@@ -144,9 +145,6 @@ export interface EntityLookupConfig {
 
 export interface EntityFormFieldConfig {
   field: string;
-  label?: string;
-  inputType?: string;
-  required?: boolean;
   placeholder?: string;
   lookup?: EntityLookupConfig;
 }

@@ -71,7 +71,15 @@ export type FormPreviewSection = {
 export type FormPreviewField = {
   field: string | undefined;
   label: string;
-  inputType: "text" | "email" | "tel" | "date" | "textarea";
+  inputType:
+    | "text"
+    | "email"
+    | "tel"
+    | "date"
+    | "textarea"
+    | "number"
+    | "checkbox"
+    | "lookup";
   required: boolean | undefined;
   placeholder: string | undefined;
   lookup:
@@ -84,7 +92,15 @@ export type FormPreviewField = {
 
 type MockFieldHint = {
   format?: "date" | "datetime";
-  inputType?: "text" | "email" | "tel" | "date" | "textarea";
+  inputType?:
+    | "text"
+    | "email"
+    | "tel"
+    | "date"
+    | "textarea"
+    | "number"
+    | "checkbox"
+    | "lookup";
   label?: string;
   lookup?: boolean;
 };
@@ -214,15 +230,15 @@ export function buildFormPreviewModel(draft: FormFormDraft): FormPreviewModel {
   validateJsonArray(draft.queryOrderByJson, "Form query.orderBy", warnings);
   const sections = draft.sections
     .map((section, sectionIndex) => {
-      const fields = section.fields
+      const fields: FormPreviewSection["fields"] = section.fields
         .filter((field) => hasFormPreviewField(field))
         .map((field, fieldIndex) => ({
           field: normalizeText(field.field),
           label: resolveFormPreviewLabel(field, fieldIndex),
           inputType: resolvePreviewInputType(field),
-          required: field.required ? true : undefined,
+          required: undefined as boolean | undefined,
           placeholder: normalizeText(field.placeholder),
-          lookup: field.lookupEnabled
+          lookup: hasLookupDraftValue(field)
             ? {
                 searchField: normalizeText(field.lookup.searchField),
                 prefill: field.lookup.prefill ? true : undefined,
@@ -231,7 +247,7 @@ export function buildFormPreviewModel(draft: FormFormDraft): FormPreviewModel {
         }));
 
       for (const [fieldIndex, field] of section.fields.entries()) {
-        if (!field.lookupEnabled) {
+        if (!hasLookupDraftValue(field)) {
           continue;
         }
 
@@ -271,8 +287,8 @@ export function buildFormPreviewModel(draft: FormFormDraft): FormPreviewModel {
       fieldPaths.add(fieldPath);
       mergeHint(hints, fieldPath, {
         inputType: resolvePreviewInputType(field),
-        label: normalizeText(field.label),
-        lookup: field.lookupEnabled,
+        label: toLabel(fieldPath),
+        lookup: hasLookupDraftValue(field),
       });
     }
   }
@@ -349,8 +365,12 @@ function hasDetailPreviewField(field: {
   );
 }
 
-function hasFormPreviewField(field: { label: string; field: string }): boolean {
-  return Boolean(normalizeText(field.label) || normalizeText(field.field));
+function hasFormPreviewField(field: { field: string; placeholder: string; lookup: FormFieldDraft["lookup"] }): boolean {
+  return Boolean(
+    normalizeText(field.field) ||
+      normalizeText(field.placeholder) ||
+      hasLookupDraftValue(field),
+  );
 }
 
 function hasAnyRelatedListValue(draft: RelatedListDraft): boolean {
@@ -376,11 +396,6 @@ function resolveFormPreviewLabel(
   field: FormFieldDraft,
   fieldIndex: number,
 ): string {
-  const explicitLabel = normalizeText(field.label);
-  if (explicitLabel) {
-    return explicitLabel;
-  }
-
   const fieldPath = normalizeText(field.field);
   if (fieldPath) {
     return toLabel(fieldPath);
@@ -391,15 +406,9 @@ function resolveFormPreviewLabel(
 
 function resolvePreviewInputType(
   field: FormFieldDraft,
-): "text" | "email" | "tel" | "date" | "textarea" {
-  if (
-    field.inputType === "text" ||
-    field.inputType === "email" ||
-    field.inputType === "tel" ||
-    field.inputType === "date" ||
-    field.inputType === "textarea"
-  ) {
-    return field.inputType;
+): "text" | "email" | "tel" | "date" | "textarea" | "number" | "checkbox" | "lookup" {
+  if (hasLookupDraftValue(field)) {
+    return "lookup";
   }
 
   const normalizedField = normalizeText(field.field)?.toLowerCase() ?? "";
@@ -432,7 +441,40 @@ function resolvePreviewInputType(
     return "textarea";
   }
 
+  if (
+    normalizedField.includes("amount") ||
+    normalizedField.includes("total") ||
+    normalizedField.includes("value") ||
+    normalizedField.includes("price") ||
+    normalizedField.includes("revenue") ||
+    normalizedField.includes("count") ||
+    normalizedField.includes("number") ||
+    normalizedField.includes("qty") ||
+    normalizedField.includes("quantity")
+  ) {
+    return "number";
+  }
+
+  if (
+    normalizedField.startsWith("is") ||
+    normalizedField.startsWith("has") ||
+    normalizedField.startsWith("can") ||
+    normalizedField.includes("enabled") ||
+    normalizedField.includes("active")
+  ) {
+    return "checkbox";
+  }
+
   return "text";
+}
+
+function hasLookupDraftValue(field: { lookup: FormFieldDraft["lookup"] }): boolean {
+  return Boolean(
+    normalizeText(field.lookup.searchField) ||
+      normalizeText(field.lookup.whereJson) ||
+      normalizeText(field.lookup.orderByJson) ||
+      field.lookup.prefill,
+  );
 }
 
 function mergeHint(
@@ -821,16 +863,11 @@ export function describeDetailSectionPreviewFields(
 }
 
 export function describeFormSectionPreviewFields(
-  fields: Array<{ label: string; field: string; required: boolean }>,
-): Array<{ label: string; required: boolean }> {
+  fields: Array<{ field: string }>,
+): string[] {
   return fields
-    .map((field) => ({
-      label: normalizeText(field.label) ?? normalizeText(field.field),
-      required: field.required,
-    }))
-    .filter((value): value is { label: string; required: boolean } =>
-      Boolean(value.label),
-    );
+    .map((field) => normalizeText(field.field))
+    .filter((value): value is string => Boolean(value));
 }
 
 export function hasPreviewRelatedLookupValue(

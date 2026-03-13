@@ -1,0 +1,4 @@
+description: Auto-provisioned ACL resource for entity Contact
+id: entity:Contact
+permissions: []
+type: entity

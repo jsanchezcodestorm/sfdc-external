@@ -1,0 +1,6 @@
+description: Describe metadata Salesforce
+id: rest:salesforce-objects
+permissions:
+  - PORTAL_ADMIN
+target: /salesforce/objects
+type: rest

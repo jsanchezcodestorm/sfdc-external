@@ -107,6 +107,84 @@ export class VisibilityAdminService {
     private readonly salesforceService: SalesforceService,
   ) {}
 
+  async ensureEntityBootstrapPolicy(params: {
+    entityId: string;
+    objectApiName: string;
+  }): Promise<{ coneCreated: boolean; ruleCreated: boolean }> {
+    const entityId = this.requireString(params.entityId, 'entityId is required');
+    const objectApiName = this.normalizePreviewObjectApiName(
+      this.requireString(params.objectApiName, 'objectApiName is required'),
+      'objectApiName',
+    );
+    const coneCode = `entity-${entityId}-bootstrap`;
+    const coneName = `Entity ${entityId} bootstrap`;
+    const ruleDescription = `Auto bootstrap visibility ALLOW rule for entity ${entityId}`;
+    const condition: VisibilityRuleNode = {
+      field: 'Id',
+      op: '!=',
+      value: null,
+    };
+
+    return this.prisma.$transaction(async (tx) => {
+      let coneCreated = false;
+      let ruleCreated = false;
+
+      let cone = await tx.visibilityCone.findUnique({
+        where: { code: coneCode },
+        select: { id: true },
+      });
+
+      if (!cone) {
+        cone = await tx.visibilityCone.create({
+          data: {
+            id: randomUUID(),
+            code: coneCode,
+            name: coneName,
+            priority: 0,
+            active: true,
+          },
+          select: { id: true },
+        });
+        coneCreated = true;
+      }
+
+      const existingRule = await tx.visibilityRule.findFirst({
+        where: {
+          coneId: cone.id,
+          objectApiName,
+          effect: VisibilityRuleEffect.ALLOW,
+          description: ruleDescription,
+        },
+        select: { id: true },
+      });
+
+      if (!existingRule) {
+        await tx.visibilityRule.create({
+          data: {
+            coneId: cone.id,
+            objectApiName,
+            description: ruleDescription,
+            effect: VisibilityRuleEffect.ALLOW,
+            conditionJson: condition as unknown as Prisma.InputJsonValue,
+            fieldsAllowed: Prisma.JsonNull,
+            fieldsDenied: Prisma.JsonNull,
+            active: true,
+          },
+        });
+        ruleCreated = true;
+      }
+
+      if (coneCreated || ruleCreated) {
+        await this.bumpPolicyVersionAndInvalidateCaches(tx, [objectApiName]);
+      }
+
+      return {
+        coneCreated,
+        ruleCreated,
+      };
+    });
+  }
+
   async listCones(): Promise<{ items: VisibilityConeSummaryResponse[] }> {
     const rows = await this.prisma.visibilityCone.findMany({
       orderBy: [{ priority: 'desc' }, { code: 'asc' }],

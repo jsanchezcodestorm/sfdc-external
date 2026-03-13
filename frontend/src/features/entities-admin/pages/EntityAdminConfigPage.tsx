@@ -79,11 +79,16 @@ type EntityAdminLocationState = {
 }
 
 export function EntityAdminConfigPage() {
-  const { confirm } = useAppDialog()
+  const { confirm, alert } = useAppDialog()
   const location = useLocation()
   const navigate = useNavigate()
   const params = useParams<RouteParams>()
   const blockedNavigationKeyRef = useRef<string | null>(null)
+  const pageErrorRef = useRef<HTMLElement | null>(null)
+  const editorErrorRef = useRef<HTMLElement | null>(null)
+  const bootstrapErrorRef = useRef<HTMLElement | null>(null)
+  const shouldAutoSyncIdRef = useRef(true)
+  const shouldAutoSyncLabelRef = useRef(true)
 
   const isCreateRoute = location.pathname === buildEntityCreatePath()
   const activeEditRoute = useMemo(
@@ -140,6 +145,7 @@ export function EntityAdminConfigPage() {
   )
   const [loadingBootstrapPreview, setLoadingBootstrapPreview] = useState(false)
   const [bootstrapPreviewError, setBootstrapPreviewError] = useState<string | null>(null)
+  const [basePathAutoSyncEnabled, setBasePathAutoSyncEnabled] = useState(true)
 
   const selectedEntitySummary = useMemo(
     () => entities.find((entity) => entity.id === selectedEntityId) ?? null,
@@ -287,6 +293,9 @@ export function EntityAdminConfigPage() {
       setObjectApiNameSearchInput('')
       setObjectApiNameSuggestions([])
       setObjectApiNameSuggestionsError(null)
+      setBasePathAutoSyncEnabled(isCreateRoute)
+      shouldAutoSyncIdRef.current = isCreateRoute
+      shouldAutoSyncLabelRef.current = isCreateRoute
       return
     }
 
@@ -300,7 +309,10 @@ export function EntityAdminConfigPage() {
     setObjectApiNameSearchInput('')
     setObjectApiNameSuggestions([])
     setObjectApiNameSuggestionsError(null)
-  }, [selectedEntityConfig])
+    setBasePathAutoSyncEnabled(isCreateRoute)
+    shouldAutoSyncIdRef.current = isCreateRoute
+    shouldAutoSyncLabelRef.current = isCreateRoute
+  }, [isCreateRoute, selectedEntityConfig])
 
   useEffect(() => {
     setSelectedListViewIndex((current) => {
@@ -343,6 +355,31 @@ export function EntityAdminConfigPage() {
     setBootstrapPreviewError(null)
     setLoadingBootstrapPreview(false)
   }, [isCreateRoute])
+
+  useEffect(() => {
+    const focusError = (node: HTMLElement | null) => {
+      if (!node) {
+        return
+      }
+
+      node.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      node.focus({ preventScroll: true })
+    }
+
+    if (pageError) {
+      focusError(pageErrorRef.current)
+      return
+    }
+
+    if (editorError) {
+      focusError(editorErrorRef.current)
+      return
+    }
+
+    if (bootstrapPreviewError && isCreateRoute) {
+      focusError(bootstrapErrorRef.current)
+    }
+  }, [bootstrapPreviewError, editorError, isCreateRoute, pageError])
 
   const shouldBlockDirtyNavigation = useCallback(
     ({
@@ -503,10 +540,52 @@ export function EntityAdminConfigPage() {
   }, [navigate])
 
   const updateBaseDraftField = (field: BaseFormDraftKey, value: string) => {
-    setBaseFormDraft((current) => ({
-      ...current,
-      [field]: value,
-    }))
+    if (field === 'basePath') {
+      setBasePathAutoSyncEnabled(false)
+    }
+    if (field === 'id') {
+      shouldAutoSyncIdRef.current = value.trim().length === 0
+    }
+    if (field === 'label') {
+      shouldAutoSyncLabelRef.current = value.trim().length === 0
+    }
+
+    setBaseFormDraft((current) => {
+      const nextDraft = {
+        ...current,
+        [field]: value,
+      }
+
+      if (field === 'objectApiName') {
+        const suggestedId = value.trim()
+        if (
+          suggestedId.length > 0 &&
+          (current.id.trim().length === 0 || shouldAutoSyncIdRef.current)
+        ) {
+          nextDraft.id = suggestedId
+          shouldAutoSyncIdRef.current = true
+        }
+        if (
+          suggestedId.length > 0 &&
+          (current.label.trim().length === 0 || shouldAutoSyncLabelRef.current)
+        ) {
+          nextDraft.label = buildEntityLabelFromObjectApiName(suggestedId)
+          shouldAutoSyncLabelRef.current = true
+        }
+      }
+
+      if (field === 'objectApiName' || field === 'id') {
+        const nextObjectApiName = field === 'objectApiName' ? value : current.objectApiName
+        const nextEntityId =
+          field === 'id' ? value : field === 'objectApiName' ? nextDraft.id : current.id
+
+        if (basePathAutoSyncEnabled) {
+          nextDraft.basePath = buildSuggestedEntityBasePath(nextEntityId, nextObjectApiName)
+        }
+      }
+
+      return nextDraft
+    })
 
     if (field === 'objectApiName') {
       setObjectApiNameSearchInput(value)
@@ -588,9 +667,24 @@ export function EntityAdminConfigPage() {
       }
 
       const nextViews = [...current.views]
+      const currentView = nextViews[index]
+      const normalizedQueryFields = value
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.length > 0)
       nextViews[index] = {
-        ...nextViews[index],
+        ...currentView,
         [field]: value,
+      }
+
+      if (field === 'queryFields') {
+        const currentColumnsCount = countConfiguredColumns(currentView.columns)
+
+        if (normalizedQueryFields.length === 0) {
+          nextViews[index].columns = ''
+          nextViews[index].searchFields = []
+        } else if (currentColumnsCount === 0) {
+          nextViews[index].columns = pickDefaultListColumn(normalizedQueryFields)
+        }
       }
 
       return {
@@ -729,6 +823,12 @@ export function EntityAdminConfigPage() {
       const message =
         error instanceof Error ? error.message : 'Errore generazione bootstrap preview'
       setBootstrapPreviewError(message)
+      await alert({
+        title: 'Errore generazione preset',
+        description: message,
+        tone: 'danger',
+        confirmLabel: 'Chiudi',
+      })
     } finally {
       setLoadingBootstrapPreview(false)
     }
@@ -785,6 +885,12 @@ export function EntityAdminConfigPage() {
       const message =
         error instanceof Error ? error.message : 'Errore salvataggio entity config'
       setPageError(message)
+      await alert({
+        title: 'Errore salvataggio entity',
+        description: message,
+        tone: 'danger',
+        confirmLabel: 'Chiudi',
+      })
     } finally {
       setSaving(false)
     }
@@ -817,6 +923,12 @@ export function EntityAdminConfigPage() {
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Errore creazione entity config'
       setPageError(message)
+      await alert({
+        title: 'Errore creazione entity',
+        description: message,
+        tone: 'danger',
+        confirmLabel: 'Chiudi',
+      })
     } finally {
       setSaving(false)
     }
@@ -851,6 +963,12 @@ export function EntityAdminConfigPage() {
       const message =
         error instanceof Error ? error.message : 'Errore creazione entity con preset'
       setPageError(message)
+      await alert({
+        title: 'Errore creazione entity con preset',
+        description: message,
+        tone: 'danger',
+        confirmLabel: 'Chiudi',
+      })
     } finally {
       setSaving(false)
     }
@@ -883,6 +1001,12 @@ export function EntityAdminConfigPage() {
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Errore eliminazione entity config'
       setPageError(message)
+      await alert({
+        title: 'Errore eliminazione entity',
+        description: message,
+        tone: 'danger',
+        confirmLabel: 'Chiudi',
+      })
     } finally {
       setDeleting(false)
     }
@@ -977,8 +1101,32 @@ export function EntityAdminConfigPage() {
       </header>
 
       {pageError ? (
-        <section className="rounded-2xl border border-rose-200 bg-rose-50 p-5 shadow-sm">
+        <section
+          ref={pageErrorRef}
+          tabIndex={-1}
+          className="rounded-2xl border border-rose-200 bg-rose-50 p-5 shadow-sm outline-none"
+        >
           <p className="text-sm text-rose-700">{pageError}</p>
+        </section>
+      ) : null}
+
+      {editorError ? (
+        <section
+          ref={editorErrorRef}
+          tabIndex={-1}
+          className="rounded-2xl border border-rose-200 bg-rose-50 p-5 shadow-sm outline-none"
+        >
+          <p className="text-sm text-rose-700">{editorError}</p>
+        </section>
+      ) : null}
+
+      {isCreateRoute && bootstrapPreviewError ? (
+        <section
+          ref={bootstrapErrorRef}
+          tabIndex={-1}
+          className="rounded-2xl border border-rose-200 bg-rose-50 p-5 shadow-sm outline-none"
+        >
+          <p className="text-sm text-rose-700">{bootstrapPreviewError}</p>
         </section>
       ) : null}
 
@@ -1408,6 +1556,42 @@ function createBaseDraftFingerprint(baseDraft: BaseFormDraft): string {
   })
 }
 
+function toSuggestedEntityId(rawValue: string): string {
+  return rawValue
+    .trim()
+    .replace(/__(c|r)$/i, '')
+    .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
+    .replace(/[_\s]+/g, '-')
+    .replace(/[^a-zA-Z0-9-]/g, '-')
+    .toLowerCase()
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
+function buildSuggestedEntityBasePath(entityId: string, objectApiName: string): string {
+  const normalizedEntityId = toSuggestedEntityId(entityId)
+  const normalizedObjectApiName = toSuggestedEntityId(objectApiName)
+  const pathId = normalizedEntityId || normalizedObjectApiName
+
+  if (!pathId) {
+    return ''
+  }
+
+  return `/s/${pathId}`
+}
+
+function countConfiguredColumns(columnsDraft: string): number {
+  return columnsDraft
+    .split('\n')
+    .map((row) => row.trim())
+    .filter((row) => row.length > 0).length
+}
+
+function pickDefaultListColumn(queryFields: string[]): string {
+  const preferred = queryFields.find((field) => field === 'Name')
+  return preferred ?? queryFields[0] ?? 'Id'
+}
+
 function readLocationSaveInfo(state: unknown): string | null {
   if (!state || typeof state !== 'object') {
     return null
@@ -1418,11 +1602,11 @@ function readLocationSaveInfo(state: unknown): string | null {
 }
 
 function createEntityConfigFromBaseDraft(baseDraft: BaseFormDraft): EntityConfig | null {
-  const id = baseDraft.id.trim()
-  const label = baseDraft.label.trim()
   const objectApiName = baseDraft.objectApiName.trim()
+  const id = baseDraft.id.trim() || objectApiName
+  const label = baseDraft.label.trim() || buildEntityLabelFromObjectApiName(objectApiName)
 
-  if (id.length === 0 || label.length === 0 || objectApiName.length === 0) {
+  if (objectApiName.length === 0 || id.length === 0 || label.length === 0) {
     return null
   }
 
@@ -1440,6 +1624,16 @@ function createEntityConfigFromBaseDraft(baseDraft: BaseFormDraft): EntityConfig
         ? { basePath: baseDraft.basePath.trim() }
         : undefined,
   }
+}
+
+function buildEntityLabelFromObjectApiName(objectApiName: string): string {
+  const normalized = objectApiName
+    .replace(/__(c|r)$/i, '')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[_-]+/g, ' ')
+    .trim()
+
+  return normalized.length > 0 ? normalized : objectApiName
 }
 
 function createDraftSnapshot(entity: EntityConfig): EntityConfigDraftSnapshot {
@@ -1525,11 +1719,13 @@ function getBaseDraftValidationMessage(
   baseDraft: BaseFormDraft,
   action: 'creare' | 'salvare' | 'generare il preset',
 ): string {
-  if (baseDraft.id.trim() === NEW_ENTITY_SENTINEL) {
+  const resolvedId = baseDraft.id.trim() || baseDraft.objectApiName.trim()
+
+  if (resolvedId === NEW_ENTITY_SENTINEL) {
     return `Entity Id non puo essere ${NEW_ENTITY_SENTINEL}`
   }
 
-  return `Compila id, label e objectApiName per ${action} la entity`
+  return `Compila objectApiName per ${action} la entity`
 }
 
 function getPrefixedSectionMessage(

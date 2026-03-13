@@ -56,7 +56,7 @@ export function EntityConfigBaseForm({
 
       <div className="mt-4 grid gap-4 md:grid-cols-2">
         <label className="text-sm font-medium text-slate-700">
-          Entity Id
+          Entity Id <span className="text-rose-600">*</span>
           <input
             type="text"
             value={value.id}
@@ -74,7 +74,7 @@ export function EntityConfigBaseForm({
         </label>
 
         <label className="text-sm font-medium text-slate-700">
-          Label
+          Label <span className="text-rose-600">*</span>
           <input
             type="text"
             value={value.label}
@@ -94,7 +94,7 @@ export function EntityConfigBaseForm({
         </label>
 
         <label className="text-sm font-medium text-slate-700">
-          Object API Name
+          Object API Name <span className="text-rose-600">*</span>
           <div className="relative mt-2">
             <input
               type="text"

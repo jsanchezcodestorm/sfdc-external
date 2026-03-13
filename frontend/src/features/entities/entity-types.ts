@@ -119,9 +119,6 @@ export type LookupConfig = {
 
 export type FormFieldConfig = {
   field: string
-  label: string
-  inputType?: 'text' | 'email' | 'tel' | 'date' | 'textarea'
-  required?: boolean
   placeholder?: string
   lookup?: LookupConfig
 }
@@ -129,6 +126,44 @@ export type FormFieldConfig = {
 export type FormSectionConfig = {
   title: string
   fields: FormFieldConfig[]
+}
+
+export type RuntimeFormInputType =
+  | 'text'
+  | 'email'
+  | 'tel'
+  | 'date'
+  | 'textarea'
+  | 'number'
+  | 'checkbox'
+  | 'select'
+  | 'multiselect'
+  | 'lookup'
+
+export type RuntimeLookupConfig = LookupConfig & {
+  referenceTo: string[]
+  searchField: string
+}
+
+export type RuntimeFormFieldOption = {
+  value: string
+  label: string
+  default?: boolean
+}
+
+export type RuntimeFormFieldConfig = {
+  field: string
+  label: string
+  inputType: RuntimeFormInputType
+  required: boolean
+  placeholder?: string
+  options?: RuntimeFormFieldOption[]
+  lookup?: RuntimeLookupConfig
+}
+
+export type RuntimeFormSectionConfig = {
+  title: string
+  fields: RuntimeFormFieldConfig[]
 }
 
 export type EntityFieldDefinition = {
@@ -139,8 +174,10 @@ export type EntityFieldDefinition = {
   createable?: boolean
   updateable?: boolean
   filterable?: boolean
-  inputType?: 'text' | 'email' | 'tel' | 'date' | 'textarea'
+  inputType?: RuntimeFormInputType
   required?: boolean
+  options?: RuntimeFormFieldOption[]
+  lookup?: RuntimeLookupConfig
 }
 
 export type EntityConfig = {
@@ -223,8 +260,17 @@ export type EntityRelatedListResponse = {
 export type EntityFormResponse = {
   title?: string
   subtitle?: string
-  sections?: FormSectionConfig[]
+  sections?: RuntimeFormSectionConfig[]
   fieldDefinitions?: EntityFieldDefinition[]
   values?: EntityRecord
   record?: EntityRecord
+}
+
+export type EntityFormLookupSearchResponse = {
+  items: Array<{
+    id: string
+    label: string
+    objectApiName: string
+    subtitle?: string
+  }>
 }

@@ -1,0 +1,6 @@
+description: Operazioni write entity (create/update/delete)
+id: rest:entities-write
+permissions:
+  - PORTAL_ADMIN
+target: /entities/:entityId/records
+type: rest

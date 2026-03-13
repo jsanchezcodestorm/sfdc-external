@@ -1,0 +1,6 @@
+description: Gestione amministrativa visibility cones, rules, assignments e debug
+id: rest:visibility-admin
+permissions:
+  - PORTAL_ADMIN
+target: /visibility/admin
+type: rest

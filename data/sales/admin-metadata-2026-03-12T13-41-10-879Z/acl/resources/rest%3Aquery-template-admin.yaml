@@ -1,0 +1,6 @@
+description: Gestione amministrativa query template
+id: rest:query-template-admin
+permissions:
+  - PORTAL_ADMIN
+target: /query/admin/templates
+type: rest

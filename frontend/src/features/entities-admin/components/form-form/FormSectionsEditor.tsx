@@ -34,14 +34,6 @@ type FormSectionsEditorProps = {
   onChange: (value: FormSectionDraft[]) => void
 }
 
-const INPUT_TYPE_OPTIONS: Array<FormFieldDraft['inputType']> = [
-  'text',
-  'email',
-  'tel',
-  'date',
-  'textarea',
-]
-
 export function FormSectionsEditor({
   objectApiName,
   sections,
@@ -459,10 +451,9 @@ function SortableFormSectionListItem({
                 <span
                   key={`${itemId}-preview-${previewIndex}`}
                   className="max-w-full truncate rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600"
-                  title={previewField.label}
+                  title={previewField}
                 >
-                  {previewField.label}
-                  {previewField.required ? ' (required)' : ''}
+                  {previewField}
                 </span>
               ))
             ) : (
@@ -525,6 +516,11 @@ function SortableFormFieldEditorRow({
     id: itemId,
   })
   const summary = getFormFieldSummary(field, fieldIndex)
+  const hasLookupTuning =
+    field.lookup.searchField.trim().length > 0 ||
+    field.lookup.whereJson.trim().length > 0 ||
+    field.lookup.orderByJson.trim().length > 0 ||
+    field.lookup.prefill
 
   return (
     <article
@@ -550,9 +546,8 @@ function SortableFormFieldEditorRow({
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold text-slate-900">{summary}</p>
               <div className="mt-2 flex flex-wrap gap-2">
-                <StatusBadge>{field.inputType || 'Input type'}</StatusBadge>
-                {field.required ? <StatusBadge>Required</StatusBadge> : null}
-                {field.lookupEnabled ? <StatusBadge>Lookup</StatusBadge> : null}
+                {field.placeholder.trim().length > 0 ? <StatusBadge>Placeholder</StatusBadge> : null}
+                {hasLookupTuning ? <StatusBadge>Lookup tuning</StatusBadge> : null}
               </div>
             </div>
 
@@ -580,40 +575,6 @@ function SortableFormFieldEditorRow({
               />
 
               <label className="text-xs font-medium text-slate-600">
-                Label
-                <input
-                  type="text"
-                  value={field.label}
-                  onChange={(event) =>
-                    onChange({
-                      label: event.target.value,
-                    })
-                  }
-                  className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
-                />
-              </label>
-
-              <label className="text-xs font-medium text-slate-600">
-                Input Type
-                <select
-                  value={field.inputType}
-                  onChange={(event) =>
-                    onChange({
-                      inputType: event.target.value as FormFieldDraft['inputType'],
-                    })
-                  }
-                  className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
-                >
-                  <option value="">Seleziona tipo</option>
-                  {INPUT_TYPE_OPTIONS.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="text-xs font-medium text-slate-600">
                 Placeholder
                 <input
                   type="text"
@@ -625,83 +586,59 @@ function SortableFormFieldEditorRow({
                   }
                   className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
                 />
+                <p className="mt-1 text-[11px] text-slate-500">
+                  Label, obbligatorieta e tipo input verranno derivati dalla Salesforce describe.
+                </p>
               </label>
             </div>
 
-            <div className="mt-3 flex flex-wrap gap-4">
-              <label className="inline-flex items-center gap-2 text-xs font-medium text-slate-600">
-                <input
-                  type="checkbox"
-                  checked={field.required}
-                  onChange={(event) =>
-                    onChange({
-                      required: event.target.checked,
-                    })
-                  }
-                  className="h-4 w-4 rounded border border-slate-300 text-sky-600 focus:ring-sky-200"
-                />
-                Required
-              </label>
-
-              <label className="inline-flex items-center gap-2 text-xs font-medium text-slate-600">
-                <input
-                  type="checkbox"
-                  checked={field.lookupEnabled}
-                  onChange={(event) =>
-                    onChange({
-                      lookupEnabled: event.target.checked,
-                    })
-                  }
-                  className="h-4 w-4 rounded border border-slate-300 text-sky-600 focus:ring-sky-200"
-                />
-                Lookup
-              </label>
-            </div>
-
-            {field.lookupEnabled ? (
-              <div className="mt-4 rounded-xl border border-sky-100 bg-sky-50/60 p-3">
-                <div className="grid gap-3 lg:grid-cols-2">
-                  <label className="text-xs font-medium text-slate-600">
-                    Lookup Search Field
-                    <input
-                      type="text"
-                      value={field.lookup.searchField}
-                      onChange={(event) =>
-                        onLookupChange('searchField', event.target.value)
-                      }
-                      placeholder="Default: Name"
-                      className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
-                    />
-                  </label>
-
-                  <label className="inline-flex items-center gap-2 self-end text-xs font-medium text-slate-600">
-                    <input
-                      type="checkbox"
-                      checked={field.lookup.prefill}
-                      onChange={(event) =>
-                        onLookupChange('prefill', event.target.checked)
-                      }
-                      className="h-4 w-4 rounded border border-slate-300 text-sky-600 focus:ring-sky-200"
-                    />
-                    Prefill
-                  </label>
-                </div>
-
-                <div className="mt-4 grid gap-4 xl:grid-cols-2">
-                  <QueryWhereJsonArrayEditor
-                    value={field.lookup.whereJson}
-                    availableFields={[]}
-                    onChange={(nextValue) => onLookupChange('whereJson', nextValue)}
-                  />
-
-                  <QueryOrderByJsonArrayEditor
-                    value={field.lookup.orderByJson}
-                    availableFields={[]}
-                    onChange={(nextValue) => onLookupChange('orderByJson', nextValue)}
-                  />
-                </div>
+            <div className="mt-4 rounded-xl border border-sky-100 bg-sky-50/60 p-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-sky-700">
+                  Lookup Tuning
+                </p>
+                <p className="mt-1 text-xs text-slate-600">
+                  Queste opzioni vengono applicate solo se il field e un reference nella describe Salesforce.
+                </p>
               </div>
-            ) : null}
+
+              <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                <label className="text-xs font-medium text-slate-600">
+                  Lookup Search Field
+                  <input
+                    type="text"
+                    value={field.lookup.searchField}
+                    onChange={(event) => onLookupChange('searchField', event.target.value)}
+                    placeholder="Default derivato dalla describe"
+                    className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+                  />
+                </label>
+
+                <label className="inline-flex items-center gap-2 self-end text-xs font-medium text-slate-600">
+                  <input
+                    type="checkbox"
+                    checked={field.lookup.prefill}
+                    onChange={(event) => onLookupChange('prefill', event.target.checked)}
+                    className="h-4 w-4 rounded border border-slate-300 text-sky-600 focus:ring-sky-200"
+                  />
+                  Prefill
+                </label>
+              </div>
+
+              <div className="mt-4 grid gap-4 xl:grid-cols-2">
+                <QueryWhereJsonArrayEditor
+                  value={field.lookup.whereJson}
+                  availableFields={[]}
+                  onChange={(nextValue) => onLookupChange('whereJson', nextValue)}
+                />
+
+                <QueryOrderByJsonArrayEditor
+                  value={field.lookup.orderByJson}
+                  availableFields={[]}
+                  onChange={(nextValue) => onLookupChange('orderByJson', nextValue)}
+                />
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -769,6 +706,6 @@ function getIndexFromSortableId(
 }
 
 function getFormFieldSummary(field: FormFieldDraft, fieldIndex: number): string {
-  const summary = field.label.trim() || field.field.trim()
+  const summary = field.field.trim()
   return summary || `Field ${fieldIndex + 1}`
 }

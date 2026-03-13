@@ -13,6 +13,9 @@ type TestField = {
   createable?: boolean;
   updateable?: boolean;
   filterable?: boolean;
+  defaultedOnCreate?: boolean;
+  calculated?: boolean;
+  autoNumber?: boolean;
   relationshipName?: string;
   referenceTo?: string[];
 };
@@ -26,6 +29,9 @@ function createField(field: TestField) {
     createable: field.createable ?? false,
     updateable: field.updateable ?? false,
     filterable: field.filterable ?? false,
+    defaultedOnCreate: field.defaultedOnCreate ?? false,
+    calculated: field.calculated ?? false,
+    autoNumber: field.autoNumber ?? false,
     relationshipName: field.relationshipName,
     referenceTo: field.referenceTo,
   };
@@ -33,7 +39,9 @@ function createField(field: TestField) {
 
 function createService(fields: ReturnType<typeof createField>[]) {
   const counters = {
-    assertKebabCaseIdCalls: 0,
+    ensureAclResourceCalls: 0,
+    ensureVisibilityBootstrapCalls: 0,
+    assertEntityIdCalls: 0,
     repositoryCalls: 0,
     auditCalls: 0,
     describeCalls: 0,
@@ -41,6 +49,19 @@ function createService(fields: ReturnType<typeof createField>[]) {
 
   const service = new EntityAdminConfigService(
     {
+      async ensureEntityResource() {
+        counters.ensureAclResourceCalls += 1;
+      },
+    } as never,
+    {
+      hasResource() {
+        return false;
+      },
+    } as never,
+    {
+      async ensureEntityBootstrapPolicy() {
+        counters.ensureVisibilityBootstrapCalls += 1;
+      },
       getResourceStatus() {
         return null;
       },
@@ -54,8 +75,8 @@ function createService(fields: ReturnType<typeof createField>[]) {
       },
     } as never,
     {
-      assertKebabCaseId() {
-        counters.assertKebabCaseIdCalls += 1;
+      assertEntityId() {
+        counters.assertEntityIdCalls += 1;
       },
     } as never,
     {
@@ -125,7 +146,7 @@ test('previewEntityBootstrap prioritizes Name in list and detail presets', async
   });
 
   assert.equal(counters.describeCalls, 1);
-  assert.equal(counters.assertKebabCaseIdCalls, 1);
+  assert.equal(counters.assertEntityIdCalls, 1);
   assert.equal(response.entity.list?.views[0]?.query.fields?.[0], 'Id');
   assert.equal(response.entity.list?.views[0]?.query.fields?.[1], 'Name');
   assert.deepEqual(response.entity.list?.views[0]?.columns?.[0], {
@@ -190,7 +211,7 @@ test('previewEntityBootstrap uses only textual filterable fields for starter sea
   });
 });
 
-test('previewEntityBootstrap generates an aggressive form and reports text fallbacks', async () => {
+test('previewEntityBootstrap derives describe-driven form fields and omits managed fields', async () => {
   const { service } = createService([
     createField({ name: 'Id', label: 'Record ID', type: 'id', nillable: false, filterable: true }),
     createField({
@@ -242,18 +263,13 @@ test('previewEntityBootstrap generates an aggressive form and reports text fallb
 
   const formFields =
     response.entity.form?.sections?.flatMap((section) => section.fields ?? []) ?? [];
-  assert.equal(formFields.find((field) => field.field === 'StageName')?.inputType, 'text');
-  assert.equal(formFields.find((field) => field.field === 'IsClosed')?.inputType, 'text');
-  assert.equal(formFields.find((field) => field.field === 'OwnerId')?.inputType, 'text');
-  assert.equal(formFields.find((field) => field.field === 'CloseDate')?.inputType, 'date');
-  assert.ok(
-    response.warnings.some(
-      (warning) =>
-        warning.includes('StageName (picklist)') &&
-        warning.includes('IsClosed (boolean)') &&
-        warning.includes('OwnerId (reference)')
-    )
+  assert.deepEqual(
+    formFields.map((field) => field.field),
+    ['Name', 'StageName', 'CloseDate', 'IsClosed'],
   );
+  assert.equal(formFields.find((field) => field.field === 'OwnerId'), undefined);
+  assert.equal(formFields.find((field) => field.field === 'CloseDate')?.placeholder, undefined);
+  assert.ok(response.warnings.every((warning) => !warning.includes('fallback')));
 });
 
 test('previewEntityBootstrap omits form without writable fields and stays non mutative', async () => {
@@ -357,4 +373,283 @@ test('createEntityConfig rejects unsupported query operators before touching the
 
   assert.equal(counters.repositoryCalls, 0);
   assert.equal(counters.auditCalls, 0);
+});
+
+test('createEntityConfig rejects legacy form field overrides', async () => {
+  const { service, counters } = createService([]);
+
+  await assert.rejects(
+    () =>
+      service.createEntityConfig({
+        entity: {
+          id: 'account',
+          label: 'Account',
+          objectApiName: 'Account',
+          form: {
+            title: {
+              create: 'Nuovo account',
+              edit: 'Modifica account',
+            },
+            query: {
+              object: 'Account',
+              fields: ['Id', 'Name'],
+            },
+            sections: [
+              {
+                title: 'Main',
+                fields: [
+                  {
+                    field: 'Name',
+                    label: 'Custom Name',
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      }),
+    (error: unknown) =>
+      error instanceof BadRequestException &&
+      error.message === 'entity.form.sections[0].fields[0].label is not supported',
+  );
+
+  assert.equal(counters.repositoryCalls, 0);
+  assert.equal(counters.auditCalls, 0);
+});
+
+test('createEntityConfig auto-provisions entity ACL resource before persistence', async () => {
+  const calls: string[] = [];
+  const service = new EntityAdminConfigService(
+    {
+      async ensureEntityResource(entityId: string) {
+        calls.push(`ensure:${entityId}`);
+      },
+    } as never,
+    {
+      hasResource() {
+        return true;
+      },
+    } as never,
+    {
+      async ensureEntityBootstrapPolicy(input: { entityId: string; objectApiName: string }) {
+        calls.push(`visibility:${input.entityId}:${input.objectApiName}`);
+      },
+    } as never,
+    {
+      async syncSystemResources() {
+        calls.push('sync');
+      },
+    } as never,
+    {
+      async recordApplicationSuccessOrThrow() {
+        calls.push('audit');
+      },
+    } as never,
+    {
+      assertEntityId(entityId: string) {
+        calls.push(`assert:${entityId}`);
+      },
+    } as never,
+    {
+      async listSummaries() {
+        return [];
+      },
+      async getEntityConfig(entityId: string) {
+        return {
+          id: entityId,
+          label: 'Account',
+          objectApiName: 'Account',
+        };
+      },
+      async hasEntityConfig() {
+        return false;
+      },
+      async upsertEntityConfig() {
+        calls.push('upsert');
+      },
+      async deleteEntityConfig() {},
+    } as never,
+    {
+      async describeObjectFields() {
+        return [];
+      },
+    } as never,
+  );
+
+  await service.createEntityConfig({
+    entity: {
+      id: 'account',
+      label: 'Account',
+      objectApiName: 'Account',
+    },
+  });
+
+  assert.deepEqual(calls, [
+    'assert:account',
+    'ensure:account',
+    'visibility:account:Account',
+    'upsert',
+    'sync',
+    'audit',
+  ]);
+});
+
+test('createEntityConfig derives id and label from objectApiName when omitted', async () => {
+  const calls: string[] = [];
+  const service = new EntityAdminConfigService(
+    {
+      async ensureEntityResource(entityId: string) {
+        calls.push(`ensure:${entityId}`);
+      },
+    } as never,
+    {
+      hasResource() {
+        return true;
+      },
+    } as never,
+    {
+      async ensureEntityBootstrapPolicy(input: { entityId: string; objectApiName: string }) {
+        calls.push(`visibility:${input.entityId}:${input.objectApiName}`);
+      },
+    } as never,
+    {
+      async syncSystemResources() {
+        calls.push('sync');
+      },
+    } as never,
+    {
+      async recordApplicationSuccessOrThrow(input: { targetId: string }) {
+        calls.push(`audit:${input.targetId}`);
+      },
+    } as never,
+    {
+      assertEntityId(entityId: string) {
+        calls.push(`assert:${entityId}`);
+      },
+    } as never,
+    {
+      async listSummaries() {
+        return [];
+      },
+      async getEntityConfig(entityId: string) {
+        return {
+          id: entityId,
+          label: 'Pricebook Entry',
+          objectApiName: 'PricebookEntry',
+        };
+      },
+      async hasEntityConfig() {
+        return false;
+      },
+      async upsertEntityConfig(entity: { id: string; label: string }) {
+        calls.push(`upsert:${entity.id}:${entity.label}`);
+      },
+      async deleteEntityConfig() {},
+    } as never,
+    {
+      async describeObjectFields() {
+        return [];
+      },
+    } as never,
+  );
+
+  const response = await service.createEntityConfig({
+    entity: {
+      objectApiName: 'PricebookEntry',
+    },
+  });
+
+  assert.equal(response.entity.id, 'PricebookEntry');
+  assert.equal(response.entity.label, 'Pricebook Entry');
+  assert.deepEqual(calls, [
+    'assert:PricebookEntry',
+    'ensure:PricebookEntry',
+    'visibility:PricebookEntry:PricebookEntry',
+    'upsert:PricebookEntry:Pricebook Entry',
+    'sync',
+    'audit:PricebookEntry',
+  ]);
+});
+
+test('createEntityConfig auto-generates a unique id when requested id already exists', async () => {
+  const calls: string[] = [];
+  const seenIds: string[] = [];
+  const service = new EntityAdminConfigService(
+    {
+      async ensureEntityResource(entityId: string) {
+        calls.push(`ensure:${entityId}`);
+      },
+    } as never,
+    {
+      hasResource() {
+        return true;
+      },
+    } as never,
+    {
+      async ensureEntityBootstrapPolicy(input: { entityId: string; objectApiName: string }) {
+        calls.push(`visibility:${input.entityId}:${input.objectApiName}`);
+      },
+    } as never,
+    {
+      async syncSystemResources() {
+        calls.push('sync');
+      },
+    } as never,
+    {
+      async recordApplicationSuccessOrThrow(input: { targetId: string }) {
+        calls.push(`audit:${input.targetId}`);
+      },
+    } as never,
+    {
+      assertEntityId(entityId: string) {
+        calls.push(`assert:${entityId}`);
+      },
+    } as never,
+    {
+      async listSummaries() {
+        return [];
+      },
+      async getEntityConfig(entityId: string) {
+        calls.push(`get:${entityId}`);
+        return {
+          id: entityId,
+          label: 'Listino',
+          objectApiName: 'PricebookEntry',
+        };
+      },
+      async hasEntityConfig(entityId: string) {
+        seenIds.push(entityId);
+        return entityId === 'Listino';
+      },
+      async upsertEntityConfig(entity: { id: string }) {
+        calls.push(`upsert:${entity.id}`);
+      },
+      async deleteEntityConfig() {},
+    } as never,
+    {
+      async describeObjectFields() {
+        return [];
+      },
+    } as never,
+  );
+
+  const response = await service.createEntityConfig({
+    entity: {
+      id: 'Listino',
+      label: 'Listino',
+      objectApiName: 'PricebookEntry',
+    },
+  });
+
+  assert.deepEqual(seenIds, ['Listino', 'Listino-2']);
+  assert.equal(response.entity.id, 'Listino-2');
+  assert.deepEqual(calls, [
+    'assert:Listino',
+    'ensure:Listino-2',
+    'visibility:Listino-2:PricebookEntry',
+    'upsert:Listino-2',
+    'sync',
+    'audit:Listino-2',
+    'get:Listino-2',
+  ]);
 });

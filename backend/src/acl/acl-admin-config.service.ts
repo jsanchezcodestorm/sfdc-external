@@ -211,6 +211,45 @@ export class AclAdminConfigService {
     return { resource: nextResource };
   }
 
+  async ensureEntityResource(entityId: string): Promise<{ resourceId: string; created: boolean }> {
+    const normalizedEntityId = entityId.trim();
+    const resourceId = `entity:${normalizedEntityId}`;
+    const snapshot = await this.loadSnapshot();
+
+    if (snapshot.resources.some((resource) => resource.id === resourceId)) {
+      return {
+        resourceId,
+        created: false
+      };
+    }
+
+    const resource = normalizeAclResourceConfigInput(
+      {
+        id: resourceId,
+        type: 'entity',
+        permissions: [],
+        description: `Auto-provisioned ACL resource for entity ${normalizedEntityId}`
+      },
+      'resource'
+    );
+    await this.persistSnapshot(upsertResourceInSnapshot(snapshot, resource));
+    await this.auditWriteService.recordApplicationSuccessOrThrow({
+      action: 'ACL_RESOURCE_AUTO_PROVISION',
+      targetType: 'acl-resource',
+      targetId: resourceId,
+      payload: resource,
+      metadata: {
+        source: 'entity-admin-config',
+        type: resource.type
+      }
+    });
+
+    return {
+      resourceId,
+      created: true
+    };
+  }
+
   async updateResource(resourceId: string, payload: unknown): Promise<AclAdminResourceResponse> {
     const previousId = resourceId.trim();
     const snapshot = await this.loadSnapshot();

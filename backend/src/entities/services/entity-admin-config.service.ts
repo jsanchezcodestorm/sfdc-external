@@ -1,11 +1,13 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 
+import { AclAdminConfigService } from '../../acl/acl-admin-config.service';
 import type { AclDerivedResourceStatus } from '../../acl/acl-admin.types';
 import { AclResourceSyncService } from '../../acl/acl-resource-sync.service';
 import { AclService } from '../../acl/acl.service';
 import { AuditWriteService } from '../../audit/audit-write.service';
 import { ResourceAccessService } from '../../common/services/resource-access.service';
 import { SalesforceService } from '../../salesforce/salesforce.service';
+import { VisibilityAdminService } from '../../visibility/visibility-admin.service';
 import {
   EntityActionConfig,
   EntityConfig,
@@ -17,6 +19,7 @@ import {
   EntityListViewConfig,
   EntityRelatedListConfig
 } from '../entities.types';
+import { normalizeEntityFormFieldConfig } from '../entity-form-config.validation';
 import { normalizeEntityQueryConfig } from '../entity-query-config.validation';
 
 import { EntityAdminConfigRepository, EntityAdminConfigSummary } from './entity-admin-config.repository';
@@ -65,6 +68,9 @@ interface SalesforceFieldDescribe {
   createable: boolean;
   updateable: boolean;
   filterable: boolean;
+  defaultedOnCreate?: boolean;
+  calculated?: boolean;
+  autoNumber?: boolean;
   relationshipName?: string;
   referenceTo?: string[];
 }
@@ -93,7 +99,6 @@ const TEXT_SEARCH_TYPES = new Set([
   'multipicklist'
 ]);
 
-const SAFE_TEXT_INPUT_SOURCE_TYPES = new Set(['string', 'id', 'url', 'encryptedstring']);
 const DETAIL_FORMAT_FIELD_TYPES = new Set(['date', 'datetime']);
 const MAX_LIST_DISPLAY_FIELDS = 5;
 const MAX_DETAIL_EXTRA_FIELDS = 6;
@@ -111,7 +116,9 @@ export class EntityAdminConfigService {
   private readonly salesforceFieldRefreshPromises = new Map<string, Promise<SalesforceFieldSuggestion[]>>();
 
   constructor(
+    private readonly aclAdminConfigService: AclAdminConfigService,
     private readonly aclService: AclService,
+    private readonly visibilityAdminService: VisibilityAdminService,
     private readonly aclResourceSyncService: AclResourceSyncService,
     private readonly auditWriteService: AuditWriteService,
     private readonly resourceAccessService: ResourceAccessService,
@@ -130,7 +137,7 @@ export class EntityAdminConfigService {
   }
 
   async getEntityConfig(entityId: string): Promise<EntityAdminConfigResponse> {
-    this.resourceAccessService.assertKebabCaseId(entityId, 'entityId');
+    this.resourceAccessService.assertEntityId(entityId, 'entityId');
     const entity = await this.repository.getEntityConfig(entityId);
     return {
       entity,
@@ -139,13 +146,21 @@ export class EntityAdminConfigService {
   }
 
   async createEntityConfig(payload: UpsertEntityAdminConfigPayload): Promise<EntityAdminConfigResponse> {
-    const entity = this.normalizeEntityConfig(undefined, payload.entity);
-    this.resourceAccessService.assertKebabCaseId(entity.id, 'entity.id');
+    const normalizedEntity = this.normalizeEntityConfigForCreate(payload.entity);
+    this.resourceAccessService.assertEntityId(normalizedEntity.id, 'entity.id');
+    const entityId = await this.resolveUniqueEntityId(normalizedEntity.id);
+    const entity: EntityConfig = entityId === normalizedEntity.id
+      ? normalizedEntity
+      : {
+          ...normalizedEntity,
+          id: entityId
+        };
 
-    if (await this.repository.hasEntityConfig(entity.id)) {
-      throw new ConflictException(`Entity config ${entity.id} already exists`);
-    }
-
+    await this.aclAdminConfigService.ensureEntityResource(entity.id);
+    await this.visibilityAdminService.ensureEntityBootstrapPolicy({
+      entityId: entity.id,
+      objectApiName: entity.objectApiName
+    });
     await this.repository.upsertEntityConfig(entity);
     await this.aclResourceSyncService.syncSystemResources();
     await this.auditWriteService.recordApplicationSuccessOrThrow({
@@ -167,7 +182,7 @@ export class EntityAdminConfigService {
     payload: UpsertEntityAdminConfigPayload
   ): Promise<EntityAdminBootstrapPreviewResponse> {
     const entity = this.normalizeBootstrapEntityBase(payload.entity);
-    this.resourceAccessService.assertKebabCaseId(entity.id, 'entity.id');
+    this.resourceAccessService.assertEntityId(entity.id, 'entity.id');
 
     const describedFields = (await this.salesforceService.describeObjectFields(
       entity.objectApiName
@@ -181,7 +196,7 @@ export class EntityAdminConfigService {
   }
 
   async updateEntityConfig(entityId: string, payload: UpsertEntityAdminConfigPayload): Promise<EntityAdminConfigResponse> {
-    this.resourceAccessService.assertKebabCaseId(entityId, 'entityId');
+    this.resourceAccessService.assertEntityId(entityId, 'entityId');
 
     if (!(await this.repository.hasEntityConfig(entityId))) {
       throw new NotFoundException(`Entity config ${entityId} not found`);
@@ -189,6 +204,7 @@ export class EntityAdminConfigService {
 
     const normalizedEntityConfig = this.normalizeEntityConfig(entityId, payload.entity);
 
+    await this.aclAdminConfigService.ensureEntityResource(entityId);
     await this.repository.upsertEntityConfig(normalizedEntityConfig);
     await this.aclResourceSyncService.syncSystemResources();
     await this.auditWriteService.recordApplicationSuccessOrThrow({
@@ -208,7 +224,7 @@ export class EntityAdminConfigService {
   }
 
   async deleteEntityConfig(entityId: string): Promise<void> {
-    this.resourceAccessService.assertKebabCaseId(entityId, 'entityId');
+    this.resourceAccessService.assertEntityId(entityId, 'entityId');
 
     if (!(await this.repository.hasEntityConfig(entityId))) {
       throw new NotFoundException(`Entity config ${entityId} not found`);
@@ -301,6 +317,49 @@ export class EntityAdminConfigService {
     };
   }
 
+  private normalizeEntityConfigForCreate(value: unknown): EntityConfig {
+    const entity = this.requireObject(value, 'entity payload must be an object');
+    const objectApiName = this.requireString(entity.objectApiName, 'entity.objectApiName is required');
+    const derivedId = this.asOptionalString(entity.id) ?? objectApiName;
+    const derivedLabel = this.asOptionalString(entity.label) ?? this.buildEntityLabelFromObjectApiName(objectApiName);
+
+    if (!derivedLabel) {
+      throw new BadRequestException('entity.label is required');
+    }
+
+    return this.normalizeEntityConfig(undefined, {
+      ...entity,
+      id: derivedId,
+      label: derivedLabel,
+      objectApiName
+    });
+  }
+
+  private buildEntityLabelFromObjectApiName(objectApiName: string): string {
+    const normalized = objectApiName
+      .replace(/__(c|r)$/i, '')
+      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+      .replace(/[_-]+/g, ' ')
+      .trim();
+
+    return normalized.length > 0 ? normalized : objectApiName;
+  }
+
+  private async resolveUniqueEntityId(baseEntityId: string): Promise<string> {
+    if (!(await this.repository.hasEntityConfig(baseEntityId))) {
+      return baseEntityId;
+    }
+
+    for (let suffix = 2; suffix < Number.MAX_SAFE_INTEGER; suffix += 1) {
+      const candidate = `${baseEntityId}-${suffix}`;
+      if (!(await this.repository.hasEntityConfig(candidate))) {
+        return candidate;
+      }
+    }
+
+    throw new BadRequestException(`Unable to auto-generate a unique entity id from ${baseEntityId}`);
+  }
+
   private buildEntityAuditMetadata(entity: EntityConfig): Record<string, unknown> {
     return {
       objectApiName: entity.objectApiName,
@@ -335,7 +394,7 @@ export class EntityAdminConfigService {
   ): EntityAdminBootstrapPreviewResponse {
     const normalizedFields = this.normalizeBootstrapFields(describedFields);
     const warnings: string[] = [
-      `Configura manualmente la risorsa ACL entity:${entity.id} prima di esporre la nuova entity.`
+      `Al salvataggio viene auto-creata la risorsa ACL entity:${entity.id}; assegna manualmente i permessi ACL e i visibility assignments per abilitarne l uso.`
     ];
     const listPreset = this.buildBootstrapListPreset(entity, normalizedFields, warnings);
     const detailPreset = this.buildBootstrapDetailConfig(
@@ -518,7 +577,7 @@ export class EntityAdminConfigService {
     warnings: string[]
   ): EntityFormConfig | undefined {
     const writableFields = this.rankBootstrapFields(fields, 'form')
-      .filter((field) => field.name !== 'Id' && (field.createable || field.updateable))
+      .filter((field) => (field.createable || field.updateable) && !this.isBootstrapManagedFormField(field))
       .slice(0, MAX_FORM_FIELDS);
 
     if (writableFields.length === 0) {
@@ -526,17 +585,6 @@ export class EntityAdminConfigService {
         'Preset form: nessun campo Salesforce createable/updateable disponibile, la sezione Form viene omessa.'
       );
       return undefined;
-    }
-
-    const fallbackTextFields = writableFields.filter((field) =>
-      this.usesBootstrapTextFallback(field)
-    );
-    if (fallbackTextFields.length > 0) {
-      warnings.push(
-        `Preset form: input text di fallback per ${this.formatWarningFieldList(
-          fallbackTextFields
-        )}.`
-      );
     }
 
     const sections = this.chunkFields(writableFields, MAX_FORM_SECTION_FIELDS).map(
@@ -810,53 +858,18 @@ export class EntityAdminConfigService {
     field: SalesforceFieldDescribe
   ): NonNullable<EntityFormSectionConfig['fields']>[number] {
     return {
-      field: field.name,
-      label: field.label || field.name,
-      inputType: this.mapBootstrapFormInputType(field.type),
-      required: field.nillable ? undefined : true
+      field: field.name
     };
   }
 
-  private mapBootstrapFormInputType(type: string): string {
-    const normalizedType = type.toLowerCase();
-
-    if (normalizedType === 'email') {
-      return 'email';
-    }
-
-    if (normalizedType === 'phone') {
-      return 'tel';
-    }
-
-    if (normalizedType === 'date') {
-      return 'date';
-    }
-
-    if (
-      normalizedType === 'textarea' ||
-      normalizedType === 'longtextarea' ||
-      normalizedType === 'richtextarea'
-    ) {
-      return 'textarea';
-    }
-
-    return 'text';
-  }
-
-  private usesBootstrapTextFallback(field: SalesforceFieldDescribe): boolean {
+  private isBootstrapManagedFormField(field: SalesforceFieldDescribe): boolean {
     return (
-      this.mapBootstrapFormInputType(field.type) === 'text' &&
-      !SAFE_TEXT_INPUT_SOURCE_TYPES.has(field.type.toLowerCase())
+      field.name === 'Id' ||
+      this.isBootstrapSystemField(field.name.toLowerCase()) ||
+      this.isBootstrapAuditField(field.name.toLowerCase()) ||
+      field.calculated === true ||
+      field.autoNumber === true
     );
-  }
-
-  private formatWarningFieldList(fields: SalesforceFieldDescribe[]): string {
-    const visibleFields = fields.slice(0, 5).map((field) => `${field.name} (${field.type})`);
-    if (fields.length <= 5) {
-      return visibleFields.join(', ');
-    }
-
-    return `${visibleFields.join(', ')} e altri ${fields.length - 5}`;
   }
 
   private chunkFields<T>(items: T[], size: number): T[][] {
@@ -1033,9 +1046,9 @@ export class EntityAdminConfigService {
     const section = this.requireObject(value, `entity.form.sections[${index}] must be an object`);
     const fields = this.requireArray(section.fields, `entity.form.sections[${index}].fields must be an array`)
       .map((entry, fieldIndex) =>
-        this.requireObject(
+        normalizeEntityFormFieldConfig(
           entry,
-          `entity.form.sections[${index}].fields[${fieldIndex}] must be an object`
+          `entity.form.sections[${index}].fields[${fieldIndex}]`
         )
       );
 
@@ -1045,7 +1058,7 @@ export class EntityAdminConfigService {
 
     return {
       title: this.asOptionalString(section.title),
-      fields: fields as unknown as EntityFormSectionConfig['fields']
+      fields
     };
   }
 

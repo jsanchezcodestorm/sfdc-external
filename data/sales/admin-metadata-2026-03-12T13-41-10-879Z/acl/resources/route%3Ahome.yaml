@@ -1,0 +1,7 @@
+description: Dashboard home
+id: route:home
+permissions:
+  - PORTAL_USER
+  - PORTAL_ADMIN
+target: /
+type: route

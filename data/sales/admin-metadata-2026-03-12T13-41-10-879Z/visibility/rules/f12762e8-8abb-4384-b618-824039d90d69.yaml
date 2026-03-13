@@ -1,0 +1,10 @@
+active: true
+condition:
+  field: Id
+  op: '!='
+  value: null
+coneCode: entity-product-bootstrap
+description: Auto bootstrap visibility ALLOW rule for entity product
+effect: ALLOW
+id: f12762e8-8abb-4384-b618-824039d90d69
+objectApiName: Product2

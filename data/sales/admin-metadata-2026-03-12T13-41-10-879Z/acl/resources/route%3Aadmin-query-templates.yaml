@@ -1,0 +1,6 @@
+description: Pagina admin query template
+id: route:admin-query-templates
+permissions:
+  - PORTAL_ADMIN
+target: /admin/query-templates
+type: route

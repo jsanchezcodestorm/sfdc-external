@@ -1,0 +1,5 @@
+description: Auto-provisioned ACL resource for entity Product2
+id: entity:Product2
+permissions:
+  - PORTAL_ADMIN
+type: entity

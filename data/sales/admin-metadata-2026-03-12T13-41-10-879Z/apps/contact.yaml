@@ -1,0 +1,13 @@
+entityIds:
+  - account
+  - Contact
+  - Opportunity
+  - Product2
+id: contact
+label: Sales
+permissionCodes:
+  - PORTAL_ADMIN
+  - PORTAL_OPERATIONS
+  - PORTAL_USER
+  - PORTAL_HR
+sortOrder: 0

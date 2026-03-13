@@ -1,0 +1,7 @@
+description: Legge la navigazione disponibile
+id: rest:navigation-read
+permissions:
+  - PORTAL_USER
+  - PORTAL_ADMIN
+target: /navigation
+type: rest

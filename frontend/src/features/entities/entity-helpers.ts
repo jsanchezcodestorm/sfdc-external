@@ -179,9 +179,10 @@ export function renderRecordTemplate(template: string, record: EntityRecord): st
 }
 
 export function normalizeEntityBasePath(entityId: string, configuredBasePath?: string): string {
+  const defaultPath = `/s/${entityId}`
   const normalizedConfigPath = configuredBasePath?.trim()
   if (!normalizedConfigPath) {
-    return `/s/${entityId}`
+    return defaultPath
   }
 
   const withLeadingSlash = normalizedConfigPath.startsWith('/')
@@ -189,7 +190,21 @@ export function normalizeEntityBasePath(entityId: string, configuredBasePath?: s
     : `/${normalizedConfigPath}`
 
   const withoutTrailingSlash = withLeadingSlash.replace(/\/+$/, '')
-  return withoutTrailingSlash.length > 0 ? withoutTrailingSlash : '/'
+  if (withoutTrailingSlash.length === 0) {
+    return defaultPath
+  }
+
+  const runtimeMatch = /^\/s\/([^/]+)$/.exec(withoutTrailingSlash)
+  if (!runtimeMatch) {
+    return defaultPath
+  }
+
+  const routeEntityId = decodeURIComponent(runtimeMatch[1] ?? '').trim()
+  if (!routeEntityId || routeEntityId !== entityId) {
+    return defaultPath
+  }
+
+  return withoutTrailingSlash
 }
 
 export function selectListView(

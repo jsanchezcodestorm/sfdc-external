@@ -1,0 +1,6 @@
+description: Pagina admin configurazione ACL
+id: route:admin-acl
+permissions:
+  - PORTAL_ADMIN
+target: /admin/acl
+type: route

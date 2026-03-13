@@ -27,6 +27,7 @@ function createService(overrides?: {
 
   const resourceAccessService = {
     assertKebabCaseId() {},
+    assertEntityId() {},
   };
 
   const auditWriteService = {

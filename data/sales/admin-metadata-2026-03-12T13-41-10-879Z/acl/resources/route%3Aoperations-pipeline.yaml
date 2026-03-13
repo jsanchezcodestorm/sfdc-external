@@ -1,0 +1,7 @@
+description: Pagina pipeline operations
+id: route:operations-pipeline
+permissions:
+  - PORTAL_OPERATIONS
+  - PORTAL_ADMIN
+target: /operations/pipeline
+type: route

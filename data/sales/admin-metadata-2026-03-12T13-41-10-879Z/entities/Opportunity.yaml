@@ -1,0 +1,37 @@
+detail:
+  fallbackTitle: Opportunity
+  query:
+    fields:
+      - Id
+      - Name
+      - StageName
+      - CloseDate
+      - AccountId
+    object: Opportunity
+  sections:
+    - fields:
+        - field: Name
+      title: Opportunity
+id: Opportunity
+label: Opportunity
+list:
+  title: Opportunity
+  views:
+    - columns:
+        - Id
+        - Name
+        - StageName
+        - CloseDate
+      default: true
+      id: all
+      label: all
+      query:
+        fields:
+          - Id
+          - Name
+          - StageName
+          - CloseDate
+        object: Opportunity
+navigation:
+  basePath: /s/opportunity
+objectApiName: Opportunity

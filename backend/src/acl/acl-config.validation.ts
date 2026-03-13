@@ -11,7 +11,9 @@ import type {
 } from './acl.types';
 
 const CANONICAL_PERMISSION_CODE_PATTERN = /^[A-Z][A-Z0-9_]*$/;
-const RESOURCE_ID_PATTERN = /^(rest|entity|query|route):([a-z0-9]+(?:-[a-z0-9]+)*)$/;
+const RESOURCE_ID_PATTERN = /^(rest|entity|query|route):(.+)$/;
+const KEBAB_CASE_RESOURCE_SEGMENT_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const ENTITY_RESOURCE_SEGMENT_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 const RESOURCE_TYPES: ReadonlySet<AclResourceType> = new Set(['rest', 'entity', 'query', 'route']);
 const RESOURCE_ACCESS_MODES: ReadonlySet<AclResourceAccessMode> = new Set([
   'disabled',
@@ -234,11 +236,26 @@ function validateSnapshotConsistency(snapshot: AclConfigSnapshot): void {
 function validateResourceId(resourceId: string, type: AclResourceType, fieldName: string): void {
   const match = RESOURCE_ID_PATTERN.exec(resourceId);
   if (!match) {
-    throw new BadRequestException(`${fieldName} must use the format <type>:<lowercase-kebab-case-id>`);
+    throw new BadRequestException(`${fieldName} must use the format <type>:<id>`);
   }
 
   if (match[1] !== type) {
     throw new BadRequestException(`${fieldName} prefix must match resource type ${type}`);
+  }
+
+  const segment = match[2];
+  const isValidSegment = type === 'entity'
+    ? ENTITY_RESOURCE_SEGMENT_PATTERN.test(segment)
+    : KEBAB_CASE_RESOURCE_SEGMENT_PATTERN.test(segment);
+
+  if (!isValidSegment) {
+    if (type === 'entity') {
+      throw new BadRequestException(
+        `${fieldName} entity id must contain only letters, numbers, underscores, or hyphens`
+      );
+    }
+
+    throw new BadRequestException(`${fieldName} must use lowercase kebab-case for ${type} ids`);
   }
 }
 

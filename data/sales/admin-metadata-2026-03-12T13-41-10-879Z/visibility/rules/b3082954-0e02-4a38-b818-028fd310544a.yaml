@@ -1,0 +1,10 @@
+active: true
+condition:
+  field: Id
+  op: '!='
+  value: null
+coneCode: entity-Opportunity-bootstrap
+description: Auto bootstrap visibility ALLOW rule for entity Opportunity
+effect: ALLOW
+id: b3082954-0e02-4a38-b818-028fd310544a
+objectApiName: Opportunity

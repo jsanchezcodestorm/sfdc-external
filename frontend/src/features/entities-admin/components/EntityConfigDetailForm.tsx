@@ -76,7 +76,7 @@ export function EntityConfigDetailForm({
           <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="grid gap-4 lg:grid-cols-2">
               <label className="text-sm font-medium text-slate-700">
-                Query Object API Name
+                Query Object API Name <span className="text-rose-600">*</span>
                 <input
                   type="text"
                   value={baseObjectApiName}
@@ -111,7 +111,7 @@ export function EntityConfigDetailForm({
               </label>
 
               <label className="text-sm font-medium text-slate-700">
-                Fallback Title
+                Fallback Title <span className="text-rose-600">*</span>
                 <input
                   type="text"
                   value={value.fallbackTitle}
@@ -133,7 +133,7 @@ export function EntityConfigDetailForm({
 
             <div className="mt-5">
               <SalesforceFieldMultiSelect
-                label="Query Fields"
+                label="Query Fields *"
                 objectApiName={baseObjectApiName}
                 value={value.queryFields}
                 helperText="Campi caricati dalla query di dettaglio."
@@ -196,6 +196,7 @@ export function EntityConfigDetailForm({
         <DetailSectionsEditor
           objectApiName={baseObjectApiName}
           sections={value.sections}
+          preferredFields={value.queryFields}
           onChange={(nextSections) => updateField('sections', nextSections)}
         />
       ),

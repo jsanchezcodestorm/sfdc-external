@@ -10,6 +10,7 @@ import { AclGuard } from '../common/guards/acl.guard';
 import { GetEntityListDto } from './dto/get-entity-list.dto';
 import { GetEntityRelatedListDto } from './dto/get-entity-related-list.dto';
 import { PreviewEntityAdminBootstrapDto } from './dto/preview-entity-admin-bootstrap.dto';
+import { SearchEntityFormLookupDto } from './dto/search-entity-form-lookup.dto';
 import { SearchSalesforceObjectFieldsDto } from './dto/search-salesforce-object-fields.dto';
 import { SearchSalesforceObjectsDto } from './dto/search-salesforce-objects.dto';
 import { UpsertEntityAdminConfigDto } from './dto/upsert-entity-admin-config.dto';
@@ -120,6 +121,17 @@ export class EntitiesController {
     @Param('recordId') recordId: string
   ): Promise<unknown> {
     return this.entitiesService.getEntityForm(user, entityId, recordId);
+  }
+
+  @Post(':entityId/form/lookups/:fieldName/search')
+  @AclResource('rest:entities-read')
+  searchEntityFormLookup(
+    @CurrentUser() user: SessionUser,
+    @Param('entityId') entityId: string,
+    @Param('fieldName') fieldName: string,
+    @Body() payload: SearchEntityFormLookupDto
+  ): Promise<unknown> {
+    return this.entitiesService.searchEntityFormLookup(user, entityId, fieldName, payload);
   }
 
   @Get(':entityId/related/:relatedListId')

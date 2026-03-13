@@ -1,0 +1,7 @@
+description: Accesso entity opportunity
+id: entity:opportunity
+permissions:
+  - PORTAL_OPERATIONS
+  - PORTAL_ADMIN
+target: /entities/opportunity
+type: entity

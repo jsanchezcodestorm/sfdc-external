@@ -1,0 +1,7 @@
+description: Pipeline account
+id: query:account-pipeline
+permissions:
+  - PORTAL_OPERATIONS
+  - PORTAL_ADMIN
+target: /query/template/account-pipeline
+type: query
