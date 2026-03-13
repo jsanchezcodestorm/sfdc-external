@@ -1,8 +1,8 @@
+import { AclResourceStatusNotice } from '../../../components/AclResourceStatusNotice'
 import type { Dispatch, SetStateAction } from 'react'
 
 import type { AclResourceStatus } from '../../../lib/acl-resource-status'
 import {
-  describeAclResourceStatus,
   formatAclResourceAccessMode,
   formatAclResourceSyncState,
 } from '../../../lib/acl-resource-status'
@@ -52,11 +52,16 @@ export function QueryTemplateEditorForm({
               ? `- ${formatAclResourceAccessMode(aclResourceStatus.accessMode)} / ${formatAclResourceSyncState(aclResourceStatus.syncState)}`
               : '- verra creata automaticamente come risorsa system disabilitata'}
           </p>
-          <p className="mt-1">
-            {aclResourceStatus
-              ? describeAclResourceStatus(aclResourceStatus)
-              : 'Dopo il primo salvataggio potrai attivarla dal modulo ACL associando una permission o cambiando l access mode.'}
-          </p>
+          {aclResourceStatus ? (
+            <AclResourceStatusNotice
+              status={aclResourceStatus}
+              className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-800"
+            />
+          ) : (
+            <p className="mt-1">
+              Dopo il primo salvataggio potrai attivarla dal modulo ACL associando una permission o cambiando l access mode.
+            </p>
+          )}
         </div>
       ) : null}
 

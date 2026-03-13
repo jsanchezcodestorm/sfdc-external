@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
+import { AclResourceStatusNotice } from '../../../components/AclResourceStatusNotice'
 import { useAppDialog } from '../../../components/app-dialog'
 import {
-  describeAclResourceStatus,
   formatAclResourceAccessMode,
   formatAclResourceManagedBy,
   formatAclResourceSyncState,
@@ -161,10 +161,7 @@ export function QueryTemplateDetailPage() {
         <p className="mt-4 text-sm text-slate-600">Caricamento query template...</p>
       ) : payload ? (
         <div className="mt-5 space-y-5">
-          <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-            <code className="font-mono">{payload.aclResourceStatus.id}</code> -{' '}
-            {describeAclResourceStatus(payload.aclResourceStatus)}
-          </p>
+          <AclResourceStatusNotice status={payload.aclResourceStatus} />
 
           <div className="grid gap-3 sm:grid-cols-4">
             <DetailMetric

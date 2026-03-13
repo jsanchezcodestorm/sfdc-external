@@ -1,14 +1,20 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 import { useBeforeUnload, useBlocker, useLocation, useNavigate, useParams } from 'react-router-dom'
 
 import { useAppDialog } from '../../../components/app-dialog'
 import {
-  describeAclResourceStatus,
   formatAclResourceAccessMode,
   formatAclResourceSyncState,
   isAclResourceOperational,
   type AclResourceStatus,
 } from '../../../lib/acl-resource-status'
+import { AclResourceStatusNotice } from '../../../components/AclResourceStatusNotice'
+import {
+  fetchAclPermissions,
+  fetchAclResource,
+  updateAclResource,
+} from '../../acl-admin/acl-admin-api'
+import type { AclAdminPermissionSummary } from '../../acl-admin/acl-admin-types'
 import type { EntityConfig } from '../../entities/entity-types'
 import {
   createEntityAdminConfig,
@@ -76,6 +82,13 @@ type RouteParams = {
 
 type EntityAdminLocationState = {
   saveInfo?: string
+}
+
+type EntityCreationWizardStep = 'identity' | 'bootstrap' | 'actions' | 'access' | 'review'
+
+type EntityCreationAclDraft = {
+  accessMode: 'disabled' | 'authenticated' | 'permission-bound'
+  permissionCodes: string[]
 }
 
 export function EntityAdminConfigPage() {
@@ -146,6 +159,15 @@ export function EntityAdminConfigPage() {
   const [loadingBootstrapPreview, setLoadingBootstrapPreview] = useState(false)
   const [bootstrapPreviewError, setBootstrapPreviewError] = useState<string | null>(null)
   const [basePathAutoSyncEnabled, setBasePathAutoSyncEnabled] = useState(true)
+  const [creationWizardStep, setCreationWizardStep] =
+    useState<EntityCreationWizardStep>('identity')
+  const [creationAclDraft, setCreationAclDraft] = useState<EntityCreationAclDraft>({
+    accessMode: 'permission-bound',
+    permissionCodes: [],
+  })
+  const [aclPermissionOptions, setAclPermissionOptions] = useState<AclAdminPermissionSummary[]>([])
+  const [loadingAclPermissionOptions, setLoadingAclPermissionOptions] = useState(false)
+  const [aclPermissionOptionsError, setAclPermissionOptionsError] = useState<string | null>(null)
 
   const selectedEntitySummary = useMemo(
     () => entities.find((entity) => entity.id === selectedEntityId) ?? null,
@@ -195,6 +217,25 @@ export function EntityAdminConfigPage() {
   )
   const hasCurrentBootstrapPreview =
     bootstrapPreview !== null && bootstrapPreviewFingerprint === currentBaseFingerprint
+  const canCreateBaseEntity = createEntityConfigFromBaseDraft(baseFormDraft) !== null
+  const hasGeneratedStructure =
+    !isListFormDraftEmpty(listFormDraft) ||
+    !isDetailFormDraftEmpty(detailFormDraft) ||
+    !isFormFormDraftEmpty(formFormDraft)
+  const listRowActions = useMemo(
+    () => readEntityActionDrafts(listFormDraft.views[0]?.rowActionsJson ?? ''),
+    [listFormDraft.views],
+  )
+  const detailActions = useMemo(
+    () => readEntityActionDrafts(detailFormDraft.actionsJson),
+    [detailFormDraft.actionsJson],
+  )
+  const actionsReady = listRowActions.length > 0 || detailActions.length > 0
+  const accessReady =
+    creationAclDraft.accessMode === 'authenticated' ||
+    creationAclDraft.accessMode === 'disabled' ||
+    (creationAclDraft.accessMode === 'permission-bound' &&
+      creationAclDraft.permissionCodes.length > 0)
 
   const refreshEntityList = useCallback(async () => {
     setLoadingList(true)
@@ -312,7 +353,16 @@ export function EntityAdminConfigPage() {
     setBasePathAutoSyncEnabled(isCreateRoute)
     shouldAutoSyncIdRef.current = isCreateRoute
     shouldAutoSyncLabelRef.current = isCreateRoute
-  }, [isCreateRoute, selectedEntityConfig])
+    if (isCreateRoute) {
+      setCreationAclDraft((current) => ({
+        accessMode: 'permission-bound',
+        permissionCodes:
+          current.permissionCodes.length > 0
+            ? current.permissionCodes
+            : selectSuggestedPortalPermissionCodes(aclPermissionOptions),
+      }))
+    }
+  }, [aclPermissionOptions, isCreateRoute, selectedEntityConfig])
 
   useEffect(() => {
     setSelectedListViewIndex((current) => {
@@ -354,6 +404,67 @@ export function EntityAdminConfigPage() {
     setBootstrapPreviewFingerprint(null)
     setBootstrapPreviewError(null)
     setLoadingBootstrapPreview(false)
+  }, [isCreateRoute])
+
+  useEffect(() => {
+    if (!isCreateRoute) {
+      return
+    }
+
+    setCreationWizardStep('identity')
+  }, [isCreateRoute])
+
+  useEffect(() => {
+    if (!isCreateRoute) {
+      setAclPermissionOptions([])
+      setAclPermissionOptionsError(null)
+      setLoadingAclPermissionOptions(false)
+      return
+    }
+
+    let cancelled = false
+    setLoadingAclPermissionOptions(true)
+    setAclPermissionOptionsError(null)
+
+    void fetchAclPermissions()
+      .then((payload) => {
+        if (cancelled) {
+          return
+        }
+
+        const nextOptions = payload.items ?? []
+        setAclPermissionOptions(nextOptions)
+        setCreationAclDraft((current) => {
+          if (current.permissionCodes.length > 0) {
+            return current
+          }
+
+          const suggestedPermissionCodes = selectSuggestedPortalPermissionCodes(nextOptions)
+          return {
+            ...current,
+            permissionCodes: suggestedPermissionCodes,
+          }
+        })
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return
+        }
+
+        const message =
+          error instanceof Error ? error.message : 'Errore caricamento ACL permissions'
+        setAclPermissionOptions([])
+        setAclPermissionOptionsError(message)
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoadingAclPermissionOptions(false)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
   }, [isCreateRoute])
 
   useEffect(() => {
@@ -834,6 +945,186 @@ export function EntityAdminConfigPage() {
     }
   }
 
+  const applyBootstrapPreviewToDrafts = () => {
+    if (!bootstrapPreview || !hasCurrentBootstrapPreview) {
+      setBootstrapPreviewError('Genera un preset aggiornato prima di applicarlo.')
+      return
+    }
+
+    const snapshot = createDraftSnapshot(bootstrapPreview.entity)
+    setListFormDraft(snapshot.list)
+    setDetailFormDraft(snapshot.detail)
+    setFormFormDraft(snapshot.form)
+    setSelectedListViewIndex(0)
+    setSaveInfo('Preset standard applicato al wizard')
+    setEditorError(null)
+    setBootstrapPreviewError(null)
+    setCreationWizardStep('actions')
+  }
+
+  const applyRecommendedActionsPreset = () => {
+    setListFormDraft((current) => {
+      const nextViews =
+        current.views.length > 0
+          ? current.views
+          : [createEmptyListViewDraft()]
+
+      const defaultViewIndex = nextViews.findIndex((view) => view.default)
+      const targetIndex = defaultViewIndex >= 0 ? defaultViewIndex : 0
+
+      return {
+        ...current,
+        views: nextViews.map((view, index) =>
+          index === targetIndex
+            ? {
+                ...view,
+                default: index === targetIndex,
+                rowActionsJson: serializeEntityActionDrafts([
+                  { type: 'edit', label: 'Edit', target: '', entityId: '' },
+                  { type: 'delete', label: 'Delete', target: '', entityId: '' },
+                ]),
+              }
+            : view,
+        ),
+      }
+    })
+
+    setDetailFormDraft((current) => ({
+      ...current,
+      actionsJson: serializeEntityActionDrafts([
+        { type: 'edit', label: 'Edit', target: '', entityId: '' },
+        { type: 'delete', label: 'Delete', target: '', entityId: '' },
+      ]),
+    }))
+
+    setSaveInfo('Actions standard applicate')
+    setEditorError(null)
+  }
+
+  const toggleRecommendedAction = (
+    scope: 'list' | 'detail',
+    type: 'edit' | 'delete',
+    checked: boolean,
+  ) => {
+    const applyToggle = (entries: EntityActionDraft[]) => {
+      const filteredEntries = entries.filter((entry) => entry.type !== type)
+      if (!checked) {
+        return filteredEntries
+      }
+
+      return [...filteredEntries, { type, label: type === 'edit' ? 'Edit' : 'Delete' }]
+    }
+
+    if (scope === 'list') {
+      setListFormDraft((current) => {
+        const nextViews =
+          current.views.length > 0
+            ? current.views
+            : [createEmptyListViewDraft()]
+        const defaultViewIndex = nextViews.findIndex((view) => view.default)
+        const targetIndex = defaultViewIndex >= 0 ? defaultViewIndex : 0
+
+        return {
+          ...current,
+          views: nextViews.map((view, index) => {
+            if (index !== targetIndex) {
+              return view
+            }
+
+            return {
+              ...view,
+              default: index === targetIndex,
+              rowActionsJson: serializeEntityActionDrafts(
+                applyToggle(readEntityActionDrafts(view.rowActionsJson)),
+              ),
+            }
+          }),
+        }
+      })
+    } else {
+      setDetailFormDraft((current) => ({
+        ...current,
+        actionsJson: serializeEntityActionDrafts(
+          applyToggle(readEntityActionDrafts(current.actionsJson)),
+        ),
+      }))
+    }
+
+    setSaveInfo(null)
+    setEditorError(null)
+  }
+
+  const publishEntityCreationWizard = async () => {
+    let nextConfig: EntityConfig
+
+    try {
+      nextConfig = buildEntityConfigFromDrafts(createEmptyEntityConfig(), {
+        base: baseFormDraft,
+        list: listFormDraft,
+        detail: detailFormDraft,
+        form: formFormDraft,
+      })
+      setEditorError(null)
+    } catch (error) {
+      const validationError = normalizeDraftValidationError(error)
+      setEditorError(validationError.message)
+      setCreationWizardStep(validationError.section === 'base' ? 'identity' : 'bootstrap')
+      return
+    }
+
+    if (
+      creationAclDraft.accessMode === 'permission-bound' &&
+      creationAclDraft.permissionCodes.length === 0
+    ) {
+      setEditorError('Sezione Accesso: seleziona almeno una ACL permission o usa accesso autenticato.')
+      setCreationWizardStep('access')
+      return
+    }
+
+    setSaving(true)
+    setSaveInfo(null)
+    setPageError(null)
+    setEditorError(null)
+
+    try {
+      const payload = await createEntityAdminConfig(nextConfig)
+      const resourceId = `entity:${payload.entity.id}`
+      const resourcePayload = await fetchAclResource(resourceId)
+      await updateAclResource(resourceId, {
+        ...resourcePayload.resource,
+        accessMode: creationAclDraft.accessMode,
+        permissions: [...creationAclDraft.permissionCodes],
+      })
+
+      setSelectedEntityConfig(payload.entity)
+      setAclResourceStatus({
+        id: resourceId,
+        accessMode: creationAclDraft.accessMode,
+        managedBy: 'system',
+        syncState: 'present',
+      })
+      await refreshEntityList()
+      navigate(buildEntityEditPath(payload.entity.id, 'base'), {
+        replace: true,
+        state: {
+          saveInfo: 'Entity creata con wizard guidato',
+        } satisfies EntityAdminLocationState,
+      })
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Errore pubblicazione entity guidata'
+      setPageError(message)
+      await alert({
+        title: 'Errore pubblicazione entity',
+        description: message,
+        tone: 'danger',
+        confirmLabel: 'Chiudi',
+      })
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const saveSelectedEntityConfig = async () => {
     if (!selectedEntityConfig) {
       return
@@ -925,46 +1216,6 @@ export function EntityAdminConfigPage() {
       setPageError(message)
       await alert({
         title: 'Errore creazione entity',
-        description: message,
-        tone: 'danger',
-        confirmLabel: 'Chiudi',
-      })
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const createNewEntityFromBootstrapPreview = async () => {
-    if (!bootstrapPreview || !hasCurrentBootstrapPreview) {
-      setBootstrapPreviewError(
-        'Rigenera la preview prima di creare la entity con preset.',
-      )
-      return
-    }
-
-    setSaving(true)
-    setSaveInfo(null)
-    setPageError(null)
-    setEditorError(null)
-    setBootstrapPreviewError(null)
-
-    try {
-      const payload = await createEntityAdminConfig(bootstrapPreview.entity)
-      setSelectedEntityConfig(payload.entity)
-      setAclResourceStatus(payload.aclResourceStatus)
-      await refreshEntityList()
-      navigate(buildEntityEditPath(payload.entity.id, 'list'), {
-        replace: true,
-        state: {
-          saveInfo: 'Preset applicato, rivedi list/detail/form e configura ACL.',
-        } satisfies EntityAdminLocationState,
-      })
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'Errore creazione entity con preset'
-      setPageError(message)
-      await alert({
-        title: 'Errore creazione entity con preset',
         description: message,
         tone: 'danger',
         confirmLabel: 'Chiudi',
@@ -1153,33 +1404,46 @@ export function EntityAdminConfigPage() {
       ) : null}
 
       {isCreateRoute ? (
-        <>
-          <EntityBootstrapPreviewPanel
-            preview={bootstrapPreview}
-            previewCurrent={hasCurrentBootstrapPreview}
-            previewLoading={loadingBootstrapPreview}
-            previewError={bootstrapPreviewError}
-            saving={saving}
-            onGeneratePreview={() => {
-              void generateBootstrapPreview()
-            }}
-            onCreateWithPreset={() => createNewEntityFromBootstrapPreview()}
-            onCreateBaseOnly={() => saveNewEntityConfig()}
-          />
-
-          <EntityConfigBaseForm
-            value={baseFormDraft}
-            error={editorError}
-            onChange={updateBaseDraftField}
-            suggestions={objectApiNameSuggestions}
-            suggestionsLoading={loadingObjectApiNameSuggestions}
-            suggestionsError={objectApiNameSuggestionsError}
-            showSuggestions={shouldShowObjectApiNameSuggestions}
-            onSelectSuggestion={selectObjectApiNameSuggestion}
-            eyebrow="Create"
-            title="Nuova entity"
-          />
-        </>
+        <EntityCreationWizard
+          step={creationWizardStep}
+          saving={saving}
+          baseDraft={baseFormDraft}
+          bootstrapPreview={bootstrapPreview}
+          hasCurrentBootstrapPreview={hasCurrentBootstrapPreview}
+          loadingBootstrapPreview={loadingBootstrapPreview}
+          bootstrapPreviewError={bootstrapPreviewError}
+          objectApiNameSuggestions={objectApiNameSuggestions}
+          loadingObjectApiNameSuggestions={loadingObjectApiNameSuggestions}
+          objectApiNameSuggestionsError={objectApiNameSuggestionsError}
+          shouldShowObjectApiNameSuggestions={shouldShowObjectApiNameSuggestions}
+          listFormDraft={listFormDraft}
+          detailFormDraft={detailFormDraft}
+          formFormDraft={formFormDraft}
+          creationAclDraft={creationAclDraft}
+          aclPermissionOptions={aclPermissionOptions}
+          loadingAclPermissionOptions={loadingAclPermissionOptions}
+          aclPermissionOptionsError={aclPermissionOptionsError}
+          canCreateBaseEntity={canCreateBaseEntity}
+          hasGeneratedStructure={hasGeneratedStructure}
+          actionsReady={actionsReady}
+          accessReady={accessReady}
+          onStepChange={setCreationWizardStep}
+          onChangeBaseDraft={updateBaseDraftField}
+          onSelectObjectApiNameSuggestion={selectObjectApiNameSuggestion}
+          onGenerateBootstrapPreview={() => {
+            void generateBootstrapPreview()
+          }}
+          onApplyBootstrapPreview={applyBootstrapPreviewToDrafts}
+          onApplyRecommendedActions={applyRecommendedActionsPreset}
+          onToggleRecommendedAction={toggleRecommendedAction}
+          onChangeCreationAclDraft={setCreationAclDraft}
+          onPublish={() => {
+            void publishEntityCreationWizard()
+          }}
+          onCreateBaseOnly={() => {
+            void saveNewEntityConfig()
+          }}
+        />
       ) : null}
 
       {isViewRoute && selectedEntitySummary ? (
@@ -1201,12 +1465,10 @@ export function EntityAdminConfigPage() {
       {!loadingConfig && isEditRoute && selectedEntityConfig ? (
         <>
           {aclResourceStatus && !isAclResourceOperational(aclResourceStatus) ? (
-            <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
-              <p className="text-sm text-amber-800">
-                <code className="font-mono">{aclResourceStatus.id}</code> -{' '}
-                {describeAclResourceStatus(aclResourceStatus)}
-              </p>
-            </section>
+            <AclResourceStatusNotice
+              status={aclResourceStatus}
+              className="rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm text-sm text-amber-800"
+            />
           ) : null}
 
           {activeSection === 'base' ? (
@@ -1415,10 +1677,10 @@ function EntitySummaryCard({
       </div>
 
       {aclResourceStatus && !isAclResourceOperational(aclResourceStatus) ? (
-        <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          <code className="font-mono">{aclResourceStatus.id}</code> -{' '}
-          {describeAclResourceStatus(aclResourceStatus)}
-        </p>
+        <AclResourceStatusNotice
+          status={aclResourceStatus}
+          className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-800"
+        />
       ) : null}
 
       <div className="mt-5 grid gap-4 lg:grid-cols-2">
@@ -1463,6 +1725,604 @@ function ReadonlyBlock({ label, children }: { label: string; children: string })
       <p className="mt-3 text-sm text-slate-700">{children}</p>
     </article>
   )
+}
+
+type EntityActionDraft = {
+  type: 'edit' | 'delete' | 'link'
+  label?: string
+  target?: string
+  entityId?: string
+}
+
+type EntityCreationWizardProps = {
+  step: EntityCreationWizardStep
+  saving: boolean
+  baseDraft: BaseFormDraft
+  bootstrapPreview: EntityAdminBootstrapPreviewResponse | null
+  hasCurrentBootstrapPreview: boolean
+  loadingBootstrapPreview: boolean
+  bootstrapPreviewError: string | null
+  objectApiNameSuggestions: SalesforceObjectApiNameSuggestion[]
+  loadingObjectApiNameSuggestions: boolean
+  objectApiNameSuggestionsError: string | null
+  shouldShowObjectApiNameSuggestions: boolean
+  listFormDraft: ListFormDraft
+  detailFormDraft: DetailFormDraft
+  formFormDraft: FormFormDraft
+  creationAclDraft: EntityCreationAclDraft
+  aclPermissionOptions: AclAdminPermissionSummary[]
+  loadingAclPermissionOptions: boolean
+  aclPermissionOptionsError: string | null
+  canCreateBaseEntity: boolean
+  hasGeneratedStructure: boolean
+  actionsReady: boolean
+  accessReady: boolean
+  onStepChange: (step: EntityCreationWizardStep) => void
+  onChangeBaseDraft: (field: BaseFormDraftKey, value: string) => void
+  onSelectObjectApiNameSuggestion: (value: string) => void
+  onGenerateBootstrapPreview: () => void
+  onApplyBootstrapPreview: () => void
+  onApplyRecommendedActions: () => void
+  onToggleRecommendedAction: (
+    scope: 'list' | 'detail',
+    type: 'edit' | 'delete',
+    checked: boolean,
+  ) => void
+  onChangeCreationAclDraft: Dispatch<SetStateAction<EntityCreationAclDraft>>
+  onPublish: () => void
+  onCreateBaseOnly: () => void
+}
+
+function EntityCreationWizard({
+  step,
+  saving,
+  baseDraft,
+  bootstrapPreview,
+  hasCurrentBootstrapPreview,
+  loadingBootstrapPreview,
+  bootstrapPreviewError,
+  objectApiNameSuggestions,
+  loadingObjectApiNameSuggestions,
+  objectApiNameSuggestionsError,
+  shouldShowObjectApiNameSuggestions,
+  listFormDraft,
+  detailFormDraft,
+  formFormDraft,
+  creationAclDraft,
+  aclPermissionOptions,
+  loadingAclPermissionOptions,
+  aclPermissionOptionsError,
+  canCreateBaseEntity,
+  hasGeneratedStructure,
+  actionsReady,
+  accessReady,
+  onStepChange,
+  onChangeBaseDraft,
+  onSelectObjectApiNameSuggestion,
+  onGenerateBootstrapPreview,
+  onApplyBootstrapPreview,
+  onApplyRecommendedActions,
+  onToggleRecommendedAction,
+  onChangeCreationAclDraft,
+  onPublish,
+  onCreateBaseOnly,
+}: EntityCreationWizardProps) {
+  const listRowActions = readEntityActionDrafts(listFormDraft.views[0]?.rowActionsJson ?? '')
+  const detailActions = readEntityActionDrafts(detailFormDraft.actionsJson)
+  const listEditEnabled = listRowActions.some((entry) => entry.type === 'edit')
+  const listDeleteEnabled = listRowActions.some((entry) => entry.type === 'delete')
+  const detailEditEnabled = detailActions.some((entry) => entry.type === 'edit')
+  const detailDeleteEnabled = detailActions.some((entry) => entry.type === 'delete')
+  const defaultView = listFormDraft.views.find((view) => view.default) ?? listFormDraft.views[0]
+  const reviewItems = [
+    { label: 'Identita', ready: canCreateBaseEntity, detail: baseDraft.objectApiName || 'Object API name mancante' },
+    {
+      label: 'Struttura',
+      ready: hasGeneratedStructure,
+      detail: hasGeneratedStructure
+        ? `${listFormDraft.views.length} views, ${detailFormDraft.sections.length} detail sections, ${formFormDraft.sections.length} form sections`
+        : 'Applica il preset standard',
+    },
+    {
+      label: 'Actions',
+      ready: actionsReady,
+      detail: actionsReady
+        ? `List ${listRowActions.length} / Detail ${detailActions.length}`
+        : 'Attiva almeno Edit o Delete',
+    },
+    {
+      label: 'Accesso',
+      ready: accessReady,
+      detail:
+        creationAclDraft.accessMode === 'permission-bound'
+          ? `${creationAclDraft.permissionCodes.length} permission selezionate`
+          : creationAclDraft.accessMode,
+    },
+  ]
+
+  return (
+    <div className="space-y-5">
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+              Wizard
+            </p>
+            <h2 className="mt-1 text-xl font-semibold text-slate-900">
+              Creazione guidata entity
+            </h2>
+            <p className="mt-1 text-sm text-slate-600">
+              Segui i passaggi in ordine. Ogni step prepara automaticamente la configurazione successiva.
+            </p>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-5">
+            {ENTITY_CREATION_WIZARD_STEPS.map((item, index) => {
+              const active = item.id === step
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => onStepChange(item.id)}
+                  className={`rounded-xl border px-3 py-3 text-left transition ${
+                    active
+                      ? 'border-sky-300 bg-sky-50 text-sky-900'
+                      : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300 hover:bg-white'
+                  }`}
+                >
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.12em]">
+                    Step {index + 1}
+                  </p>
+                  <p className="mt-1 text-sm font-semibold">{item.label}</p>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      </section>
+
+      {step === 'identity' ? (
+        <>
+          <EntityConfigBaseForm
+            value={baseDraft}
+            error={null}
+            onChange={onChangeBaseDraft}
+            suggestions={objectApiNameSuggestions}
+            suggestionsLoading={loadingObjectApiNameSuggestions}
+            suggestionsError={objectApiNameSuggestionsError}
+            showSuggestions={shouldShowObjectApiNameSuggestions}
+            onSelectSuggestion={onSelectObjectApiNameSuggestion}
+            eyebrow="Step 1"
+            title="Identita entity"
+          />
+
+          <WizardStepFooter
+            backLabel="Crea base subito"
+            onBack={onCreateBaseOnly}
+            nextLabel="Continua a Bootstrap"
+            onNext={() => onStepChange('bootstrap')}
+            nextDisabled={!canCreateBaseEntity}
+          />
+        </>
+      ) : null}
+
+      {step === 'bootstrap' ? (
+        <>
+          <EntityBootstrapPreviewPanel
+            preview={bootstrapPreview}
+            previewCurrent={hasCurrentBootstrapPreview}
+            previewLoading={loadingBootstrapPreview}
+            previewError={bootstrapPreviewError}
+            saving={saving}
+            onGeneratePreview={onGenerateBootstrapPreview}
+            onCreateWithPreset={onApplyBootstrapPreview}
+            onCreateBaseOnly={onCreateBaseOnly}
+          />
+
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <p className="text-sm text-slate-600">
+              Il preset standard genera list, detail e form minimi a partire dal describe Salesforce.
+              Dopo l&apos;applicazione puoi rifinire tutto dall&apos;editor tradizionale.
+            </p>
+          </section>
+
+          <WizardStepFooter
+            onBack={() => onStepChange('identity')}
+            onNext={() => onStepChange('actions')}
+            nextLabel="Continua a Actions"
+            nextDisabled={!hasGeneratedStructure}
+          />
+        </>
+      ) : null}
+
+      {step === 'actions' ? (
+        <>
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                  Step 3
+                </p>
+                <h3 className="mt-1 text-lg font-semibold text-slate-900">
+                  Actions standard
+                </h3>
+                <p className="mt-1 text-sm text-slate-600">
+                  Attiva i casi d&apos;uso piu frequenti senza toccare JSON o view avanzate.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={onApplyRecommendedActions}
+                className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700"
+              >
+                Applica Edit + Delete
+              </button>
+            </div>
+
+            <div className="mt-5 grid gap-4 md:grid-cols-2">
+              <WizardToggleCard
+                title="List"
+                description={
+                  defaultView
+                    ? `Le action verranno applicate alla view ${defaultView.label || defaultView.id || 'default'}.`
+                    : 'Applica prima il preset standard per creare la view default.'
+                }
+                items={[
+                  {
+                    label: 'Edit in list',
+                    checked: listEditEnabled,
+                    onChange: (checked) => onToggleRecommendedAction('list', 'edit', checked),
+                  },
+                  {
+                    label: 'Delete in list',
+                    checked: listDeleteEnabled,
+                    onChange: (checked) => onToggleRecommendedAction('list', 'delete', checked),
+                  },
+                ]}
+              />
+
+              <WizardToggleCard
+                title="Detail"
+                description="Le action vengono esposte nell’header del record."
+                items={[
+                  {
+                    label: 'Edit in detail',
+                    checked: detailEditEnabled,
+                    onChange: (checked) => onToggleRecommendedAction('detail', 'edit', checked),
+                  },
+                  {
+                    label: 'Delete in detail',
+                    checked: detailDeleteEnabled,
+                    onChange: (checked) => onToggleRecommendedAction('detail', 'delete', checked),
+                  },
+                ]}
+              />
+            </div>
+          </section>
+
+          <WizardStepFooter
+            onBack={() => onStepChange('bootstrap')}
+            onNext={() => onStepChange('access')}
+            nextLabel="Continua a Accesso"
+            nextDisabled={!hasGeneratedStructure}
+          />
+        </>
+      ) : null}
+
+      {step === 'access' ? (
+        <>
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="border-b border-slate-200 pb-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                Step 4
+              </p>
+              <h3 className="mt-1 text-lg font-semibold text-slate-900">Accesso</h3>
+              <p className="mt-1 text-sm text-slate-600">
+                Il wizard crea la resource ACL della entity e applica questo preset al publish finale.
+              </p>
+            </div>
+
+            <div className="mt-5 grid gap-4 lg:grid-cols-[16rem_minmax(0,1fr)]">
+              <label className="text-sm font-medium text-slate-700">
+                Access mode
+                <select
+                  value={creationAclDraft.accessMode}
+                  onChange={(event) =>
+                    onChangeCreationAclDraft((current) => ({
+                      ...current,
+                      accessMode: event.target.value as EntityCreationAclDraft['accessMode'],
+                    }))
+                  }
+                  className="mt-2 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+                >
+                  <option value="permission-bound">Permission-bound</option>
+                  <option value="authenticated">Authenticated</option>
+                  <option value="disabled">Disabled</option>
+                </select>
+              </label>
+
+              <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900">ACL permissions</p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Preset consigliato: tutte le permission che iniziano per `PORTAL_`.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onChangeCreationAclDraft((current) => ({
+                        ...current,
+                        permissionCodes: selectSuggestedPortalPermissionCodes(aclPermissionOptions),
+                      }))
+                    }
+                    className="rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-slate-700 transition hover:border-slate-400 hover:bg-slate-100"
+                  >
+                    Applica preset portale
+                  </button>
+                </div>
+
+                {aclPermissionOptionsError ? (
+                  <p className="mt-3 text-sm text-rose-700">{aclPermissionOptionsError}</p>
+                ) : null}
+
+                {loadingAclPermissionOptions ? (
+                  <p className="mt-3 text-sm text-slate-600">Caricamento permission...</p>
+                ) : (
+                  <div className="mt-4 grid gap-2 md:grid-cols-2">
+                    {aclPermissionOptions.map((permission) => {
+                      const checked = creationAclDraft.permissionCodes.includes(permission.code)
+                      return (
+                        <label
+                          key={permission.code}
+                          className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-700"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(event) =>
+                              onChangeCreationAclDraft((current) => ({
+                                ...current,
+                                permissionCodes: event.target.checked
+                                  ? [...current.permissionCodes, permission.code]
+                                  : current.permissionCodes.filter((code) => code !== permission.code),
+                              }))
+                            }
+                            className="mt-0.5 h-4 w-4 rounded border border-slate-300 text-sky-600 focus:ring-sky-200"
+                          />
+                          <span>
+                            <span className="block font-semibold text-slate-900">{permission.code}</span>
+                            {permission.label ? (
+                              <span className="mt-1 block text-xs text-slate-500">
+                                {permission.label}
+                              </span>
+                            ) : null}
+                          </span>
+                        </label>
+                      )
+                    })}
+                  </div>
+                )}
+              </section>
+            </div>
+          </section>
+
+          <WizardStepFooter
+            onBack={() => onStepChange('actions')}
+            onNext={() => onStepChange('review')}
+            nextLabel="Continua a Review"
+            nextDisabled={!accessReady}
+          />
+        </>
+      ) : null}
+
+      {step === 'review' ? (
+        <>
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="border-b border-slate-200 pb-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                Step 5
+              </p>
+              <h3 className="mt-1 text-lg font-semibold text-slate-900">Review e publish</h3>
+              <p className="mt-1 text-sm text-slate-600">
+                Verifica i prerequisiti. Il publish crea entity config e riallinea la ACL resource.
+              </p>
+            </div>
+
+            <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
+              <div className="space-y-3">
+                {reviewItems.map((item) => (
+                  <article
+                    key={item.label}
+                    className={`rounded-2xl border px-4 py-4 ${
+                      item.ready
+                        ? 'border-emerald-200 bg-emerald-50'
+                        : 'border-amber-200 bg-amber-50'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-sm font-semibold text-slate-900">{item.label}</p>
+                      <span
+                        className={`rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] ${
+                          item.ready
+                            ? 'bg-emerald-100 text-emerald-700'
+                            : 'bg-amber-100 text-amber-700'
+                        }`}
+                      >
+                        {item.ready ? 'Ready' : 'Da completare'}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-sm text-slate-600">{item.detail}</p>
+                  </article>
+                ))}
+              </div>
+
+              <aside className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <p className="text-sm font-semibold text-slate-900">Publish summary</p>
+                <dl className="mt-4 space-y-3 text-sm text-slate-700">
+                  <div>
+                    <dt className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Entity</dt>
+                    <dd className="mt-1">{baseDraft.label || baseDraft.objectApiName || '-'}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Object API Name</dt>
+                    <dd className="mt-1">{baseDraft.objectApiName || '-'}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Accesso</dt>
+                    <dd className="mt-1">
+                      {creationAclDraft.accessMode} / {creationAclDraft.permissionCodes.length} permissions
+                    </dd>
+                  </div>
+                </dl>
+              </aside>
+            </div>
+          </section>
+
+          <WizardStepFooter
+            onBack={() => onStepChange('access')}
+            onNext={onPublish}
+            nextLabel={saving ? 'Pubblicazione...' : 'Pubblica entity'}
+            nextDisabled={!reviewItems.every((item) => item.ready) || saving}
+          />
+        </>
+      ) : null}
+    </div>
+  )
+}
+
+function WizardToggleCard({
+  title,
+  description,
+  items,
+}: {
+  title: string
+  description: string
+  items: Array<{
+    label: string
+    checked: boolean
+    onChange: (checked: boolean) => void
+  }>
+}) {
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <p className="text-sm font-semibold text-slate-900">{title}</p>
+      <p className="mt-1 text-xs text-slate-500">{description}</p>
+      <div className="mt-4 space-y-2">
+        {items.map((item) => (
+          <label
+            key={item.label}
+            className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-700"
+          >
+            <span>{item.label}</span>
+            <input
+              type="checkbox"
+              checked={item.checked}
+              onChange={(event) => item.onChange(event.target.checked)}
+              className="h-4 w-4 rounded border border-slate-300 text-sky-600 focus:ring-sky-200"
+            />
+          </label>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function WizardStepFooter({
+  backLabel = 'Indietro',
+  nextLabel = 'Continua',
+  nextDisabled = false,
+  onBack,
+  onNext,
+}: {
+  backLabel?: string
+  nextLabel?: string
+  nextDisabled?: boolean
+  onBack: () => void
+  onNext: () => void
+}) {
+  return (
+    <section className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <button
+        type="button"
+        onClick={onBack}
+        className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
+      >
+        {backLabel}
+      </button>
+      <button
+        type="button"
+        onClick={onNext}
+        disabled={nextDisabled}
+        className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-65"
+      >
+        {nextLabel}
+      </button>
+    </section>
+  )
+}
+
+const ENTITY_CREATION_WIZARD_STEPS: Array<{
+  id: EntityCreationWizardStep
+  label: string
+}> = [
+  { id: 'identity', label: 'Identita' },
+  { id: 'bootstrap', label: 'Bootstrap' },
+  { id: 'actions', label: 'Actions' },
+  { id: 'access', label: 'Accesso' },
+  { id: 'review', label: 'Review' },
+]
+
+function selectSuggestedPortalPermissionCodes(
+  permissions: AclAdminPermissionSummary[],
+): string[] {
+  return permissions
+    .map((permission) => permission.code)
+    .filter((code) => code.startsWith('PORTAL_'))
+}
+
+function readEntityActionDrafts(value: string): EntityActionDraft[] {
+  const trimmed = value.trim()
+  if (!trimmed) {
+    return []
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed)
+    if (!Array.isArray(parsed)) {
+      return []
+    }
+
+    return parsed
+      .filter((entry): entry is Record<string, unknown> => typeof entry === 'object' && entry !== null)
+      .map((entry): EntityActionDraft | null => {
+        const type = entry.type
+        if (type !== 'edit' && type !== 'delete' && type !== 'link') {
+          return null
+        }
+
+        return {
+          type,
+          label: typeof entry.label === 'string' ? entry.label : undefined,
+          target: typeof entry.target === 'string' ? entry.target : undefined,
+          entityId: typeof entry.entityId === 'string' ? entry.entityId : undefined,
+        }
+      })
+      .filter((entry): entry is EntityActionDraft => entry !== null)
+  } catch {
+    return []
+  }
+}
+
+function serializeEntityActionDrafts(entries: EntityActionDraft[]): string {
+  const normalizedEntries = entries.map((entry) => ({
+    type: entry.type,
+    ...(entry.label?.trim() ? { label: entry.label.trim() } : {}),
+    ...(entry.target?.trim() ? { target: entry.target.trim() } : {}),
+    ...(entry.entityId?.trim() ? { entityId: entry.entityId.trim() } : {}),
+  }))
+
+  return normalizedEntries.length > 0 ? JSON.stringify(normalizedEntries, null, 2) : ''
 }
 
 function formatTimestamp(value: string): string {
