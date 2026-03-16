@@ -1438,7 +1438,7 @@ export function EntityAdminConfigPage() {
   )
 
   const generateBootstrapPreview = async () => {
-    const nextConfig = createEntityConfigFromBaseDraft(baseFormDraft)
+    const nextConfig = createEntityBootstrapPreviewFromBaseDraft(baseFormDraft)
 
     if (!nextConfig) {
       setEditorError(getBaseDraftValidationMessage(baseFormDraft, 'generare il preset'))
@@ -4172,6 +4172,23 @@ function createEntityConfigFromBaseDraft(baseDraft: BaseFormDraft): EntityConfig
       baseDraft.basePath.trim().length > 0
         ? { basePath: baseDraft.basePath.trim() }
         : undefined,
+  }
+}
+
+function createEntityBootstrapPreviewFromBaseDraft(
+  baseDraft: BaseFormDraft,
+): Pick<EntityConfig, 'id' | 'label' | 'description' | 'objectApiName' | 'navigation'> | null {
+  const config = createEntityConfigFromBaseDraft(baseDraft)
+  if (!config) {
+    return null
+  }
+
+  return {
+    id: config.id,
+    label: config.label,
+    description: config.description,
+    objectApiName: config.objectApiName,
+    navigation: config.navigation,
   }
 }
 

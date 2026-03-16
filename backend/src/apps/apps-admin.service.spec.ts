@@ -315,6 +315,48 @@ test('createApp persists normalized payload and records audit metadata', async (
   });
 });
 
+test('createApp accepts entity items that reference mixed-case entity ids', async () => {
+  const storedApps = new Map<string, Record<string, unknown>>();
+
+  const service = createService({
+    repository: {
+      async hasApp(appId: string) {
+        return storedApps.has(appId);
+      },
+      async assertEntityIdsExist(entityIds: string[]) {
+        assert.deepEqual(entityIds, ['Product2']);
+      },
+      async assertResourceIdsExist(resourceIds: string[]) {
+        assert.deepEqual(resourceIds, []);
+      },
+      async assertPermissionCodesExist(permissionCodes: string[]) {
+        assert.deepEqual(permissionCodes, []);
+      },
+      async upsertApp(app: Record<string, unknown>) {
+        storedApps.set(String(app.id), app);
+      },
+      async getApp(appId: string) {
+        const value = storedApps.get(appId);
+        assert.ok(value);
+        return value;
+      },
+    },
+  });
+
+  const response = await service.createApp({
+    id: 'catalog',
+    label: 'Catalog',
+    items: [
+      { id: 'home', kind: 'home', label: 'Home', page: { blocks: [] } },
+      { id: 'product', kind: 'entity', label: 'Products', entityId: 'Product2' },
+    ],
+    permissionCodes: [],
+  });
+
+  assert.equal(response.app.items[1]?.kind, 'entity');
+  assert.equal(response.app.items[1]?.entityId, 'Product2');
+});
+
 test('createApp accepts dashboard items as internal workspace modules', async () => {
   const storedApps = new Map<string, Record<string, unknown>>();
 

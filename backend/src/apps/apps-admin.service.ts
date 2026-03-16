@@ -244,7 +244,7 @@ export class AppsAdminService {
           label,
           description,
           resourceId,
-          entityId: this.requireKebabCaseString(item.entityId, `app.items[${index}].entityId`)
+          entityId: this.requireEntityIdString(item.entityId, `app.items[${index}].entityId`)
         } satisfies AppEntityItemConfig;
       case 'custom-page':
         return {
@@ -681,6 +681,12 @@ export class AppsAdminService {
   private requireKebabCaseString(value: unknown, fieldName: string): string {
     const normalized = this.requireString(value, `${fieldName} is required`);
     this.resourceAccessService.assertKebabCaseId(normalized, fieldName);
+    return normalized;
+  }
+
+  private requireEntityIdString(value: unknown, fieldName: string): string {
+    const normalized = this.requireString(value, `${fieldName} is required`);
+    this.resourceAccessService.assertEntityId(normalized, fieldName);
     return normalized;
   }
 

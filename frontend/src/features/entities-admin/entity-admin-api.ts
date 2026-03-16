@@ -9,6 +9,8 @@ import type {
 } from './entity-admin-types'
 import type { EntityConfig } from '../entities/entity-types'
 
+type EntityBootstrapBasePayload = Pick<EntityConfig, 'id' | 'label' | 'description' | 'objectApiName' | 'navigation'>
+
 export async function fetchEntityAdminConfigList(): Promise<EntityAdminConfigListResponse> {
   return apiFetch<EntityAdminConfigListResponse>('/entities/admin/configs')
 }
@@ -31,7 +33,7 @@ export async function createEntityAdminConfig(
 }
 
 export async function previewEntityAdminBootstrap(
-  entity: EntityConfig,
+  entity: EntityBootstrapBasePayload,
 ): Promise<EntityAdminBootstrapPreviewResponse> {
   return apiFetch<EntityAdminBootstrapPreviewResponse>(
     '/entities/admin/configs/bootstrap-preview',
