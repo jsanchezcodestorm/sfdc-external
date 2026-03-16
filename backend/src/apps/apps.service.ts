@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 
 import { AclService } from '../acl/acl.service';
 import type { SessionUser } from '../auth/session-user.interface';
@@ -12,15 +13,25 @@ import type {
   AvailableAppItem
 } from './apps.types';
 
+const DEFAULT_KEY_PREFIX_LOOKUP_TIMEOUT_MS = 1500;
+
 @Injectable()
 export class AppsService {
   private readonly logger = new Logger(AppsService.name);
+  private readonly keyPrefixLookupTimeoutMs: number;
 
   constructor(
     private readonly appsAdminConfigRepository: AppsAdminConfigRepository,
     private readonly aclService: AclService,
-    private readonly salesforceService: SalesforceService
-  ) {}
+    private readonly salesforceService: SalesforceService,
+    configService: ConfigService
+  ) {
+    this.keyPrefixLookupTimeoutMs = this.readPositiveIntConfig(
+      configService,
+      'APPS_AVAILABLE_KEY_PREFIX_TIMEOUT_MS',
+      DEFAULT_KEY_PREFIX_LOOKUP_TIMEOUT_MS
+    );
+  }
 
   async listAvailableApps(user: SessionUser): Promise<AppsAvailableResponse> {
     const permissions = this.aclService.normalizePermissions(user.permissions);
@@ -103,7 +114,11 @@ export class AppsService {
 
   private async resolveKeyPrefixForObject(objectApiName: string): Promise<string | undefined> {
     try {
-      const describe = await this.salesforceService.describeObject(objectApiName);
+      const describe = await this.withTimeout(
+        this.salesforceService.describeObject(objectApiName),
+        this.keyPrefixLookupTimeoutMs,
+        `Timed out resolving keyPrefix for ${objectApiName}`
+      );
       return this.readKeyPrefix(describe);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'unknown error';
@@ -119,5 +134,34 @@ export class AppsService {
 
     const keyPrefix = (value as Record<string, unknown>).keyPrefix;
     return typeof keyPrefix === 'string' && keyPrefix.trim().length > 0 ? keyPrefix.trim() : undefined;
+  }
+
+  private withTimeout<T>(promise: Promise<T>, timeoutMs: number, timeoutMessage: string): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error(timeoutMessage));
+      }, timeoutMs);
+
+      void promise.then(
+        (value) => {
+          clearTimeout(timeout);
+          resolve(value);
+        },
+        (error: unknown) => {
+          clearTimeout(timeout);
+          reject(error);
+        }
+      );
+    });
+  }
+
+  private readPositiveIntConfig(configService: ConfigService, configKey: string, fallback: number): number {
+    const rawValue = configService.get<string>(configKey);
+    if (!rawValue) {
+      return fallback;
+    }
+
+    const parsed = Number(rawValue);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
   }
 }

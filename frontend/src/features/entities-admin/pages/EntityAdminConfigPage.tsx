@@ -163,6 +163,7 @@ export function EntityAdminConfigPage() {
   const [recordTypeSuggestions, setRecordTypeSuggestions] = useState<SalesforceRecordTypeSuggestion[]>([])
   const [loadingRecordTypeSuggestions, setLoadingRecordTypeSuggestions] = useState(false)
   const [recordTypeSuggestionsError, setRecordTypeSuggestionsError] = useState<string | null>(null)
+  const recordTypeSuggestionsObjectApiNameRef = useRef('')
   const [fieldsCatalog, setFieldsCatalog] = useState<SalesforceObjectFieldSuggestion[]>([])
   const [loadingFieldsCatalog, setLoadingFieldsCatalog] = useState(false)
   const [fieldsCatalogError, setFieldsCatalogError] = useState<string | null>(null)
@@ -394,9 +395,6 @@ export function EntityAdminConfigPage() {
       setObjectApiNameSearchInput('')
       setObjectApiNameSuggestions([])
       setObjectApiNameSuggestionsError(null)
-      setRecordTypeSuggestions([])
-      setRecordTypeSuggestionsError(null)
-      setLoadingRecordTypeSuggestions(false)
       setBasePathAutoSyncEnabled(isCreateRoute)
       shouldAutoSyncIdRef.current = isCreateRoute
       shouldAutoSyncLabelRef.current = isCreateRoute
@@ -414,9 +412,6 @@ export function EntityAdminConfigPage() {
     setObjectApiNameSearchInput('')
     setObjectApiNameSuggestions([])
     setObjectApiNameSuggestionsError(null)
-    setRecordTypeSuggestions([])
-    setRecordTypeSuggestionsError(null)
-    setLoadingRecordTypeSuggestions(false)
     setBasePathAutoSyncEnabled(isCreateRoute)
     shouldAutoSyncIdRef.current = isCreateRoute
     shouldAutoSyncLabelRef.current = isCreateRoute
@@ -745,9 +740,41 @@ export function EntityAdminConfigPage() {
     }
   }, [canSearchObjectApiNameSuggestions, objectApiNameSearchValue])
 
+  const loadRecordTypeSuggestions = useCallback(
+    async (objectApiName: string) => {
+      const normalizedObjectApiName = objectApiName.trim()
+      if (normalizedObjectApiName.length === 0) {
+        recordTypeSuggestionsObjectApiNameRef.current = ''
+        setRecordTypeSuggestions([])
+        setRecordTypeSuggestionsError(null)
+        setLoadingRecordTypeSuggestions(false)
+        return
+      }
+
+      setLoadingRecordTypeSuggestions(true)
+      setRecordTypeSuggestionsError(null)
+
+      try {
+        const payload = await searchEntityAdminRecordTypes(normalizedObjectApiName, '', 50)
+        setRecordTypeSuggestions(payload.items ?? [])
+        recordTypeSuggestionsObjectApiNameRef.current = normalizedObjectApiName
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Errore caricamento record type Salesforce'
+        setRecordTypeSuggestions([])
+        setRecordTypeSuggestionsError(message)
+        recordTypeSuggestionsObjectApiNameRef.current = ''
+      } finally {
+        setLoadingRecordTypeSuggestions(false)
+      }
+    },
+    [],
+  )
+
   useEffect(() => {
     const normalizedObjectApiName = baseFormDraft.objectApiName.trim()
     if (normalizedObjectApiName.length === 0) {
+      recordTypeSuggestionsObjectApiNameRef.current = ''
       setRecordTypeSuggestions([])
       setRecordTypeSuggestionsError(null)
       setLoadingRecordTypeSuggestions(false)
@@ -765,6 +792,7 @@ export function EntityAdminConfigPage() {
         }
 
         setRecordTypeSuggestions(payload.items ?? [])
+        recordTypeSuggestionsObjectApiNameRef.current = normalizedObjectApiName
       })
       .catch((error) => {
         if (cancelled) {
@@ -775,6 +803,7 @@ export function EntityAdminConfigPage() {
           error instanceof Error ? error.message : 'Errore caricamento record type Salesforce'
         setRecordTypeSuggestions([])
         setRecordTypeSuggestionsError(message)
+        recordTypeSuggestionsObjectApiNameRef.current = ''
       })
       .finally(() => {
         if (!cancelled) {
@@ -786,6 +815,36 @@ export function EntityAdminConfigPage() {
       cancelled = true
     }
   }, [baseFormDraft.objectApiName])
+
+  useEffect(() => {
+    const normalizedObjectApiName = baseFormDraft.objectApiName.trim()
+    if (
+      activeSection !== 'record-types' &&
+      activeSection !== 'assignments'
+    ) {
+      return
+    }
+
+    if (normalizedObjectApiName.length === 0 || loadingRecordTypeSuggestions) {
+      return
+    }
+
+    if (
+      recordTypeSuggestionsObjectApiNameRef.current === normalizedObjectApiName &&
+      (recordTypeSuggestions.length > 0 || recordTypeSuggestionsError !== null)
+    ) {
+      return
+    }
+
+    void loadRecordTypeSuggestions(normalizedObjectApiName)
+  }, [
+    activeSection,
+    baseFormDraft.objectApiName,
+    loadRecordTypeSuggestions,
+    loadingRecordTypeSuggestions,
+    recordTypeSuggestions.length,
+    recordTypeSuggestionsError,
+  ])
 
   useEffect(() => {
     const normalizedObjectApiName = baseFormDraft.objectApiName.trim()

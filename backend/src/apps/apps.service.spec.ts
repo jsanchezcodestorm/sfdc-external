@@ -3,6 +3,18 @@ import test from 'node:test';
 
 import { AppsService } from './apps.service';
 
+function createConfigService(timeoutMs?: number) {
+  return {
+    get(key: string) {
+      if (key !== 'APPS_AVAILABLE_KEY_PREFIX_TIMEOUT_MS') {
+        return undefined;
+      }
+
+      return timeoutMs === undefined ? undefined : String(timeoutMs);
+    },
+  };
+}
+
 test('listAvailableApps keeps only items allowed by ACL and adds entity keyPrefix', async () => {
   const repository = {
     async listAvailableApps(permissionCodes: string[]) {
@@ -77,7 +89,12 @@ test('listAvailableApps keeps only items allowed by ACL and adds entity keyPrefi
     },
   };
 
-  const service = new AppsService(repository as never, aclService as never, salesforceService as never);
+  const service = new AppsService(
+    repository as never,
+    aclService as never,
+    salesforceService as never,
+    createConfigService() as never,
+  );
 
   const response = await service.listAvailableApps({
     sub: '003000000000001AAA',
@@ -173,7 +190,12 @@ test('listAvailableApps deduplicates describe lookups by objectApiName across vi
     },
   };
 
-  const service = new AppsService(repository as never, aclService as never, salesforceService as never);
+  const service = new AppsService(
+    repository as never,
+    aclService as never,
+    salesforceService as never,
+    createConfigService() as never,
+  );
 
   const response = await service.listAvailableApps({
     sub: '003000000000001AAA',
@@ -192,6 +214,68 @@ test('listAvailableApps deduplicates describe lookups by objectApiName across vi
       entityId: 'account-archive',
       objectApiName: 'Account',
       keyPrefix: '001',
+    },
+  ]);
+});
+
+test('listAvailableApps does not block when Salesforce describe lookup times out', async () => {
+  const repository = {
+    async listAvailableApps() {
+      return [
+        {
+          id: 'sales',
+          label: 'Sales',
+          items: [
+            { id: 'home', kind: 'home', label: 'Home', page: { blocks: [] } },
+            {
+              id: 'account',
+              kind: 'entity',
+              label: 'Account',
+              entityId: 'account',
+              objectApiName: 'Account',
+            },
+          ],
+        },
+      ];
+    },
+  };
+  const aclService = {
+    normalizePermissions(permissionCodes: string[]) {
+      return [...permissionCodes];
+    },
+    canAccess(permissionCodes: string[], resourceId: string) {
+      assert.deepEqual(permissionCodes, ['PORTAL_USER']);
+      return resourceId === 'entity:account';
+    },
+  };
+  const salesforceService = {
+    async describeObject() {
+      return await new Promise(() => undefined);
+    },
+  };
+
+  const service = new AppsService(
+    repository as never,
+    aclService as never,
+    salesforceService as never,
+    createConfigService(5) as never,
+  );
+
+  const startedAt = Date.now();
+  const response = await service.listAvailableApps({
+    sub: '003000000000001AAA',
+    permissions: ['PORTAL_USER'],
+  } as never);
+
+  assert.ok(Date.now() - startedAt < 200);
+  assert.deepEqual(response.items, [
+    {
+      id: 'sales',
+      label: 'Sales',
+      items: [
+        { id: 'home', kind: 'home', label: 'Home', page: { blocks: [] } },
+        { id: 'account', kind: 'entity', label: 'Account', entityId: 'account', objectApiName: 'Account' },
+      ],
     },
   ]);
 });
