@@ -148,6 +148,7 @@ export function EntityAdminConfigPage() {
   const [baseFormDraft, setBaseFormDraft] = useState<BaseFormDraft>(createEmptyBaseFormDraft())
   const [listFormDraft, setListFormDraft] = useState<ListFormDraft>(createEmptyListFormDraft())
   const [layoutDrafts, setLayoutDrafts] = useState<EntityLayoutDraft[]>([])
+  const [activeWorkspaceLayoutClientId, setActiveWorkspaceLayoutClientId] = useState<string | null>(null)
   const [persistedDraftSnapshot, setPersistedDraftSnapshot] =
     useState<EntityConfigDraftSnapshot | null>(null)
   const [selectedListViewIndex, setSelectedListViewIndex] = useState(0)
@@ -244,13 +245,41 @@ export function EntityAdminConfigPage() {
     () => getPreferredEntityLayoutDraft(layoutDrafts),
     [layoutDrafts],
   )
+  useEffect(() => {
+    if (layoutDrafts.length === 0) {
+      if (activeWorkspaceLayoutClientId !== null) {
+        setActiveWorkspaceLayoutClientId(null)
+      }
+      return
+    }
+
+    if (
+      activeWorkspaceLayoutClientId &&
+      layoutDrafts.some((layout) => layout.clientId === activeWorkspaceLayoutClientId)
+    ) {
+      return
+    }
+
+    const routeMatchedLayout = activeLayoutId
+      ? layoutDrafts.find((layout) => layout.id === activeLayoutId)
+      : null
+    const nextActiveLayout = routeMatchedLayout ?? getPreferredEntityLayoutDraft(layoutDrafts)
+
+    if (nextActiveLayout && nextActiveLayout.clientId !== activeWorkspaceLayoutClientId) {
+      setActiveWorkspaceLayoutClientId(nextActiveLayout.clientId)
+    }
+  }, [activeLayoutId, activeWorkspaceLayoutClientId, layoutDrafts])
   const activeLayoutDraft = useMemo(() => {
+    if (activeSection === 'layouts' && activeWorkspaceLayoutClientId) {
+      return layoutDrafts.find((layout) => layout.clientId === activeWorkspaceLayoutClientId) ?? null
+    }
+
     if (activeLayoutId) {
       return layoutDrafts.find((layout) => layout.id === activeLayoutId) ?? null
     }
 
     return primaryLayoutDraft
-  }, [activeLayoutId, layoutDrafts, primaryLayoutDraft])
+  }, [activeLayoutId, activeSection, activeWorkspaceLayoutClientId, layoutDrafts, primaryLayoutDraft])
   const detailFormDraft = activeLayoutDraft?.detail ?? createEmptyDetailFormDraft()
   const formFormDraft = activeLayoutDraft?.form ?? createEmptyFormDraft()
   const primaryDetailFormDraft = primaryLayoutDraft?.detail ?? createEmptyDetailFormDraft()
@@ -1270,6 +1299,11 @@ export function EntityAdminConfigPage() {
         return
       }
 
+      const selectedLayout = layoutDrafts.find((layout) => layout.id === layoutId)
+      if (selectedLayout) {
+        setActiveWorkspaceLayoutClientId(selectedLayout.clientId)
+      }
+
       if (section === 'detail') {
         navigate(buildEntityEditPath(selectedEntityId, section, area as EntityConfigDetailEditorAreaKey, layoutId))
         return
@@ -1282,7 +1316,7 @@ export function EntityAdminConfigPage() {
 
       navigate(buildEntityEditPath(selectedEntityId, section, undefined, layoutId))
     },
-    [navigate, selectedEntityId],
+    [layoutDrafts, navigate, selectedEntityId],
   )
 
   const addLayoutDraft = useCallback(() => {
@@ -1293,13 +1327,10 @@ export function EntityAdminConfigPage() {
     )
 
     setLayoutDrafts((current) => [...current, nextLayout])
+    setActiveWorkspaceLayoutClientId(nextLayout.clientId)
     setSaveInfo(null)
     setEditorError(null)
-
-    if (selectedEntityId) {
-      navigate(buildEntityEditPath(selectedEntityId, 'detail', 'header-query', nextLayout.id))
-    }
-  }, [layoutDrafts, navigate, selectedEntityId])
+  }, [layoutDrafts])
 
   const removeLayoutDraft = useCallback(
     async (layoutClientId: string) => {
@@ -1323,6 +1354,9 @@ export function EntityAdminConfigPage() {
         layoutDrafts.filter((entry) => entry.clientId !== layoutClientId),
       )
       setLayoutDrafts(nextLayouts)
+      if (activeWorkspaceLayoutClientId === layoutClientId) {
+        setActiveWorkspaceLayoutClientId(nextLayouts[0]?.clientId ?? null)
+      }
       setSaveInfo(null)
       setEditorError(null)
 
@@ -1358,6 +1392,7 @@ export function EntityAdminConfigPage() {
     [
       activeDetailArea,
       activeFormArea,
+      activeWorkspaceLayoutClientId,
       activeSection,
       confirm,
       layoutDrafts,
@@ -1373,6 +1408,7 @@ export function EntityAdminConfigPage() {
         isDefault: layout.clientId === layoutClientId,
       })),
     )
+    setActiveWorkspaceLayoutClientId(layoutClientId)
     setSaveInfo(null)
     setEditorError(null)
   }, [])
@@ -2214,7 +2250,7 @@ export function EntityAdminConfigPage() {
           {isLayoutWorkspaceSection ? (
             <EntityLayoutWorkspace
               layouts={layoutDrafts}
-              activeLayoutId={activeLayoutDraft?.id ?? null}
+              activeLayoutClientId={activeWorkspaceLayoutClientId}
               activeSection={
                 activeSection === 'detail' ||
                 activeSection === 'form' ||
@@ -2223,6 +2259,7 @@ export function EntityAdminConfigPage() {
                   : null
               }
               onAddLayout={addLayoutDraft}
+              onSelectLayout={setActiveWorkspaceLayoutClientId}
               onRemoveLayout={(layoutClientId) => {
                 void removeLayoutDraft(layoutClientId)
               }}
@@ -2362,18 +2399,20 @@ function EntityAdminCatalog({
 
 function EntityLayoutWorkspace({
   layouts,
-  activeLayoutId,
+  activeLayoutClientId,
   activeSection,
   onAddLayout,
+  onSelectLayout,
   onRemoveLayout,
   onSetDefaultLayout,
   onSelectLayoutSection,
   onChangeLayoutMetadata,
 }: {
   layouts: EntityLayoutDraft[]
-  activeLayoutId: string | null
+  activeLayoutClientId: string | null
   activeSection: 'detail' | 'form' | 'assignments' | null
   onAddLayout: () => void
+  onSelectLayout: (layoutClientId: string) => void
   onRemoveLayout: (layoutClientId: string) => void
   onSetDefaultLayout: (layoutClientId: string) => void
   onSelectLayoutSection: (
@@ -2387,7 +2426,7 @@ function EntityLayoutWorkspace({
     value: string,
   ) => void
 }) {
-  const activeLayout = layouts.find((layout) => layout.id === activeLayoutId) ?? layouts[0] ?? null
+  const activeLayout = layouts.find((layout) => layout.clientId === activeLayoutClientId) ?? layouts[0] ?? null
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -2420,6 +2459,7 @@ function EntityLayoutWorkspace({
               return (
                 <article
                   key={layout.clientId}
+                  onClick={() => onSelectLayout(layout.clientId)}
                   className={`rounded-2xl border p-4 ${
                     isActive ? 'border-sky-300 bg-sky-50' : 'border-slate-200 bg-slate-50'
                   }`}
