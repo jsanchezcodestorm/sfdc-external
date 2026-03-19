@@ -81,7 +81,9 @@ Error handling:
 ## 8) Autorizzazione applicativa (ACL)
 Modello:
 - risorse versionate per categorie: `rest:*`, `entity:*`, `query:*`, `route:*`
-- permessi risolti da profilo utente autenticato come merge di default globali e assegnazioni dirette al Contact
+- permessi runtime risolti a partire dalle assegnazioni ACL esplicite del Contact
+- `defaultPermissions` resta supportato solo come dato legacy di configurazione e compatibilita snapshot, non come baseline runtime operativa
+- fallback bootstrap intenzionali, se presenti, devono essere espliciti e documentati
 
 Regole:
 - controllo ACL obbligatorio su ogni endpoint protetto
@@ -89,6 +91,8 @@ Regole:
 - nessuna decisione autorizzativa delegata al frontend
 - per i query template, ACL (`query:<templateId>`) e sorgente unica autorizzativa (`MUST`)
 - metadata template (es. `permissions.roles`) non devono concedere accesso in fallback (`MUST NOT`)
+- `accessMode: authenticated` resta consentito a ogni sessione autenticata
+- `accessMode: permission-bound` deve rispondere `DENY` se il Contact non ha almeno una permission effettiva compatibile
 
 ## 9) Visibility policy model
 Principio:
@@ -111,7 +115,7 @@ Ordine obbligatorio:
 2. validazione CSRF + `Origin/Referer` per endpoint mutativi browser (`POST|PUT|PATCH|DELETE`)
 3. validazione input DTO/schema
 4. verifica ACL risorsa
-5. costruzione visibility context (utente, permessi, recordType, oggetto)
+5. costruzione visibility context (utente, permission esplicite effettive, recordType, oggetto)
 6. risoluzione policy e compilazione predicate
 7. esecuzione query scoped
 8. field-level filtering (se applicabile)

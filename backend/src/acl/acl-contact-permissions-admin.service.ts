@@ -157,7 +157,6 @@ export class AclContactPermissionsAdminService {
     }
 
     const catalogCodes = new Set(snapshot.permissions.map((permission) => permission.code));
-    const defaultCodes = new Set(snapshot.defaultPermissions);
     const normalized = [...new Set(
       permissionCodes.map((entry, index) =>
         normalizeCanonicalPermissionCode(entry, `permissionCodes[${index}]`),
@@ -171,12 +170,6 @@ export class AclContactPermissionsAdminService {
     for (const permissionCode of normalized) {
       if (!catalogCodes.has(permissionCode)) {
         throw new BadRequestException(`ACL permission ${permissionCode} not found`);
-      }
-
-      if (defaultCodes.has(permissionCode)) {
-        throw new BadRequestException(
-          `ACL permission ${permissionCode} is already enabled as a default permission`,
-        );
       }
     }
 

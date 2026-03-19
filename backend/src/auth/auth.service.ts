@@ -434,10 +434,7 @@ export class AuthService {
   }
 
   private async resolveEffectivePermissions(contactId: string, email: string): Promise<string[]> {
-    const permissions = [
-      ...this.aclService.getDefaultPermissions(),
-      ...(await this.aclContactPermissionsRepository.listPermissionCodesByContactId(contactId))
-    ];
+    const permissions = await this.aclContactPermissionsRepository.listPermissionCodesByContactId(contactId);
     const userEmail = this.normalizeEmail(email);
     const bootstrapAdminEmail = this.normalizeEmail(await this.setupService.getCompletedAdminEmail());
 

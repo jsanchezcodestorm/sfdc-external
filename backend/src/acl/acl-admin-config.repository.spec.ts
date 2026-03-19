@@ -5,7 +5,7 @@ import { AclAdminConfigRepository } from './acl-admin-config.repository';
 
 const CONTACT_ID = '003000000000001AAA';
 
-test('replaceSnapshot preserves renamed assignments and prunes deleted/default permissions', async () => {
+test('replaceSnapshot preserves renamed assignments and prunes only deleted permissions', async () => {
   const state = {
     contactPermissions: [
       {
@@ -183,7 +183,7 @@ test('replaceSnapshot preserves renamed assignments and prunes deleted/default p
 
   assert.deepEqual(
     state.contactPermissions.map((row) => row.permissionCode).sort(),
-    ['CONTACT_READ'],
+    ['CONTACT_READ', 'PORTAL_USER'],
   );
   assert.deepEqual(
     state.appPermissionAssignments.map((row) => row.permissionCode).sort(),

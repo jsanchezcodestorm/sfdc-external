@@ -4,7 +4,7 @@
 Questo documento definisce come progettare, implementare e governare ACL nel progetto.
 
 Obiettivi:
-- rendere PostgreSQL l unica sorgente di verita per permission catalog, default permissions e risorse
+- rendere PostgreSQL l unica sorgente di verita per permission catalog, snapshot legacy dei default permissions e risorse
 - rendere PostgreSQL la sorgente di verita anche per le assegnazioni permission -> Contact
 - rendere PostgreSQL la sorgente di verita anche per il mapping permission -> app disponibili
 - mantenere enforcement backend fail-closed
@@ -25,6 +25,7 @@ Comportamento runtime (`AclService`):
 - `syncState: stale` => accesso negato
 - `accessMode: authenticated` => accesso consentito a ogni sessione autenticata
 - `accessMode: permission-bound` => accesso consentito solo con almeno una permission effettiva associata alla risorsa
+- le permission effettive runtime derivano dalle assegnazioni ACL esplicite del Contact; `defaultPermissions` non e piu una baseline runtime operativa
 
 Gestione amministrativa:
 - `GET /acl/admin/config`
@@ -64,11 +65,13 @@ Permission catalog:
 - `aliases[]` opzionali, univoci globalmente
 
 Default permissions:
-- elenco ordinato di codici permission assegnati a tutti gli utenti al login
+- elenco legacy ordinato di codici permission mantenuto per compatibilita snapshot e metadata
+- il target operativo e mantenerlo vuoto
+- non viene applicato come baseline implicita alle nuove sessioni o ai check ACL `permission-bound`
 
 Direct contact permissions:
 - codici permission espliciti assegnati a uno specifico `Contact`
-- si combinano in modo additivo con i default permissions
+- costituiscono la fonte primaria del set ACL effettivo del Contact
 - diventano effettivi dalla request autenticata successiva
 
 Permission -> app assignments:
@@ -103,6 +106,7 @@ Semantica:
 - `permissions: []` non implica piu allow implicito; il comportamento dipende da `accessMode`
 - durante la migrazione iniziale, le risorse legacy senza permission vengono portate a `accessMode: authenticated` per preservare il comportamento preesistente
 - associare una permission a una risorsa `disabled` la promuove a `permission-bound`
+- una risorsa `permission-bound` senza permission effettive esplicite compatibili risponde `DENY`
 
 ## 4) Convenzioni ID risorse
 Pattern obbligatori:
@@ -189,3 +193,4 @@ Per aggiungere una capability nuova:
 - fallback a file legacy ACL
 - risorse mancanti “temporaneamente” in produzione
 - metadata esterni che bypassano la decisione ACL
+- usare `defaultPermissions` come sostituto di un assegnamento esplicito al Contact

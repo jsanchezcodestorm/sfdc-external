@@ -76,11 +76,12 @@ export function AclDefaultsPage() {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
-              Checklist
+              Legacy
             </p>
             <h2 className="text-xl font-semibold text-slate-900">Default Permissions</h2>
             <p className="mt-1 text-sm text-slate-600">
-              Salvataggio dedicato della collection defaults senza passare dallo snapshot ACL.
+              Queste assegnazioni restano nel contratto ACL solo per compatibilita snapshot. Il
+              target operativo e tenerle vuote.
             </p>
           </div>
 
@@ -107,6 +108,18 @@ export function AclDefaultsPage() {
             {saveInfo}
           </p>
         ) : null}
+
+        <div
+          className={`mt-4 rounded-lg border px-3 py-2 text-sm ${
+            enabledCodes.length > 0
+              ? 'border-amber-200 bg-amber-50 text-amber-800'
+              : 'border-emerald-200 bg-emerald-50 text-emerald-800'
+          }`}
+        >
+          {enabledCodes.length > 0
+            ? 'Sono presenti default legacy configurati. Le nuove sessioni e i check ACL permission-bound non li usano piu come baseline operativa.'
+            : 'Nessun default legacy attivo. Le nuove sessioni partono senza baseline ACL implicita.'}
+        </div>
 
         {loading ? (
           <p className="mt-4 text-sm text-slate-600">Caricamento default permissions...</p>
@@ -151,7 +164,7 @@ export function AclDefaultsPage() {
         <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
           Summary
         </p>
-        <h2 className="text-xl font-semibold text-slate-900">Defaults attivi</h2>
+        <h2 className="text-xl font-semibold text-slate-900">Legacy defaults attivi</h2>
         <p className="mt-2 text-3xl font-bold tracking-tight text-slate-950">
           {enabledCodes.length}
         </p>

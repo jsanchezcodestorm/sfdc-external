@@ -78,7 +78,7 @@ Repository tecnico aggiuntivo per catalogo app e ACL:
 2. Per OIDC il browser avvia `GET /auth/oidc/:providerId/start`; per login locale usa `POST /auth/login/password`
 3. Backend valida identita esterna o credenziali locali e risolve Contact Salesforce attivo
 4. Backend emette JWT e lo salva in cookie HttpOnly
-5. `GET /auth/session` ricalcola i permission code effettivi come `defaultPermissions + acl_contact_permissions + admin fallback` e ruota il JWT; le altre request protette usano lo snapshot permessi gia presente nel cookie
+5. `GET /auth/session` ricalcola i permission code effettivi come `acl_contact_permissions + eventuali fallback bootstrap documentati` e ruota il JWT; le altre request protette usano lo snapshot permessi gia presente nel cookie
 
 ### 6.2 Lettura dati protetta
 1. richiesta API autenticata

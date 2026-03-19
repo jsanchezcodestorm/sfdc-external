@@ -69,19 +69,12 @@ export function AclContactPermissionEditorPage({
 
         const nextPermissions = permissionsPayload.items ?? []
         const nextDefaults = defaultsPayload.items ?? []
-        const defaultSet = new Set(
-          nextDefaults.filter((item) => item.enabled).map((item) => item.permissionCode),
-        )
 
         setPermissions(nextPermissions)
         setDefaultPermissions(nextDefaults)
 
         if (contactPermissionsPayload) {
-          const nextDraft = createContactPermissionDraft(contactPermissionsPayload.contactPermissions)
-          setDraft({
-            ...nextDraft,
-            permissionCodes: nextDraft.permissionCodes.filter((code) => !defaultSet.has(code)),
-          })
+          setDraft(createContactPermissionDraft(contactPermissionsPayload.contactPermissions))
         } else {
           setDraft(createEmptyContactPermissionDraft())
         }
@@ -115,17 +108,13 @@ export function AclContactPermissionEditorPage({
     () => defaultPermissions.filter((item) => item.enabled),
     [defaultPermissions],
   )
-  const defaultPermissionSet = useMemo(
-    () => new Set(defaultPermissionItems.map((item) => item.permissionCode)),
-    [defaultPermissionItems],
-  )
-  const explicitPermissionItems = useMemo(
-    () => permissions.filter((item) => !defaultPermissionSet.has(item.code)),
-    [defaultPermissionSet, permissions],
-  )
   const selectedExplicitPermissions = useMemo(
     () => new Set(normalizedDraft.permissionCodes),
     [normalizedDraft.permissionCodes],
+  )
+  const effectivePermissionItems = useMemo(
+    () => permissions.filter((item) => selectedExplicitPermissions.has(item.code)),
+    [permissions, selectedExplicitPermissions],
   )
 
   const togglePermission = (permissionCode: string) => {
@@ -246,7 +235,7 @@ export function AclContactPermissionEditorPage({
             disabled={
               loading ||
               saving ||
-              explicitPermissionItems.length === 0 ||
+              permissions.length === 0 ||
               !normalizedDraft.contactId ||
               normalizedDraft.permissionCodes.length === 0
             }
@@ -301,9 +290,10 @@ export function AclContactPermissionEditorPage({
             </label>
 
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <p className="text-sm font-medium text-slate-700">Default inherited permissions</p>
+              <p className="text-sm font-medium text-slate-700">Legacy default permissions</p>
               <p className="mt-1 text-xs text-slate-500">
-                Questi permessi arrivano dai defaults globali e non sono modificabili qui.
+                Restano visibili per compatibilita snapshot, ma non vengono piu applicati come
+                baseline operativa alle sessioni o alle risorse ACL `permission-bound`.
               </p>
 
               <div className="mt-4 flex flex-wrap gap-2">
@@ -317,7 +307,9 @@ export function AclContactPermissionEditorPage({
                     </span>
                   ))
                 ) : (
-                  <p className="text-sm text-slate-500">Nessun default configurato.</p>
+                  <p className="text-sm text-slate-500">
+                    Nessun default legacy configurato. Nuove sessioni partono senza baseline ACL.
+                  </p>
                 )}
               </div>
             </div>
@@ -328,8 +320,8 @@ export function AclContactPermissionEditorPage({
               <div>
                 <p className="text-sm font-medium text-slate-700">Explicit permissions</p>
                 <p className="mt-1 text-xs text-slate-500">
-                  Seleziona solo permission code non-default. Diventano effettivi dalla prossima
-                  request autenticata.
+                  Questa e la fonte primaria dei permessi ACL effettivi del contact. Diventano
+                  effettivi dalla prossima request autenticata.
                 </p>
               </div>
               <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
@@ -337,13 +329,13 @@ export function AclContactPermissionEditorPage({
               </p>
             </div>
 
-            {explicitPermissionItems.length === 0 ? (
+            {permissions.length === 0 ? (
               <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                Nessun permission code esplicito disponibile oltre ai defaults correnti.
+                Nessun permission code disponibile nel catalogo ACL.
               </p>
             ) : (
               <div className="mt-4 grid gap-3 md:grid-cols-2">
-                {explicitPermissionItems.map((item) => (
+                {permissions.map((item) => (
                   <label
                     key={item.code}
                     className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800"
@@ -366,6 +358,32 @@ export function AclContactPermissionEditorPage({
                 ))}
               </div>
             )}
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <p className="text-sm font-medium text-slate-700">Effective ACL permissions</p>
+            <p className="mt-1 text-xs text-slate-500">
+              Questa anteprima mostra il set ACL ricavato dalle assegnazioni esplicite salvate su
+              questo contact. Eventuali fallback runtime dedicati non sono mostrati qui.
+            </p>
+
+            <div className="mt-4 flex flex-wrap gap-2">
+              {effectivePermissionItems.length > 0 ? (
+                effectivePermissionItems.map((item) => (
+                  <span
+                    key={item.code}
+                    className="rounded-full border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-800"
+                  >
+                    {item.code}
+                  </span>
+                ))
+              ) : (
+                <p className="text-sm text-slate-500">
+                  Nessuna permission esplicita assegnata. Le risorse `permission-bound` risponderanno
+                  `DENY` salvo fallback runtime specifici.
+                </p>
+              )}
+            </div>
           </div>
         </div>
       )}

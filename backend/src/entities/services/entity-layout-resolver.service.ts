@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 
 import type { SessionUser } from '../../auth/session-user.interface';
 import { SalesforceService, type SalesforceRecordTypeSummary } from '../../salesforce/salesforce.service';
@@ -14,19 +14,30 @@ export interface ResolvedEntityLayout {
 
 @Injectable()
 export class EntityLayoutResolverService {
+  private readonly logger = new Logger(EntityLayoutResolverService.name);
+
   constructor(private readonly salesforceService: SalesforceService) {}
 
   async resolveRecordTypeDeveloperName(entityConfig: EntityConfig, recordId: string): Promise<string | undefined> {
     const escapedRecordId = recordId.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     const escapedObjectApiName = this.toSoqlIdentifier(entityConfig.objectApiName);
-    const result = (await this.salesforceService.executeReadOnlyQuery(
-      [
-        'SELECT Id, RecordType.DeveloperName',
-        `FROM ${escapedObjectApiName}`,
-        `WHERE Id = '${escapedRecordId}'`,
-        'LIMIT 1'
-      ].join(' ')
-    )) as { records?: Array<Record<string, unknown>> };
+    let result: { records?: Array<Record<string, unknown>> };
+
+    try {
+      result = (await this.salesforceService.executeReadOnlyQuery(
+        [
+          'SELECT Id, RecordType.DeveloperName',
+          `FROM ${escapedObjectApiName}`,
+          `WHERE Id = '${escapedRecordId}'`,
+          'LIMIT 1'
+        ].join(' ')
+      )) as { records?: Array<Record<string, unknown>> };
+    } catch (error) {
+      this.logger.warn(
+        `Failed to resolve record type for ${entityConfig.id}/${recordId}; continuing without record type-specific layout resolution: ${this.normalizeErrorMessage(error)}`
+      );
+      return undefined;
+    }
 
     const record = Array.isArray(result.records) ? result.records[0] : undefined;
     if (!record) {
@@ -105,6 +116,21 @@ export class EntityLayoutResolverService {
         layoutId: winner.layout.id,
         recordTypeDeveloperName
       };
+    }
+
+    const hasExplicitRecordTypeAssignments =
+      typeof recordTypeDeveloperName === 'string' &&
+      recordTypeDeveloperName.trim().length > 0 &&
+      layouts.some((layout) =>
+        layout.assignments.some(
+          (assignment) => assignment.recordTypeDeveloperName === recordTypeDeveloperName
+        )
+      );
+
+    if (hasExplicitRecordTypeAssignments) {
+      throw new NotFoundException(
+        `No applicable ${capability} layout configured for ${entityConfig.id}`
+      );
     }
 
     const defaultLayouts = layouts.filter((layout) => layout.isDefault);
@@ -196,5 +222,13 @@ export class EntityLayoutResolverService {
 
   private isObjectRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
+  }
+
+  private normalizeErrorMessage(error: unknown): string {
+    if (error instanceof Error && error.message.trim().length > 0) {
+      return error.message;
+    }
+
+    return 'unknown error';
   }
 }

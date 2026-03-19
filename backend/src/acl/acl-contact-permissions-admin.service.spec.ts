@@ -129,7 +129,7 @@ test('updateContactPermissions rejects an unknown Salesforce contact', async () 
   );
 });
 
-test('updateContactPermissions rejects unknown and default permissions', async () => {
+test('updateContactPermissions rejects unknown permissions and allows legacy default codes as explicit assignments', async () => {
   const { service } = createAclContactPermissionsAdminService();
 
   await assert.rejects(
@@ -139,12 +139,8 @@ test('updateContactPermissions rejects unknown and default permissions', async (
       error.message === 'ACL permission UNKNOWN_PERMISSION not found',
   );
 
-  await assert.rejects(
-    () => service.updateContactPermissions(CONTACT_ID, ['PORTAL_USER']),
-    (error: unknown) =>
-      error instanceof BadRequestException &&
-      error.message === 'ACL permission PORTAL_USER is already enabled as a default permission',
-  );
+  const response = await service.updateContactPermissions(CONTACT_ID, ['PORTAL_USER']);
+  assert.deepEqual(response.contactPermissions.permissionCodes, ['PORTAL_USER']);
 });
 
 test('updateContactPermissions replaces the full explicit set and records audit metadata', async () => {

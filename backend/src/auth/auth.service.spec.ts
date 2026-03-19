@@ -9,7 +9,6 @@ const CONTACT_ID = '003000000000001AAA';
 const VALID_PASSWORD = 'Password!123';
 
 async function createAuthService(options?: {
-  defaultPermissions?: string[];
   explicitPermissions?: string[];
   bootstrapAdminEmail?: string;
   contactEmail?: string;
@@ -34,9 +33,6 @@ async function createAuthService(options?: {
   };
 
   const aclService = {
-    getDefaultPermissions() {
-      return options?.defaultPermissions ?? ['PORTAL_USER'];
-    },
     normalizePermissions(permissionCodes: string[]) {
       return [
         ...new Set(permissionCodes.map((permissionCode) => permissionCode.trim().toUpperCase())),
@@ -177,17 +173,16 @@ async function createAuthService(options?: {
   return { service, state };
 }
 
-test('loginWithPassword merges default, explicit, and setup bootstrap admin permissions', async () => {
+test('loginWithPassword uses explicit permissions and setup bootstrap admin fallback only', async () => {
   const { service, state } = await createAuthService({
-    defaultPermissions: ['PORTAL_USER'],
-    explicitPermissions: ['ACCOUNT_READ', 'PORTAL_USER'],
+    explicitPermissions: ['ACCOUNT_READ'],
     bootstrapAdminEmail: 'admin@example.com',
     contactEmail: 'admin@example.com',
   });
 
   const response = await service.loginWithPassword('admin@example.com', VALID_PASSWORD, '127.0.0.1');
 
-  assert.deepEqual(response.user.permissions, ['PORTAL_USER', 'ACCOUNT_READ', 'PORTAL_ADMIN']);
+  assert.deepEqual(response.user.permissions, ['ACCOUNT_READ', 'PORTAL_ADMIN']);
   assert.equal(response.user.contactRecordTypeDeveloperName, 'Customer');
   assert.equal(response.user.authProvider, 'local');
   assert.equal(response.user.authMethod, 'local');
@@ -196,7 +191,6 @@ test('loginWithPassword merges default, explicit, and setup bootstrap admin perm
 
 test('verifySessionToken trusts the JWT permission snapshot without rereading PostgreSQL', async () => {
   const { service, state } = await createAuthService({
-    defaultPermissions: ['PORTAL_USER'],
     explicitPermissions: ['ACCOUNT_READ'],
     contactEmail: 'user@example.com',
   });
@@ -206,14 +200,13 @@ test('verifySessionToken trusts the JWT permission snapshot without rereading Po
 
   const firstSession = await service.verifySessionToken(firstLogin.token);
 
-  assert.deepEqual(firstLogin.user.permissions, ['PORTAL_USER', 'ACCOUNT_READ']);
-  assert.deepEqual(firstSession.permissions, ['PORTAL_USER', 'ACCOUNT_READ']);
+  assert.deepEqual(firstLogin.user.permissions, ['ACCOUNT_READ']);
+  assert.deepEqual(firstSession.permissions, ['ACCOUNT_READ']);
   assert.equal(state.permissionReads, 1);
 });
 
 test('refreshSessionUser applies updated contact permissions from PostgreSQL', async () => {
   const { service, state } = await createAuthService({
-    defaultPermissions: ['PORTAL_USER'],
     explicitPermissions: ['ACCOUNT_READ'],
     contactEmail: 'user@example.com',
   });
@@ -223,9 +216,20 @@ test('refreshSessionUser applies updated contact permissions from PostgreSQL', a
 
   const refreshedSession = await service.refreshSessionUser(firstLogin.token);
 
-  assert.deepEqual(firstLogin.user.permissions, ['PORTAL_USER', 'ACCOUNT_READ']);
-  assert.deepEqual(refreshedSession.permissions, ['PORTAL_USER', 'ACCOUNT_WRITE']);
+  assert.deepEqual(firstLogin.user.permissions, ['ACCOUNT_READ']);
+  assert.deepEqual(refreshedSession.permissions, ['ACCOUNT_WRITE']);
   assert.equal(state.permissionReads, 2);
+});
+
+test('loginWithPassword returns an empty permission set when the contact has no explicit assignments', async () => {
+  const { service } = await createAuthService({
+    explicitPermissions: [],
+    contactEmail: 'user@example.com',
+  });
+
+  const response = await service.loginWithPassword('user@example.com', VALID_PASSWORD, '127.0.0.1');
+
+  assert.deepEqual(response.user.permissions, []);
 });
 
 test('createOidcLoginStart derives the callback from the current public origin and stores it in the flow token', async () => {

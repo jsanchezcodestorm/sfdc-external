@@ -55,9 +55,7 @@ export class AclAdminConfigRepository {
         });
       }
 
-      const explicitCodesToDelete = [
-        ...new Set([...(options?.deletedPermissionCodes ?? []), ...snapshot.defaultPermissions]),
-      ];
+      const explicitCodesToDelete = [...new Set(options?.deletedPermissionCodes ?? [])];
       if (explicitCodesToDelete.length > 0) {
         await tx.aclContactPermissionRecord.deleteMany({
           where: {

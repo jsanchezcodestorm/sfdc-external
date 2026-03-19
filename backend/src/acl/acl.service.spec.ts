@@ -79,6 +79,7 @@ test('permission-bound resources require an effective permission and stay closed
   const service = createService();
   await service.reload();
 
+  assert.equal(service.canAccess([], 'rest:permission-bound'), false);
   assert.equal(service.canAccess(['PORTAL_USER'], 'rest:permission-bound'), false);
   assert.equal(service.canAccess(['REPORT_ADMIN'], 'rest:permission-bound'), true);
   assert.equal(service.canAccess(['REPORT_ADMIN'], 'rest:permission-bound-empty'), false);

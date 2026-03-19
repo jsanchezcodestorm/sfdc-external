@@ -43,6 +43,12 @@ export class AclService implements OnModuleInit {
     this.logger.log(
       `ACL loaded from PostgreSQL: ${this.resources.size} resources, ${this.permissionsCatalog.length} permission definitions.`
     );
+
+    if (this.defaultPermissions.length > 0) {
+      this.logger.warn(
+        `ACL snapshot still contains ${this.defaultPermissions.length} legacy default permission(s). Runtime access checks no longer use them.`
+      );
+    }
   }
 
   getDefaultPermissions(): string[] {
@@ -72,9 +78,7 @@ export class AclService implements OnModuleInit {
       return false;
     }
 
-    const effectivePermissions = new Set<string>(
-      this.normalizePermissions(userPermissions.length > 0 ? userPermissions : this.getDefaultPermissions())
-    );
+    const effectivePermissions = new Set<string>(this.normalizePermissions(userPermissions));
 
     return resource.permissions.some((permission) => effectivePermissions.has(permission));
   }
