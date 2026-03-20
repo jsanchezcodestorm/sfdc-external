@@ -7,7 +7,10 @@ import { QueryAuditService } from '../audit/query-audit.service';
 
 import { EntitiesService } from './entities.service';
 
-function createHarness(rawResult: Record<string, unknown>, queryMoreResults: Record<string, unknown>[] = []) {
+function createHarness(
+  rawResult: Record<string, unknown> = { totalSize: 0, done: true, records: [] },
+  queryMoreResults: Record<string, unknown>[] = [],
+) {
   const createCalls: Array<Record<string, unknown>> = [];
   const completeCalls: Array<Record<string, unknown>> = [];
   const visibilityAuditCalls: Array<Record<string, unknown>> = [];
@@ -81,6 +84,43 @@ function createHarness(rawResult: Record<string, unknown>, queryMoreResults: Rec
     },
   };
 
+  const entityLayoutResolverService = {
+    async resolveRecordTypeDeveloperName() {
+      return undefined;
+    },
+    async listCreateOptions() {
+      return { items: [], recordTypeSelectionRequired: false };
+    },
+    resolveLayout(entityConfig: Record<string, unknown>, _user: Record<string, unknown>, capability: 'detail' | 'form') {
+      const layouts = Array.isArray(entityConfig.layouts) ? entityConfig.layouts : [];
+      const layoutFromConfig = layouts.find((entry) =>
+        capability === 'detail' ? Boolean((entry as { detail?: unknown }).detail) : Boolean((entry as { form?: unknown }).form),
+      );
+      if (layoutFromConfig) {
+        return {
+          layout: layoutFromConfig,
+          layoutId: String((layoutFromConfig as { id?: string }).id ?? 'default'),
+          recordTypeDeveloperName: undefined,
+        };
+      }
+
+      const synthesizedLayout = {
+        id: 'default',
+        label: 'Default',
+        detail: entityConfig.detail,
+        form: entityConfig.form,
+        assignments: [],
+        isDefault: true,
+      };
+
+      return {
+        layout: synthesizedLayout,
+        layoutId: synthesizedLayout.id,
+        recordTypeDeveloperName: undefined,
+      };
+    },
+  };
+
   const service = new EntitiesService(
     {} as never,
     queryAuditService,
@@ -90,6 +130,7 @@ function createHarness(rawResult: Record<string, unknown>, queryMoreResults: Rec
         return {};
       },
     } as never,
+    entityLayoutResolverService as never,
     {
       async createCursor(scope: Record<string, unknown>, sourceState: Record<string, unknown>) {
         cursorCreateCalls.push({ scope, sourceState });
@@ -826,6 +867,64 @@ test('getEntityForm edit mode projects lookup labels for reference fields', asyn
   assert.deepEqual(buildSoqlOptions[0].extraFields, ['Parent.Name']);
 });
 
+test('getEntityForm maps Salesforce datetime fields to datetime-local inputs', async () => {
+  const harness = createHarness();
+
+  (harness.service as unknown as {
+    salesforceService: { describeObjectFields: (objectApiName: string) => Promise<unknown[]> };
+  }).salesforceService.describeObjectFields = async () => [
+    {
+      name: 'Id',
+      label: 'Record ID',
+      type: 'id',
+      nillable: false,
+      createable: false,
+      updateable: false,
+      filterable: true,
+      defaultedOnCreate: false,
+      calculated: false,
+      autoNumber: false,
+    },
+    {
+      name: 'CloseAt__c',
+      label: 'Close At',
+      type: 'datetime',
+      nillable: false,
+      createable: true,
+      updateable: true,
+      filterable: true,
+      defaultedOnCreate: false,
+      calculated: false,
+      autoNumber: false,
+    },
+  ];
+
+  patchServiceMethods(harness.service, {
+    loadEntityConfig: async () => ({
+      id: 'opportunity',
+      objectApiName: 'Opportunity',
+      label: 'Opportunities',
+      form: {
+        title: {
+          create: 'New Opportunity',
+          edit: 'Edit Opportunity',
+        },
+        query: { object: 'Opportunity', fields: ['Id', 'CloseAt__c'] },
+        sections: [{ title: 'Main', fields: [{ field: 'CloseAt__c' }] }],
+      },
+    }),
+    isFieldVisible: () => true,
+    ensureVisibleFields() {},
+  });
+
+  const response = await harness.service.getEntityForm(user as never, 'opportunity');
+
+  assert.equal(response.sections[0]?.fields[0]?.field, 'CloseAt__c');
+  assert.equal(response.sections[0]?.fields[0]?.inputType, 'datetime-local');
+  assert.equal(response.fieldDefinitions[0]?.inputType, 'datetime-local');
+  assert.equal(response.sections[0]?.fields[0]?.required, true);
+});
+
 test('searchEntityFormLookup returns describe-driven lookup options', async () => {
   const harness = createHarness({
     totalSize: 1,
@@ -921,6 +1020,7 @@ test('searchEntityFormLookup returns describe-driven lookup options', async () =
 
   const response = await harness.service.searchEntityFormLookup(user as never, 'account', 'OwnerCustom__c', {
     q: 'mario',
+    recordTypeDeveloperName: 'Retail',
   });
 
   assert.deepEqual(response.items, [
@@ -1105,6 +1205,43 @@ function createWriteHarness(options?: {
     },
   };
 
+  const entityLayoutResolverService = {
+    async resolveRecordTypeDeveloperName() {
+      return undefined;
+    },
+    async listCreateOptions() {
+      return { items: [], recordTypeSelectionRequired: false };
+    },
+    resolveLayout(entityConfig: Record<string, unknown>, _user: Record<string, unknown>, capability: 'detail' | 'form') {
+      const layouts = Array.isArray(entityConfig.layouts) ? entityConfig.layouts : [];
+      const layoutFromConfig = layouts.find((entry) =>
+        capability === 'detail' ? Boolean((entry as { detail?: unknown }).detail) : Boolean((entry as { form?: unknown }).form),
+      );
+      if (layoutFromConfig) {
+        return {
+          layout: layoutFromConfig,
+          layoutId: String((layoutFromConfig as { id?: string }).id ?? 'default'),
+          recordTypeDeveloperName: undefined,
+        };
+      }
+
+      const synthesizedLayout = {
+        id: 'default',
+        label: 'Default',
+        detail: entityConfig.detail,
+        form: entityConfig.form,
+        assignments: [],
+        isDefault: true,
+      };
+
+      return {
+        layout: synthesizedLayout,
+        layoutId: synthesizedLayout.id,
+        recordTypeDeveloperName: undefined,
+      };
+    },
+  };
+
   const service = new EntitiesService(
     auditWriteService as never,
     queryAuditService,
@@ -1114,6 +1251,7 @@ function createWriteHarness(options?: {
         return {};
       },
     } as never,
+    entityLayoutResolverService as never,
     {
       async createCursor() {
         return 'cursor-1';

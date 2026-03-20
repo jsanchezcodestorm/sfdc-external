@@ -83,6 +83,7 @@ type FormInputType =
   | 'email'
   | 'tel'
   | 'date'
+  | 'datetime-local'
   | 'textarea'
   | 'number'
   | 'checkbox'
@@ -2468,6 +2469,10 @@ export class EntitiesService {
 
     if (normalizedType === 'date') {
       return 'date';
+    }
+
+    if (normalizedType === 'datetime') {
+      return 'datetime-local';
     }
 
     if (normalizedType === 'textarea' || normalizedType === 'longtextarea' || normalizedType === 'richtextarea') {

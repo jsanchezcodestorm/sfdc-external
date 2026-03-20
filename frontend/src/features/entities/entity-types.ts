@@ -133,6 +133,7 @@ export type RuntimeFormInputType =
   | 'email'
   | 'tel'
   | 'date'
+  | 'datetime-local'
   | 'textarea'
   | 'number'
   | 'checkbox'

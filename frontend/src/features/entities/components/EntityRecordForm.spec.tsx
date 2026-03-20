@@ -105,4 +105,59 @@ describe('EntityRecordForm', () => {
       }),
     )
   })
+
+  it('renders datetime fields with a dedicated datetime-local input and preserves submitted value', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined)
+    const initialValue = '2026-03-20T09:45:00.000Z'
+
+    render(
+      <EntityRecordForm
+        entityId="opportunity"
+        sections={[
+          {
+            title: 'Main',
+            fields: [
+              {
+                field: 'CloseAt__c',
+                label: 'Close At',
+                inputType: 'datetime-local',
+                required: true,
+              },
+            ],
+          },
+        ]}
+        initialValues={{ CloseAt__c: initialValue }}
+        lookupContext={{}}
+        submitLabel="Create record"
+        isSubmitting={false}
+        onSubmit={onSubmit}
+      />,
+    )
+
+    const input = screen.getByLabelText('Close At *') as HTMLInputElement
+    expect(input.type).toBe('datetime-local')
+    expect(input.value).toBe(toExpectedDateTimeLocalValue(initialValue))
+
+    fireEvent.change(input, {
+      target: { value: '2026-03-21T14:30' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Create record' }))
+
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith({
+        CloseAt__c: '2026-03-21T14:30',
+      }),
+    )
+  })
 })
+
+function toExpectedDateTimeLocalValue(value: string): string {
+  const date = new Date(value)
+  const year = String(date.getFullYear()).padStart(4, '0')
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  const hours = String(date.getHours()).padStart(2, '0')
+  const minutes = String(date.getMinutes()).padStart(2, '0')
+
+  return `${year}-${month}-${day}T${hours}:${minutes}`
+}

@@ -188,7 +188,7 @@ function FormInput({ entityId, field, values, lookupContext, onChange }: FormInp
     )
   }
 
-  const normalizedValue = toInputValue(rawValue)
+  const normalizedValue = toInputValue(rawValue, field.inputType)
 
   return (
     <label className={field.inputType === 'textarea' ? 'sm:col-span-2' : ''}>
@@ -207,7 +207,7 @@ function FormInput({ entityId, field, values, lookupContext, onChange }: FormInp
       ) : (
         <input
           className={inputClassName}
-          type={field.inputType === 'number' ? 'number' : field.inputType}
+          type={field.inputType}
           value={normalizedValue}
           placeholder={placeholder}
           required={field.required}
@@ -386,12 +386,16 @@ function LookupInput({
   )
 }
 
-function toInputValue(value: unknown): string {
+function toInputValue(value: unknown, inputType: RuntimeFormFieldConfig['inputType']): string {
   if (value === null || value === undefined) {
     return ''
   }
 
   if (typeof value === 'string') {
+    if (inputType === 'datetime-local') {
+      return toDateTimeLocalInputValue(value)
+    }
+
     return value
   }
 
@@ -404,6 +408,26 @@ function toInputValue(value: unknown): string {
   }
 
   return ''
+}
+
+function toDateTimeLocalInputValue(value: string): string {
+  const normalizedValue = value.trim()
+  if (normalizedValue.length === 0) {
+    return ''
+  }
+
+  const date = new Date(normalizedValue)
+  if (Number.isNaN(date.getTime())) {
+    return normalizedValue
+  }
+
+  const year = String(date.getFullYear()).padStart(4, '0')
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  const hours = String(date.getHours()).padStart(2, '0')
+  const minutes = String(date.getMinutes()).padStart(2, '0')
+
+  return `${year}-${month}-${day}T${hours}:${minutes}`
 }
 
 function buildLookupContext(...sources: EntityRecord[]): Record<string, string | number | boolean | null | undefined> {
