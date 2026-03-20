@@ -118,13 +118,16 @@ test('listCreateOptions hides record types whose explicit assignments do not mat
     { permissions: ['PORTAL_ADMIN'] } as never,
   );
 
-  assert.deepEqual(options, [
-    {
-      recordTypeDeveloperName: 'TestRecordtype',
-      label: 'TestRecordtype',
-      layoutId: 'default-form',
-    },
-  ]);
+  assert.deepEqual(options, {
+    items: [
+      {
+        recordTypeDeveloperName: 'TestRecordtype',
+        label: 'TestRecordtype',
+        layoutId: 'default-form',
+      },
+    ],
+    recordTypeSelectionRequired: true,
+  });
 });
 
 test('listCreateOptions includes explicitly assigned record types when the current user has the required permission', async () => {
@@ -135,18 +138,21 @@ test('listCreateOptions includes explicitly assigned record types when the curre
     { permissions: ['PORTAL_ADMIN', 'ACCOUNT_RETAIL_CREATE'] } as never,
   );
 
-  assert.deepEqual(options, [
-    {
-      recordTypeDeveloperName: 'Retail',
-      label: 'Retail',
-      layoutId: 'retail-form',
-    },
-    {
-      recordTypeDeveloperName: 'TestRecordtype',
-      label: 'TestRecordtype',
-      layoutId: 'default-form',
-    },
-  ]);
+  assert.deepEqual(options, {
+    items: [
+      {
+        recordTypeDeveloperName: 'Retail',
+        label: 'Retail',
+        layoutId: 'retail-form',
+      },
+      {
+        recordTypeDeveloperName: 'TestRecordtype',
+        label: 'TestRecordtype',
+        layoutId: 'default-form',
+      },
+    ],
+    recordTypeSelectionRequired: true,
+  });
 });
 
 test('resolveRecordTypeDeveloperName falls back to undefined when the Salesforce record type query fails', async () => {
@@ -162,4 +168,22 @@ test('resolveRecordTypeDeveloperName falls back to undefined when the Salesforce
   );
 
   assert.equal(resolved, undefined);
+});
+
+test('listCreateOptions disables record type selection when Salesforce exposes no non-master record types', async () => {
+  const service = new EntityLayoutResolverService({
+    async describeRecordTypes() {
+      return [];
+    },
+  } as never);
+
+  const options = await service.listCreateOptions(
+    entityConfig as never,
+    { permissions: ['PORTAL_ADMIN'] } as never,
+  );
+
+  assert.deepEqual(options, {
+    items: [],
+    recordTypeSelectionRequired: false,
+  });
 });

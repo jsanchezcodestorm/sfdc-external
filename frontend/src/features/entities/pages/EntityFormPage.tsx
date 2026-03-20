@@ -35,6 +35,7 @@ export function EntityFormPage() {
   const [config, setConfig] = useState<EntityConfigEnvelope | null>(null)
   const [formResponse, setFormResponse] = useState<EntityFormResponse | null>(null)
   const [createOptions, setCreateOptions] = useState<EntityCreateLayoutOption[]>([])
+  const [recordTypeSelectionRequired, setRecordTypeSelectionRequired] = useState(true)
   const [selectedRecordTypeDeveloperName, setSelectedRecordTypeDeveloperName] = useState('')
   const [initialValues, setInitialValues] = useState<EntityRecord>({})
   const [loading, setLoading] = useState(true)
@@ -56,28 +57,40 @@ export function EntityFormPage() {
       if (mode === 'create') {
         const optionsResponse = await fetchEntityCreateLayoutOptions(entityId)
         const nextOptions = optionsResponse.items ?? []
+        const nextRecordTypeSelectionRequired = optionsResponse.recordTypeSelectionRequired
         setCreateOptions(nextOptions)
+        setRecordTypeSelectionRequired(nextRecordTypeSelectionRequired)
 
-        const nextRecordType =
-          selectedRecordTypeDeveloperName ||
-          (nextOptions.length === 1 ? nextOptions[0].recordTypeDeveloperName : '')
-        if (nextRecordType && nextRecordType !== selectedRecordTypeDeveloperName) {
-          setSelectedRecordTypeDeveloperName(nextRecordType)
+        if (!nextRecordTypeSelectionRequired) {
+          if (selectedRecordTypeDeveloperName.length > 0) {
+            setSelectedRecordTypeDeveloperName('')
+          }
+
+          resolvedPayload = await fetchEntityForm(entityId)
+          setFormResponse(resolvedPayload)
+        } else {
+          const nextRecordType =
+            selectedRecordTypeDeveloperName ||
+            (nextOptions.length === 1 ? nextOptions[0].recordTypeDeveloperName : '')
+          if (nextRecordType && nextRecordType !== selectedRecordTypeDeveloperName) {
+            setSelectedRecordTypeDeveloperName(nextRecordType)
+          }
+
+          if (!nextRecordType) {
+            setFormResponse(null)
+            setInitialValues({})
+            setError(null)
+            return
+          }
+
+          resolvedPayload = await fetchEntityForm(entityId, undefined, nextRecordType)
+          setFormResponse(resolvedPayload)
         }
-
-        if (!nextRecordType) {
-          setFormResponse(null)
-          setInitialValues({})
-          setError(null)
-          return
-        }
-
-        resolvedPayload = await fetchEntityForm(entityId, undefined, nextRecordType)
-        setFormResponse(resolvedPayload)
       } else {
         resolvedPayload = await fetchEntityForm(entityId, recordId)
         setFormResponse(resolvedPayload)
         setCreateOptions([])
+        setRecordTypeSelectionRequired(false)
       }
 
       if (resolvedPayload?.values) {
@@ -99,6 +112,7 @@ export function EntityFormPage() {
       setConfig(null)
       setFormResponse(null)
       setCreateOptions([])
+      setRecordTypeSelectionRequired(true)
       setInitialValues({})
     } finally {
       setLoading(false)
@@ -197,7 +211,7 @@ export function EntityFormPage() {
       )}
       {!loading && !error && (
         <>
-          {mode === 'create' && (
+          {mode === 'create' && recordTypeSelectionRequired && (
             <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <label className="block">
                 <span className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.1em] text-slate-600">
@@ -220,7 +234,7 @@ export function EntityFormPage() {
             </section>
           )}
 
-          {mode === 'create' && selectedRecordTypeDeveloperName.length === 0 ? (
+          {mode === 'create' && recordTypeSelectionRequired && selectedRecordTypeDeveloperName.length === 0 ? (
             <EntityStatePanel
               title="Seleziona un record type"
               description={
@@ -248,7 +262,7 @@ export function EntityFormPage() {
                       : await createEntityRecord(
                           entityId,
                           filteredValues,
-                          selectedRecordTypeDeveloperName,
+                          selectedRecordTypeDeveloperName || undefined,
                         )
 
                   const targetRecordId =

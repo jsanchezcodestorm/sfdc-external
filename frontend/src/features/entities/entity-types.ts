@@ -304,4 +304,5 @@ export type EntityCreateLayoutOption = {
 
 export type EntityCreateLayoutOptionsResponse = {
   items: EntityCreateLayoutOption[]
+  recordTypeSelectionRequired: boolean
 }

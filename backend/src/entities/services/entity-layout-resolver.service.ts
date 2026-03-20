@@ -12,6 +12,15 @@ export interface ResolvedEntityLayout {
   recordTypeDeveloperName?: string;
 }
 
+export interface EntityCreateLayoutOptions {
+  items: Array<{
+    recordTypeDeveloperName: string;
+    label: string;
+    layoutId: string;
+  }>;
+  recordTypeSelectionRequired: boolean;
+}
+
 @Injectable()
 export class EntityLayoutResolverService {
   private readonly logger = new Logger(EntityLayoutResolverService.name);
@@ -147,15 +156,22 @@ export class EntityLayoutResolverService {
     );
   }
 
-  async listCreateOptions(entityConfig: EntityConfig, user: SessionUser): Promise<Array<{
-    recordTypeDeveloperName: string;
-    label: string;
-    layoutId: string;
-  }>> {
+  async listCreateOptions(entityConfig: EntityConfig, user: SessionUser): Promise<EntityCreateLayoutOptions> {
     const recordTypes = await this.salesforceService.describeRecordTypes(entityConfig.objectApiName);
-    const options: Array<{ recordTypeDeveloperName: string; label: string; layoutId: string }> = [];
+    const selectableRecordTypes = this
+      .filterCreateRecordTypes(recordTypes)
+      .filter((recordType) => !recordType.master);
 
-    for (const recordType of this.filterCreateRecordTypes(recordTypes)) {
+    if (selectableRecordTypes.length === 0) {
+      return {
+        items: [],
+        recordTypeSelectionRequired: false,
+      };
+    }
+
+    const options: EntityCreateLayoutOptions['items'] = [];
+
+    for (const recordType of selectableRecordTypes) {
       try {
         const resolved = this.resolveLayout(entityConfig, user, 'form', recordType.developerName);
         options.push({
@@ -172,15 +188,18 @@ export class EntityLayoutResolverService {
       }
     }
 
-    return options.sort((left, right) => {
-      if (left.label !== right.label) {
-        return left.label.localeCompare(right.label, 'en', { sensitivity: 'base' });
-      }
+    return {
+      items: options.sort((left, right) => {
+        if (left.label !== right.label) {
+          return left.label.localeCompare(right.label, 'en', { sensitivity: 'base' });
+        }
 
-      return left.recordTypeDeveloperName.localeCompare(right.recordTypeDeveloperName, 'en', {
-        sensitivity: 'base'
-      });
-    });
+        return left.recordTypeDeveloperName.localeCompare(right.recordTypeDeveloperName, 'en', {
+          sensitivity: 'base'
+        });
+      }),
+      recordTypeSelectionRequired: true,
+    };
   }
 
   private filterCreateRecordTypes(recordTypes: SalesforceRecordTypeSummary[]): SalesforceRecordTypeSummary[] {

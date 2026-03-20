@@ -221,6 +221,7 @@ interface EntityCreateLayoutOptionsResponse {
     label: string;
     layoutId: string;
   }>;
+  recordTypeSelectionRequired: boolean;
 }
 
 interface EntityCursorExecutionInput {
@@ -469,7 +470,7 @@ export class EntitiesService {
     });
 
     return {
-      items: await this.entityLayoutResolverService.listCreateOptions(entityConfig, user)
+      ...(await this.entityLayoutResolverService.listCreateOptions(entityConfig, user))
     };
   }
 
@@ -496,7 +497,10 @@ export class EntitiesService {
         recordId
       );
     } else if (!resolvedRecordTypeDeveloperName) {
-      throw new BadRequestException('recordTypeDeveloperName query parameter is required');
+      const createOptions = await this.entityLayoutResolverService.listCreateOptions(entityConfig, user);
+      if (createOptions.recordTypeSelectionRequired) {
+        throw new BadRequestException('recordTypeDeveloperName query parameter is required');
+      }
     }
 
     const resolvedLayout = this.entityLayoutResolverService.resolveLayout(
@@ -855,7 +859,7 @@ export class EntitiesService {
     user: SessionUser,
     entityId: string,
     payload: unknown,
-    recordTypeDeveloperName: string
+    recordTypeDeveloperName?: string
   ): Promise<Record<string, unknown>> {
     const entityConfig = await this.loadEntityConfig(entityId);
     const visibility = await this.authorizeEntityWriteAccess(
@@ -864,9 +868,12 @@ export class EntitiesService {
       entityConfig.objectApiName,
       ENTITY_CREATE_QUERY_KIND
     );
-    const normalizedRecordTypeDeveloperName = recordTypeDeveloperName.trim();
+    const normalizedRecordTypeDeveloperName = recordTypeDeveloperName?.trim() || undefined;
     if (!normalizedRecordTypeDeveloperName) {
-      throw new BadRequestException('recordTypeDeveloperName query parameter is required');
+      const createOptions = await this.entityLayoutResolverService.listCreateOptions(entityConfig, user);
+      if (createOptions.recordTypeSelectionRequired) {
+        throw new BadRequestException('recordTypeDeveloperName query parameter is required');
+      }
     }
 
     const resolvedLayout = this.entityLayoutResolverService.resolveLayout(
@@ -876,10 +883,12 @@ export class EntitiesService {
       normalizedRecordTypeDeveloperName
     );
     const values = await this.normalizeWritePayload(entityConfig, resolvedLayout.layout, payload, 'create');
-    values.RecordTypeId = await this.salesforceService.resolveRecordTypeId(
-      entityConfig.objectApiName,
-      normalizedRecordTypeDeveloperName
-    );
+    if (normalizedRecordTypeDeveloperName) {
+      values.RecordTypeId = await this.salesforceService.resolveRecordTypeId(
+        entityConfig.objectApiName,
+        normalizedRecordTypeDeveloperName
+      );
+    }
     await this.recordWriteVisibilityAudit(visibility, ENTITY_CREATE_QUERY_KIND);
     const auditId = await this.auditWriteService.createApplicationIntentOrThrow({
       contactId: user.sub,

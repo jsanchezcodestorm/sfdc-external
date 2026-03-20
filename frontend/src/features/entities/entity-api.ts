@@ -124,7 +124,7 @@ export function isInvalidEntityCursorError(error: unknown): boolean {
 export async function createEntityRecord(
   entityId: string,
   values: EntityRecord,
-  recordTypeDeveloperName: string,
+  recordTypeDeveloperName?: string,
 ): Promise<EntityRecord | null> {
   const query = buildQueryString({ recordTypeDeveloperName })
 
