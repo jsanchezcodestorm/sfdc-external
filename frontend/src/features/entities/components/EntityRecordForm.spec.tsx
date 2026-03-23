@@ -149,6 +149,74 @@ describe('EntityRecordForm', () => {
       }),
     )
   })
+
+  it('renders time, url and password fields with dedicated input types', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined)
+
+    render(
+      <EntityRecordForm
+        entityId="account"
+        sections={[
+          {
+            title: 'Main',
+            fields: [
+              {
+                field: 'BestCallTime__c',
+                label: 'Best Call Time',
+                inputType: 'time',
+                required: false,
+              },
+              {
+                field: 'Website',
+                label: 'Website',
+                inputType: 'url',
+                required: false,
+              },
+              {
+                field: 'SecretCode__c',
+                label: 'Secret Code',
+                inputType: 'password',
+                required: false,
+              },
+            ],
+          },
+        ]}
+        initialValues={{
+          BestCallTime__c: '14:30:00.000Z',
+          Website: 'https://example.com',
+          SecretCode__c: 'top-secret',
+        }}
+        lookupContext={{}}
+        submitLabel="Create record"
+        isSubmitting={false}
+        onSubmit={onSubmit}
+      />,
+    )
+
+    const timeInput = screen.getByLabelText('Best Call Time') as HTMLInputElement
+    const urlInput = screen.getByLabelText('Website') as HTMLInputElement
+    const passwordInput = screen.getByLabelText('Secret Code') as HTMLInputElement
+
+    expect(timeInput.type).toBe('time')
+    expect(urlInput.type).toBe('url')
+    expect(passwordInput.type).toBe('password')
+    expect(timeInput.value).toBe('14:30')
+    expect(urlInput.value).toBe('https://example.com')
+    expect(passwordInput.value).toBe('top-secret')
+
+    fireEvent.change(timeInput, { target: { value: '16:45' } })
+    fireEvent.change(urlInput, { target: { value: 'https://codestorm.it' } })
+    fireEvent.change(passwordInput, { target: { value: 'changed-secret' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Create record' }))
+
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith({
+        BestCallTime__c: '16:45',
+        Website: 'https://codestorm.it',
+        SecretCode__c: 'changed-secret',
+      }),
+    )
+  })
 })
 
 function toExpectedDateTimeLocalValue(value: string): string {

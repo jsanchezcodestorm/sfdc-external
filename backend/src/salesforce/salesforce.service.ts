@@ -102,8 +102,8 @@ export class SalesforceService {
     private readonly auditWriteService: AuditWriteService,
     private readonly setupService: SetupService
   ) {
-    this.describeCacheTtlMs = this.readPositiveIntConfig('SALESFORCE_DESCRIBE_CACHE_TTL_MS', DEFAULT_DESCRIBE_CACHE_TTL_MS);
-    this.describeCacheStaleWhileRevalidateMs = this.readPositiveIntConfig(
+    this.describeCacheTtlMs = this.readNonNegativeIntConfig('SALESFORCE_DESCRIBE_CACHE_TTL_MS', DEFAULT_DESCRIBE_CACHE_TTL_MS);
+    this.describeCacheStaleWhileRevalidateMs = this.readNonNegativeIntConfig(
       'SALESFORCE_DESCRIBE_STALE_WHILE_REVALIDATE_MS',
       this.describeCacheTtlMs
     );
@@ -443,6 +443,10 @@ export class SalesforceService {
     connection: Connection,
     cacheContext: SalesforceDescribeCacheContext
   ): Promise<Record<string, unknown>> {
+    if (this.describeCacheTtlMs === 0) {
+      return this.refreshDescribeCache(connection, cacheContext);
+    }
+
     const cachedEntry = await this.prismaService.salesforceSObjectDescribeCache.findUnique({
       where: { cacheKey: cacheContext.cacheKey }
     });
@@ -628,14 +632,14 @@ export class SalesforceService {
     return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
   }
 
-  private readPositiveIntConfig(configKey: string, fallback: number): number {
+  private readNonNegativeIntConfig(configKey: string, fallback: number): number {
     const rawValue = this.configService.get<string>(configKey);
     if (!rawValue) {
       return fallback;
     }
 
     const parsed = Number(rawValue);
-    return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+    return Number.isInteger(parsed) && parsed >= 0 ? parsed : fallback;
   }
 
   private async tryInvalidateDescribeCacheForInvalidField(

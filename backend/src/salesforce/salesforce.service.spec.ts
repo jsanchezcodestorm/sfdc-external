@@ -25,12 +25,15 @@ function createSalesforceService(options?: {
         };
     completedAt: string;
   } | null;
+  config?: Record<string, string>;
+  describeCacheEntry?: Record<string, unknown> | null;
 }) {
   const configService = {
     get(key: string) {
       const values: Record<string, string> = {
         SALESFORCE_DESCRIBE_CACHE_TTL_MS: '21600000',
         SALESFORCE_DESCRIBE_STALE_WHILE_REVALIDATE_MS: '21600000',
+        ...(options?.config ?? {}),
       };
 
       return values[key];
@@ -40,7 +43,7 @@ function createSalesforceService(options?: {
   const prismaService = {
     salesforceSObjectDescribeCache: {
       async findUnique() {
-        return null;
+        return options?.describeCacheEntry ?? null;
       },
       async upsert() {},
       async deleteMany() {},
@@ -207,4 +210,38 @@ test('describeObjectFields maps picklist and reference metadata from describe pa
       referenceTo: ['Account'],
     },
   ]);
+});
+
+test('describeObject bypasses cached describe entries when TTL is set to 0', async () => {
+  const service = createSalesforceService({
+    config: {
+      SALESFORCE_DESCRIBE_CACHE_TTL_MS: '0',
+      SALESFORCE_DESCRIBE_STALE_WHILE_REVALIDATE_MS: '0',
+    },
+    describeCacheEntry: {
+      cacheKey: 'cached',
+      describeJson: { fields: [{ name: 'Cached__c' }] },
+      expiresAt: new Date(Date.now() + 60_000),
+    },
+  });
+  let refreshCalls = 0;
+  const fakeConnection = {
+    version: '61.0',
+    userInfo: { organizationId: '00D000000000001' },
+    sobject() {
+      return {
+        async describe() {
+          refreshCalls += 1;
+          return { fields: [{ name: 'Fresh__c' }] };
+        },
+      };
+    },
+  };
+
+  (service as unknown as { getConnection: () => Promise<unknown> }).getConnection = async () => fakeConnection;
+
+  const describe = await service.describeObject('Account');
+
+  assert.equal(refreshCalls, 1);
+  assert.deepEqual(describe, { fields: [{ name: 'Fresh__c' }] });
 });

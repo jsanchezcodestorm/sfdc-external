@@ -84,6 +84,9 @@ type FormInputType =
   | 'tel'
   | 'date'
   | 'datetime-local'
+  | 'time'
+  | 'url'
+  | 'password'
   | 'textarea'
   | 'number'
   | 'checkbox'
@@ -2473,6 +2476,18 @@ export class EntitiesService {
 
     if (normalizedType === 'datetime') {
       return 'datetime-local';
+    }
+
+    if (normalizedType === 'time') {
+      return 'time';
+    }
+
+    if (normalizedType === 'url') {
+      return 'url';
+    }
+
+    if (normalizedType === 'encryptedstring' || normalizedType === 'encryptedtext') {
+      return 'password';
     }
 
     if (normalizedType === 'textarea' || normalizedType === 'longtextarea' || normalizedType === 'richtextarea') {

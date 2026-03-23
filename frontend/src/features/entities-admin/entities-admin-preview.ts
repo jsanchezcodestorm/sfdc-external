@@ -76,6 +76,10 @@ export type FormPreviewField = {
     | "email"
     | "tel"
     | "date"
+    | "datetime-local"
+    | "time"
+    | "url"
+    | "password"
     | "textarea"
     | "number"
     | "checkbox"
@@ -97,6 +101,10 @@ type MockFieldHint = {
     | "email"
     | "tel"
     | "date"
+    | "datetime-local"
+    | "time"
+    | "url"
+    | "password"
     | "textarea"
     | "number"
     | "checkbox"
@@ -406,7 +414,7 @@ function resolveFormPreviewLabel(
 
 function resolvePreviewInputType(
   field: FormFieldDraft,
-): "text" | "email" | "tel" | "date" | "textarea" | "number" | "checkbox" | "lookup" {
+): "text" | "email" | "tel" | "date" | "datetime-local" | "time" | "url" | "password" | "textarea" | "number" | "checkbox" | "lookup" {
   if (hasLookupDraftValue(field)) {
     return "lookup";
   }
@@ -425,12 +433,44 @@ function resolvePreviewInputType(
   }
 
   if (
+    normalizedField.includes("datetime") ||
+    normalizedField.includes("timestamp")
+  ) {
+    return "datetime-local";
+  }
+
+  if (
     normalizedField.includes("date") ||
     normalizedField.includes("deadline") ||
     normalizedField.includes("start") ||
     normalizedField.includes("end")
   ) {
     return "date";
+  }
+
+  if (
+    normalizedField.includes("time") ||
+    normalizedField.includes("hour")
+  ) {
+    return "time";
+  }
+
+  if (
+    normalizedField.includes("url") ||
+    normalizedField.includes("website") ||
+    normalizedField.includes("site") ||
+    normalizedField.includes("link")
+  ) {
+    return "url";
+  }
+
+  if (
+    normalizedField.includes("password") ||
+    normalizedField.includes("secret") ||
+    normalizedField.includes("token") ||
+    normalizedField.includes("encrypted")
+  ) {
+    return "password";
   }
 
   if (
@@ -556,6 +596,30 @@ function createMockValue(
 
   if (hint?.format === "datetime" || normalizedLeaf.includes("datetime")) {
     return "2026-03-07T10:30:00Z";
+  }
+
+  if (hint?.inputType === "time" || normalizedLeaf.includes("time")) {
+    return "14:30";
+  }
+
+  if (
+    hint?.inputType === "url" ||
+    normalizedLeaf.includes("url") ||
+    normalizedLeaf.includes("website") ||
+    normalizedLeaf.includes("site") ||
+    normalizedLeaf.includes("link")
+  ) {
+    return "https://example.com";
+  }
+
+  if (
+    hint?.inputType === "password" ||
+    normalizedLeaf.includes("password") ||
+    normalizedLeaf.includes("secret") ||
+    normalizedLeaf.includes("token") ||
+    normalizedLeaf.includes("encrypted")
+  ) {
+    return "secret-value";
   }
 
   if (hint?.inputType === "email" || normalizedLeaf.includes("email")) {

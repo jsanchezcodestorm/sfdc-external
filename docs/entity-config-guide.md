@@ -189,7 +189,7 @@ Fonte di verita runtime:
 - i campi `reference` espongono metadata lookup runtime (`referenceTo`, `searchField`, `where`, `orderBy`, `prefill`)
 
 Tipi runtime esposti dalla response form:
-- `text | email | tel | date | textarea | number | checkbox | select | multiselect | lookup`
+- `text | email | tel | date | datetime-local | time | url | password | textarea | number | checkbox | select | multiselect | lookup`
 
 Campi esclusi automaticamente dal form runtime e dal perimetro write:
 - `Id`

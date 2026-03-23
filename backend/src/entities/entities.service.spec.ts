@@ -925,6 +925,93 @@ test('getEntityForm maps Salesforce datetime fields to datetime-local inputs', a
   assert.equal(response.sections[0]?.fields[0]?.required, true);
 });
 
+test('getEntityForm maps time, url and encrypted string fields to dedicated inputs', async () => {
+  const harness = createHarness();
+
+  (harness.service as unknown as {
+    salesforceService: { describeObjectFields: (objectApiName: string) => Promise<unknown[]> };
+  }).salesforceService.describeObjectFields = async () => [
+    {
+      name: 'Id',
+      label: 'Record ID',
+      type: 'id',
+      nillable: false,
+      createable: false,
+      updateable: false,
+      filterable: true,
+      defaultedOnCreate: false,
+      calculated: false,
+      autoNumber: false,
+    },
+    {
+      name: 'BestCallTime__c',
+      label: 'Best Call Time',
+      type: 'time',
+      nillable: true,
+      createable: true,
+      updateable: true,
+      filterable: true,
+      defaultedOnCreate: false,
+      calculated: false,
+      autoNumber: false,
+    },
+    {
+      name: 'Website',
+      label: 'Website',
+      type: 'url',
+      nillable: true,
+      createable: true,
+      updateable: true,
+      filterable: true,
+      defaultedOnCreate: false,
+      calculated: false,
+      autoNumber: false,
+    },
+    {
+      name: 'SecretCode__c',
+      label: 'Secret Code',
+      type: 'encryptedstring',
+      nillable: true,
+      createable: true,
+      updateable: true,
+      filterable: false,
+      defaultedOnCreate: false,
+      calculated: false,
+      autoNumber: false,
+    },
+  ];
+
+  patchServiceMethods(harness.service, {
+    loadEntityConfig: async () => ({
+      id: 'account',
+      objectApiName: 'Account',
+      label: 'Accounts',
+      form: {
+        title: {
+          create: 'New Account',
+          edit: 'Edit Account',
+        },
+        query: { object: 'Account', fields: ['Id', 'BestCallTime__c', 'Website', 'SecretCode__c'] },
+        sections: [{
+          title: 'Main',
+          fields: [{ field: 'BestCallTime__c' }, { field: 'Website' }, { field: 'SecretCode__c' }],
+        }],
+      },
+    }),
+    isFieldVisible: () => true,
+    ensureVisibleFields() {},
+  });
+
+  const response = await harness.service.getEntityForm(user as never, 'account');
+
+  assert.equal(response.sections[0]?.fields[0]?.inputType, 'time');
+  assert.equal(response.sections[0]?.fields[1]?.inputType, 'url');
+  assert.equal(response.sections[0]?.fields[2]?.inputType, 'password');
+  assert.equal(response.fieldDefinitions[0]?.inputType, 'time');
+  assert.equal(response.fieldDefinitions[1]?.inputType, 'url');
+  assert.equal(response.fieldDefinitions[2]?.inputType, 'password');
+});
+
 test('searchEntityFormLookup returns describe-driven lookup options', async () => {
   const harness = createHarness({
     totalSize: 1,

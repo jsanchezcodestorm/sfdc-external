@@ -42,6 +42,7 @@ Accessi minimi richiesti:
 Verificare prima di ogni deploy:
 - sessione/auth: `JWT_SECRET`, `JWT_EXPIRES_IN`, `SESSION_COOKIE_*`, `FRONTEND_ORIGINS`
 - Salesforce: `SALESFORCE_*`, `SALESFORCE_DESCRIBE_CACHE_TTL_MS`, `SALESFORCE_DESCRIBE_STALE_WHILE_REVALIDATE_MS`
+  - usare `0` solo in sviluppo locale; non in produzione
 - auth provider: `SETUP_SECRETS_KEY`, `LOCAL_AUTH_ENABLED`, `LOCAL_AUTH_LABEL`
 - provider OIDC: verificare che `Auth > Providers` contenga le configurazioni richieste, che i secret risultino presenti a DB e che il callback read-only mostrato dal backoffice coincida con il dominio pubblico previsto
 - visibility/postgres: `DATABASE_URL`, `VISIBILITY_*`

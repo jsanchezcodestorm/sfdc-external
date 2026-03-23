@@ -396,6 +396,10 @@ function toInputValue(value: unknown, inputType: RuntimeFormFieldConfig['inputTy
       return toDateTimeLocalInputValue(value)
     }
 
+    if (inputType === 'time') {
+      return toTimeInputValue(value)
+    }
+
     return value
   }
 
@@ -428,6 +432,20 @@ function toDateTimeLocalInputValue(value: string): string {
   const minutes = String(date.getMinutes()).padStart(2, '0')
 
   return `${year}-${month}-${day}T${hours}:${minutes}`
+}
+
+function toTimeInputValue(value: string): string {
+  const normalizedValue = value.trim()
+  if (normalizedValue.length === 0) {
+    return ''
+  }
+
+  const match = normalizedValue.match(/^(\d{2}:\d{2})(?::\d{2}(?:\.\d+)?)?(?:Z)?$/)
+  if (match) {
+    return match[1]
+  }
+
+  return normalizedValue
 }
 
 function buildLookupContext(...sources: EntityRecord[]): Record<string, string | number | boolean | null | undefined> {

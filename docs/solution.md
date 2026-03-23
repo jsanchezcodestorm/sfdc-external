@@ -681,6 +681,7 @@ Codici motivo minimi (`reason_code`):
 - `SALESFORCE_LOGIN_URL`
 - `SALESFORCE_DESCRIBE_CACHE_TTL_MS` (default `21600000`)
 - `SALESFORCE_DESCRIBE_STALE_WHILE_REVALIDATE_MS` (default `21600000`)
+  - in sviluppo `0` disabilita di fatto la cache describe e forza il refresh a ogni lettura
 - `LOCAL_AUTH_ENABLED`
 - `LOCAL_AUTH_LABEL`
 - `SETUP_SECRETS_KEY`
