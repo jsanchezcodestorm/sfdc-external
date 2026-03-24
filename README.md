@@ -2,6 +2,16 @@
 
 Middleware full-stack TypeScript integrato con Salesforce, con backend NestJS e frontend React/Vite.
 
+Repository path canonico:
+
+* [`/Users/jeanpaul/projects/cs-repository/sfdc-external`](/Users/jeanpaul/projects/cs-repository/sfdc-external)
+
+Stack root locale:
+
+* [`/Users/jeanpaul/projects/cs-repository/platform-local-stack`](/Users/jeanpaul/projects/cs-repository/platform-local-stack)
+
+Nel primo taglio di migrazione il `backend/` di questo repo resta il BFF di prodotto.
+
 ## Stack
 
 - Node.js 22 LTS

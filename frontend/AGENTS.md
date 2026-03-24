@@ -3,7 +3,7 @@
 ## Scope
 
 These instructions apply to all files under `frontend/`.
-Read root [AGENTS.md](/Users/jeanpaul/projects/sfdc-external/AGENTS.md) first for repo-wide invariants.
+Read root [AGENTS.md](/Users/jeanpaul/projects/cs-repository/sfdc-external/AGENTS.md) first for repo-wide invariants.
 
 ## Frontend Role
 
