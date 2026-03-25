@@ -5,9 +5,11 @@ Backend NestJS del middleware Salesforce con ACL + Visibility deny-by-default.
 ## Avvio rapido
 
 ```bash
-npm install
-npm run start:dev --workspace backend
+cd /Users/jeanpaul/projects/cs-repository/platform-local-stack
+npm run start:dev -- sfdcBackend
 ```
+
+Il bootstrap canonico dell'intero stack resta [`/Users/jeanpaul/projects/cs-repository/platform-local-stack`](/Users/jeanpaul/projects/cs-repository/platform-local-stack). Questo workspace espone il BFF pubblico su `http://sfdc.cs.lvh.me:8080/api/*`.
 
 ## Setup Prisma
 
@@ -46,3 +48,5 @@ npm exec --workspace backend prisma -- migrate dev --schema prisma/schema.prisma
 - `GET /api/global-search?q=...`
 - `GET /api/salesforce/objects`
 - `POST /api/visibility/evaluate`
+
+Le route `/api/auth/*` e `/api/setup/*` sono facade: l'issuer di sessione e i provider auth stanno in `platform-auth-service`, mentre setup Salesforce e query connector passano da `platform-connectors-service`.

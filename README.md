@@ -11,6 +11,7 @@ Stack root locale:
 * [`/Users/jeanpaul/projects/cs-repository/platform-local-stack`](/Users/jeanpaul/projects/cs-repository/platform-local-stack)
 
 Nel primo taglio di migrazione il `backend/` di questo repo resta il BFF di prodotto.
+L'auth condivisa e i connector Salesforce runtime vivono nei servizi platform sotto [`/Users/jeanpaul/projects/cs-repository/platform-auth-service`](/Users/jeanpaul/projects/cs-repository/platform-auth-service) e [`/Users/jeanpaul/projects/cs-repository/platform-connectors-service`](/Users/jeanpaul/projects/cs-repository/platform-connectors-service).
 
 ## Stack
 
@@ -21,7 +22,7 @@ Nel primo taglio di migrazione il `backend/` di questo repo resta il BFF di prod
 - Salesforce: jsforce
 - Database: PostgreSQL
 - ORM: Prisma
-- Auth: Google Identity + JWT in cookie HttpOnly
+- Auth: shared session via `platform-auth-service`
 
 ## Struttura repository
 
@@ -65,17 +66,24 @@ Migrazioni locali:
 npm exec --workspace backend prisma -- migrate dev --schema prisma/schema.prisma
 ```
 
-## Avvio in sviluppo
+## Avvio locale canonico
 
-Backend:
+Bootstrap completo dello stack:
+
+```bash
+cd /Users/jeanpaul/projects/cs-repository/platform-local-stack
+npm install
+npm run start:dev
+```
+
+URL canonico:
+
+* `http://sfdc.cs.lvh.me:8080`
+
+Comandi repo-locali utili solo per debug puntuale:
 
 ```bash
 npm run start:dev --workspace backend
-```
-
-Frontend:
-
-```bash
 npm run dev --workspace frontend
 ```
 
@@ -96,9 +104,9 @@ npm run lint --workspaces
 ## Principi di sicurezza
 
 - Il frontend non parla mai direttamente con Salesforce.
-- Tutte le chiamate Salesforce passano dal backend.
+- Tutte le chiamate Salesforce passano dal backend di prodotto, che a sua volta orchestri `platform-connectors-service`.
 - ACL + Visibility Engine con policy deny-by-default.
-- JWT session in cookie HttpOnly.
+- Sessione condivisa emessa da `platform-auth-service` in cookie HttpOnly.
 
 ## Documentazione
 

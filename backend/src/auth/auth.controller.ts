@@ -16,7 +16,7 @@ import {
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 
-import { OIDC_FLOW_COOKIE_NAME, SESSION_COOKIE_NAME } from '../app.constants';
+import { SESSION_COOKIE_NAME } from '../app.constants';
 import { AuditWriteService } from '../audit/audit-write.service';
 import { RequestContextService } from '../audit/request-context.service';
 import { AclResource } from '../common/decorators/acl-resource.decorator';
@@ -65,16 +65,7 @@ export class AuthController {
     @Req() request: Request,
     @Res() response: Response
   ): Promise<void> {
-    const { redirectUrl, flowToken } = await this.authService.createOidcLoginStart(
-      providerId,
-      request
-    );
-
-    response.cookie(
-      OIDC_FLOW_COOKIE_NAME,
-      flowToken,
-      this.authService.getOidcFlowCookieOptions(providerId)
-    );
+    const { redirectUrl } = await this.authService.createOidcLoginStart(providerId, request);
     response.redirect(redirectUrl);
   }
 
@@ -88,61 +79,17 @@ export class AuthController {
       error?: string;
       error_description?: string;
     },
-    @Req()
-    request: {
-      cookies?: Record<string, string>;
-    },
+    @Req() _request: Request,
     @Res() response: Response
   ): Promise<void> {
-    response.clearCookie(
-      OIDC_FLOW_COOKIE_NAME,
-      this.authService.getClearOidcFlowCookieOptions(providerId)
-    );
-
-    try {
-      const { token, user } = await this.authService.completeOidcLogin(providerId, {
-        flowToken: request.cookies?.[OIDC_FLOW_COOKIE_NAME],
+    response.redirect(
+      this.authService.buildOidcCallbackProxyUrl(providerId, {
         state: query.state,
         code: query.code,
         error: query.error,
-        errorDescription: query.error_description
-      });
-      this.requestContextService.setUser(user);
-      await this.auditWriteService.recordSecurityEventOrThrow({
-        contactId: user.sub,
-        eventType: 'AUTH',
-        decision: 'ALLOW',
-        reasonCode: 'LOGIN_SUCCESS',
-        metadata: {
-          provider: providerId,
-          method: 'oidc'
-        }
-      });
-
-      response.cookie(SESSION_COOKIE_NAME, token, this.authService.getSessionCookieOptions());
-      this.csrfService.issueToken(response);
-      response.redirect(this.authService.getFrontendLoginRedirect());
-    } catch (error) {
-      await this.auditWriteService.recordSecurityEventOrThrow({
-        eventType: 'AUTH',
-        decision: 'DENY',
-        reasonCode: 'LOGIN_FAILED',
-        metadata: {
-          provider: providerId,
-          method: 'oidc',
-          error: error instanceof Error ? error.message : 'unknown error'
-        }
-      });
-
-      response.redirect(
-        this.authService.getFrontendLoginRedirect({
-          authError:
-            error instanceof Error && error.message.trim().length > 0
-              ? error.message
-              : 'Login non riuscito'
-        })
-      );
-    }
+        error_description: query.error_description
+      })
+    );
   }
 
   @Post('login/password')
@@ -152,11 +99,7 @@ export class AuthController {
     @Res({ passthrough: true }) response: Response
   ): Promise<AuthSessionResponse> {
     try {
-      const { token, user } = await this.authService.loginWithPassword(
-        dto.username,
-        dto.password,
-        request.ip || ''
-      );
+      const { token, user } = await this.authService.loginWithPassword(dto.username, dto.password);
       this.requestContextService.setUser(user);
       await this.auditWriteService.recordSecurityEventOrThrow({
         contactId: user.sub,
@@ -214,9 +157,6 @@ export class AuthController {
     const user = await this.authService.refreshSessionUser(sessionToken);
     request.user = user;
     this.requestContextService.setUser(user);
-
-    const token = this.authService.issueSessionToken(user);
-    response.cookie(SESSION_COOKIE_NAME, token, this.authService.getSessionCookieOptions());
     const csrfToken = this.csrfService.issueToken(response);
     return { user, csrfToken };
   }

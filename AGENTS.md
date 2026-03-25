@@ -13,7 +13,7 @@ Read the nearest `AGENTS.md` before changing code in `backend/` or `frontend/`.
 * Package manager: npm workspaces
 * Backend: NestJS + TypeScript + Prisma + PostgreSQL + jsforce
 * Frontend: React + Vite + TypeScript + Tailwind
-* Auth: Google Identity + JWT session in HttpOnly cookies
+* Auth: shared session via `platform-auth-service` with HttpOnly cookies
 * Security model: ACL + visibility engine, deny by default
 
 ## Repository Map
@@ -78,11 +78,18 @@ npm install
 Useful commands:
 
 ```bash
+npm --prefix /Users/jeanpaul/projects/cs-repository/platform-local-stack run start:dev
+npm --prefix /Users/jeanpaul/projects/cs-repository/platform-local-stack run stop:dev
 npm run build
 npm run lint --workspaces
 npm run start:dev --workspace backend
 npm run dev --workspace frontend
 ```
+
+Rules:
+
+* The canonical local bootstrap entrypoint is `/Users/jeanpaul/projects/cs-repository/platform-local-stack`.
+* Repo-local backend/frontend commands are for focused debugging only, not for bootstrapping the full stack.
 
 Prisma workflow:
 
