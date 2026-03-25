@@ -1,15 +1,16 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, Optional, forwardRef, Inject, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import type { SubjectTraits } from '@platform/contracts-auth';
 import type { CookieOptions, Request } from 'express';
 
 import { AclContactPermissionsRepository } from '../acl/acl-contact-permissions.repository';
 import { AclService } from '../acl/acl.service';
 import { platformAuthJson } from '../platform/platform-clients';
-import { SalesforceService } from '../salesforce/salesforce.service';
 import { SetupService } from '../setup/setup.service';
 
 import { AuthPublicOriginService } from './auth-public-origin.service';
 import type { AuthProvidersResponse } from './auth.types';
+import { LocalCredentialProvisioningService } from './local-credential-provisioning.service';
 import type { SessionUser } from './session-user.interface';
 
 type PlatformMembership = {
@@ -36,7 +37,9 @@ export class AuthService {
     private readonly aclContactPermissionsRepository: AclContactPermissionsRepository,
     private readonly authPublicOriginService: AuthPublicOriginService,
     private readonly setupService: SetupService,
-    private readonly salesforceService: SalesforceService
+    @Optional()
+    @Inject(forwardRef(() => LocalCredentialProvisioningService))
+    private readonly _legacyLocalCredentialProvisioningService?: LocalCredentialProvisioningService
   ) {}
 
   listPublicProviders(): Promise<AuthProvidersResponse> {
@@ -170,34 +173,38 @@ export class AuthService {
       throw new UnauthorizedException('No active membership available for sfdc-external');
     }
 
-    const subjectId = membership.subjectId;
-    const contact = await this.salesforceService.findContactById(subjectId).catch(() => null);
-    const resolvedEmail = this.normalizeEmail(contact?.email) ?? this.normalizeEmail(user.email);
+    const resolvedEmail = this.normalizeEmail(user.email);
 
     if (!resolvedEmail) {
       throw new UnauthorizedException('Membership is missing a valid email');
     }
 
-    const membershipRecordType = this.readOptionalString(
-      membership.attributes?.contactRecordTypeDeveloperName
-    );
+    const subjectTraits = this.normalizeSubjectTraits(membership.attributes);
+    const legacySubjectIds = this.buildLegacySubjectIds(user.id, membership.subjectId);
 
     return {
-      sub: subjectId,
+      sub: user.id,
       identityId: user.id,
       email: resolvedEmail,
-      permissions: await this.resolveEffectivePermissions(subjectId, resolvedEmail),
-      contactRecordTypeDeveloperName:
-        contact?.recordTypeDeveloperName ?? membershipRecordType ?? undefined,
+      permissions: await this.resolveEffectivePermissions(user.id, legacySubjectIds, resolvedEmail),
+      subjectTraits,
+      legacySubjectIds,
       authProvider: user.authProvider,
       authMethod: user.authMethod
     };
   }
 
-  private async resolveEffectivePermissions(contactId: string, email: string): Promise<string[]> {
+  private async resolveEffectivePermissions(
+    subjectId: string,
+    legacySubjectIds: string[],
+    email: string
+  ): Promise<string[]> {
     const permissions = [
       ...this.aclService.getDefaultPermissions(),
-      ...(await this.aclContactPermissionsRepository.listPermissionCodesByContactId(contactId))
+      ...(await this.aclContactPermissionsRepository.listPermissionCodesBySubjectIds([
+        subjectId,
+        ...legacySubjectIds
+      ]))
     ];
     const userEmail = this.normalizeEmail(email);
     const bootstrapAdminEmail = this.normalizeEmail(await this.setupService.getCompletedAdminEmail());
@@ -231,5 +238,26 @@ export class AuthService {
 
   private readOptionalString(value: unknown): string | null {
     return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+  }
+
+  private normalizeSubjectTraits(value: unknown): SubjectTraits | undefined {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return undefined;
+    }
+
+    const traits = Object.fromEntries(
+      Object.entries(value).filter(([, entry]) => entry !== undefined)
+    );
+
+    return Object.keys(traits).length > 0 ? traits : undefined;
+  }
+
+  private buildLegacySubjectIds(identityId: string, membershipSubjectId?: string): string[] {
+    const legacySubjectId = this.readOptionalString(membershipSubjectId);
+    if (!legacySubjectId || legacySubjectId === identityId) {
+      return [];
+    }
+
+    return [legacySubjectId];
   }
 }

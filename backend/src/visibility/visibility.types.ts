@@ -10,6 +10,8 @@ export interface VisibilityEvaluation {
   policyVersion: number;
   objectPolicyVersion: number;
   objectApiName: string;
+  subjectId?: string;
+  subjectTraits?: Record<string, unknown>;
   contactId: string;
   recordType?: string;
   appliedCones: string[];
@@ -30,6 +32,9 @@ export interface VisibilityEvaluation {
 export interface VisibilityContext {
   user?: SessionUser;
   objectApiName: string;
+  subjectId?: string;
+  alternateSubjectIds?: string[];
+  subjectTraits?: Record<string, unknown>;
   contactId?: string;
   permissions?: string[];
   contactRecordTypeDeveloperName?: string;
@@ -62,6 +67,9 @@ export interface VisibilityRuleDefinition {
 export interface VisibilityAssignmentDefinition {
   id: string;
   coneId: string;
+  subjectId?: string;
+  subjectTraitKey?: string;
+  subjectTraitValue?: string;
   contactId?: string;
   permissionCode?: string;
   recordType?: string;

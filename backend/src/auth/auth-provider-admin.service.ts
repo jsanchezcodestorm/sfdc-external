@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import type { Request } from 'express';
 
 import { platformAuthJson } from '../platform/platform-clients';
@@ -10,9 +10,15 @@ import type {
   AuthProvidersResponse,
   AuthProviderAdminInput
 } from './auth.types';
+import { AuthProviderAdminRepository } from './auth-provider-admin.repository';
 
 @Injectable()
 export class AuthProviderAdminService {
+  constructor(
+    @Optional()
+    private readonly _legacyAuthProviderAdminRepository?: AuthProviderAdminRepository
+  ) {}
+
   listProviders(): Promise<AuthAdminProvidersResponse> {
     return platformAuthJson<AuthAdminProvidersResponse>('/auth/admin/providers');
   }

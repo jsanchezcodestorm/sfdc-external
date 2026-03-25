@@ -37,24 +37,26 @@ export class AuditWriteService {
   }
 
   async recordSecurityEventOrThrow(input: SecurityAuditWriteInput): Promise<void> {
+    const data = {
+      requestId: this.requestContextService.getRequestId(),
+      contactId:
+        input.contactId === undefined
+          ? this.requestContextService.get()?.userContactId ?? null
+          : input.contactId,
+      endpoint: input.endpoint ?? this.requestContextService.get()?.endpoint ?? '/',
+      httpMethod:
+        input.httpMethod ?? this.requestContextService.get()?.httpMethod ?? 'UNKNOWN',
+      eventType: input.eventType,
+      decision: input.decision,
+      reasonCode: input.reasonCode,
+      ipHash: this.hashText(this.requestContextService.get()?.ip ?? ''),
+      userAgentHash: this.hashText(this.requestContextService.get()?.userAgent ?? ''),
+      metadataJson: this.normalizeJson(input.metadata),
+    } satisfies Prisma.SecurityAuditLogCreateInput;
+
     try {
       await this.prismaService.securityAuditLog.create({
-        data: {
-          requestId: this.requestContextService.getRequestId(),
-          contactId:
-            input.contactId === undefined
-              ? this.requestContextService.get()?.userContactId ?? null
-              : input.contactId,
-          endpoint: input.endpoint ?? this.requestContextService.get()?.endpoint ?? '/',
-          httpMethod:
-            input.httpMethod ?? this.requestContextService.get()?.httpMethod ?? 'UNKNOWN',
-          eventType: input.eventType,
-          decision: input.decision,
-          reasonCode: input.reasonCode,
-          ipHash: this.hashText(this.requestContextService.get()?.ip ?? ''),
-          userAgentHash: this.hashText(this.requestContextService.get()?.userAgent ?? ''),
-          metadataJson: this.normalizeJson(input.metadata),
-        },
+        data,
       });
     } catch (error) {
       this.logger.error(

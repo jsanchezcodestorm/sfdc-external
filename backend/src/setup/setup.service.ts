@@ -1,8 +1,8 @@
-import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Inject, Injectable, Optional, forwardRef } from '@nestjs/common';
 import { SetupSalesforceMode as PrismaSetupSalesforceMode } from '@prisma/client';
 
 import { LocalCredentialProvisioningService } from '../auth/local-credential-provisioning.service';
-import { platformConnectorsJson } from '../platform/platform-clients';
+import { platformAuthJson, platformConnectorsJson } from '../platform/platform-clients';
 import { PrismaService } from '../prisma/prisma.service';
 
 import { SetupRepository } from './setup.repository';
@@ -19,12 +19,16 @@ import {
   normalizeSiteName
 } from './setup.validation';
 
+const DEFAULT_DATA_SOURCE_ID = 'salesforce-default';
+
 @Injectable()
 export class SetupService {
   constructor(
     private readonly setupRepository: SetupRepository,
-    private readonly localCredentialProvisioningService: LocalCredentialProvisioningService,
-    private readonly prismaService: PrismaService
+    private readonly prismaService: PrismaService,
+    @Optional()
+    @Inject(forwardRef(() => LocalCredentialProvisioningService))
+    _legacyLocalCredentialProvisioningService?: LocalCredentialProvisioningService
   ) {}
 
   async getStatus(): Promise<SetupStatusResponse> {
@@ -72,7 +76,7 @@ export class SetupService {
     await this.assertPending();
     const salesforce = normalizeSalesforceSetupConfig(payload);
     return platformConnectorsJson<SetupSalesforceTestResponse>(
-      '/internal/connectors/salesforce/test',
+      `/internal/connectors/sources/${encodeURIComponent(DEFAULT_DATA_SOURCE_ID)}/test`,
       {
         method: 'POST',
         body: { salesforce }
@@ -95,27 +99,32 @@ export class SetupService {
     const completedAt = new Date();
 
     await platformConnectorsJson<SetupSalesforceTestResponse>(
-      '/internal/connectors/salesforce/configure',
+      `/internal/connectors/sources/${encodeURIComponent(DEFAULT_DATA_SOURCE_ID)}/configure`,
       {
         method: 'POST',
         body: { salesforce }
       }
     );
 
-    const bootstrapContact = await platformConnectorsJson<{
-      id: string;
-      email?: string;
-    } | null>(
-      `/internal/connectors/salesforce/contacts/by-email?email=${encodeURIComponent(adminEmail)}`
-    );
-
-    const bootstrapEmail = bootstrapContact?.email?.trim();
-
-    if (!bootstrapContact?.id || !bootstrapEmail) {
-      throw new BadRequestException(
-        'adminEmail must match an existing Salesforce Contact before completing setup'
-      );
-    }
+    const normalizedAdminSubjectId = adminEmail.trim().toLowerCase();
+    await platformAuthJson('/internal/identities/upsert', {
+      method: 'POST',
+      body: {
+        email: adminEmail,
+        username: adminEmail,
+        password: bootstrapPassword,
+        enabled: true,
+        memberships: [
+          {
+            productCode: 'sfdc-external',
+            subjectId: normalizedAdminSubjectId,
+            attributes: {
+              bootstrapAdmin: true
+            }
+          }
+        ]
+      }
+    });
 
     await this.prismaService.$transaction(async (transaction) => {
       await this.setupRepository.saveCompletedSetup(
@@ -128,13 +137,6 @@ export class SetupService {
         },
         transaction
       );
-
-      await this.localCredentialProvisioningService.upsertResolvedCredential({
-        contactId: bootstrapContact.id,
-        username: bootstrapEmail,
-        password: bootstrapPassword,
-        enabled: true
-      });
     });
 
     return {

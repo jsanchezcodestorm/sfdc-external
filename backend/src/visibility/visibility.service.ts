@@ -43,12 +43,14 @@ type RuntimeConeRow = {
 };
 
 type NormalizedContext = {
+  alternateSubjectIds: string[];
   baseWhere?: string;
-  contactId: string;
   objectApiName: string;
   permissions: string[];
   permissionsHash: string;
-  recordType?: string;
+  subjectId: string;
+  subjectTraits?: Record<string, unknown>;
+  subjectTraitValue?: string;
   skipCache: boolean;
 };
 
@@ -133,9 +135,9 @@ export class VisibilityService {
       this.getObjectPolicyVersion(normalized.objectApiName),
     ]);
     const cacheKey = this.buildCacheKey(
-      normalized.contactId,
+      normalized.subjectId,
       normalized.permissionsHash,
-      normalized.recordType,
+      normalized.subjectTraitValue,
       normalized.objectApiName,
       objectPolicyVersion,
     );
@@ -148,12 +150,13 @@ export class VisibilityService {
       return this.buildInvalidRuleEvaluation({
         baseWhere: normalized.baseWhere,
         cacheKey,
-        contactId: normalized.contactId,
         objectApiName: normalized.objectApiName,
         objectPolicyVersion,
         permissionsHash: normalized.permissionsHash,
         policyVersion,
-        recordType: normalized.recordType,
+        subjectId: normalized.subjectId,
+        subjectTraits: normalized.subjectTraits,
+        subjectTraitValue: normalized.subjectTraitValue,
       });
     }
 
@@ -165,32 +168,35 @@ export class VisibilityService {
           baseWhere: normalized.baseWhere,
           cacheKey,
           cachedScope,
-          contactId: normalized.contactId,
           objectApiName: normalized.objectApiName,
           objectPolicyVersion,
           permissionsHash: normalized.permissionsHash,
           policyVersion,
-          recordType: normalized.recordType,
+          subjectId: normalized.subjectId,
+          subjectTraits: normalized.subjectTraits,
+          subjectTraitValue: normalized.subjectTraitValue,
         });
       }
     }
 
     const matchedAssignments = await this.findApplicableAssignments({
       coneIds: definition.compiledCones.map((entry) => entry.id),
-      contactId: normalized.contactId,
       permissions: normalized.permissions,
-      recordType: normalized.recordType,
+      subjectId: normalized.subjectId,
+      alternativeSubjectIds: normalized.alternateSubjectIds,
+      subjectTraitValue: normalized.subjectTraitValue,
     });
     const resolvedScope = this.resolveScope(definition.compiledCones, matchedAssignments);
     const evaluation = this.buildEvaluationFromResolvedScope({
       baseWhere: normalized.baseWhere,
       cacheKey,
-      contactId: normalized.contactId,
       objectApiName: normalized.objectApiName,
       objectPolicyVersion,
       permissionsHash: normalized.permissionsHash,
       policyVersion,
-      recordType: normalized.recordType,
+      subjectId: normalized.subjectId,
+      subjectTraits: normalized.subjectTraits,
+      subjectTraitValue: normalized.subjectTraitValue,
       resolvedScope,
     });
 
@@ -252,23 +258,34 @@ export class VisibilityService {
   }
 
   private normalizeContext(context: VisibilityContext): NormalizedContext {
-    const contactId = context.contactId ?? context.user?.sub;
+    const subjectId = context.subjectId ?? context.user?.sub ?? context.contactId;
     const objectApiName = context.objectApiName.trim();
     const permissions = this.normalizePermissions(context.permissions ?? context.user?.permissions ?? []);
-    const recordType =
-      context.contactRecordTypeDeveloperName ?? context.user?.contactRecordTypeDeveloperName;
+    const subjectTraits = this.normalizeSubjectTraits(
+      context.subjectTraits ?? context.user?.subjectTraits
+    );
+    const subjectTraitValue =
+      this.readOptionalString(context.contactRecordTypeDeveloperName) ??
+      this.readSubjectTraitValue(subjectTraits);
+    const alternateSubjectIds = this.normalizeSubjectIds([
+      ...(context.alternateSubjectIds ?? []),
+      ...(context.user?.legacySubjectIds ?? []),
+      context.contactId,
+    ]);
 
-    if (!contactId) {
-      throw new Error('Visibility context requires contactId');
+    if (!subjectId) {
+      throw new Error('Visibility context requires subjectId');
     }
 
     return {
+      alternateSubjectIds,
       baseWhere: context.baseWhere,
-      contactId,
       objectApiName,
       permissions,
       permissionsHash: this.hashPermissions(permissions),
-      recordType,
+      subjectId,
+      subjectTraits,
+      subjectTraitValue,
       skipCache: context.skipCache === true,
     };
   }
@@ -651,16 +668,24 @@ export class VisibilityService {
 
   private async findApplicableAssignments(params: {
     coneIds: string[];
-    contactId: string;
     permissions: string[];
-    recordType?: string;
+    subjectId: string;
+    alternativeSubjectIds: string[];
+    subjectTraitValue?: string;
   }): Promise<SelectiveAssignmentRow[]> {
     if (params.coneIds.length === 0) {
       return [];
     }
 
     const now = new Date();
-    const selectorOr: Prisma.VisibilityAssignmentWhereInput[] = [{ contactId: params.contactId }];
+    const subjectIds = [params.subjectId, ...params.alternativeSubjectIds];
+    const selectorOr: Prisma.VisibilityAssignmentWhereInput[] = [
+      {
+        contactId: {
+          in: subjectIds,
+        },
+      },
+    ];
 
     if (params.permissions.length > 0) {
       selectorOr.push({
@@ -670,9 +695,9 @@ export class VisibilityService {
       });
     }
 
-    if (params.recordType) {
+    if (params.subjectTraitValue) {
       selectorOr.push({
-        recordType: params.recordType,
+        recordType: params.subjectTraitValue,
       });
     }
 
@@ -692,7 +717,7 @@ export class VisibilityService {
             OR: selectorOr,
           },
           {
-            OR: [{ contactId: null }, { contactId: params.contactId }],
+            OR: [{ contactId: null }, { contactId: { in: subjectIds } }],
           },
           params.permissions.length > 0
             ? {
@@ -701,9 +726,9 @@ export class VisibilityService {
             : {
                 permissionCode: null,
               },
-          params.recordType
+          params.subjectTraitValue
             ? {
-                OR: [{ recordType: null }, { recordType: params.recordType }],
+                OR: [{ recordType: null }, { recordType: params.subjectTraitValue }],
               }
             : {
                 recordType: null,
@@ -764,12 +789,13 @@ export class VisibilityService {
     baseWhere?: string;
     cacheKey: string;
     cachedScope: CachedUserScope;
-    contactId: string;
     objectApiName: string;
     objectPolicyVersion: number;
     permissionsHash: string;
     policyVersion: number;
-    recordType?: string;
+    subjectId: string;
+    subjectTraits?: Record<string, unknown>;
+    subjectTraitValue?: string;
   }): VisibilityEvaluation {
     const decisionState = this.buildDecisionState(
       params.cachedScope.compiledPredicate,
@@ -786,8 +812,10 @@ export class VisibilityService {
       policyVersion: params.policyVersion,
       objectPolicyVersion: params.objectPolicyVersion,
       objectApiName: params.objectApiName,
-      contactId: params.contactId,
-      recordType: params.recordType,
+      subjectId: params.subjectId,
+      subjectTraits: params.subjectTraits,
+      contactId: params.subjectId,
+      recordType: params.subjectTraitValue,
       appliedCones: params.cachedScope.appliedCones,
       appliedRules: params.cachedScope.appliedRules,
       matchedAssignments: params.cachedScope.matchedAssignments,
@@ -809,12 +837,13 @@ export class VisibilityService {
   private buildEvaluationFromResolvedScope(params: {
     baseWhere?: string;
     cacheKey: string;
-    contactId: string;
     objectApiName: string;
     objectPolicyVersion: number;
     permissionsHash: string;
     policyVersion: number;
-    recordType?: string;
+    subjectId: string;
+    subjectTraits?: Record<string, unknown>;
+    subjectTraitValue?: string;
     resolvedScope: ResolvedScope;
   }): VisibilityEvaluation {
     const compiledAllowPredicate =
@@ -842,8 +871,10 @@ export class VisibilityService {
       policyVersion: params.policyVersion,
       objectPolicyVersion: params.objectPolicyVersion,
       objectApiName: params.objectApiName,
-      contactId: params.contactId,
-      recordType: params.recordType,
+      subjectId: params.subjectId,
+      subjectTraits: params.subjectTraits,
+      contactId: params.subjectId,
+      recordType: params.subjectTraitValue,
       appliedCones: params.resolvedScope.appliedCones,
       appliedRules: params.resolvedScope.appliedRules,
       matchedAssignments: params.resolvedScope.matchedAssignments,
@@ -863,12 +894,13 @@ export class VisibilityService {
   private buildInvalidRuleEvaluation(params: {
     baseWhere?: string;
     cacheKey: string;
-    contactId: string;
     objectApiName: string;
     objectPolicyVersion: number;
     permissionsHash: string;
     policyVersion: number;
-    recordType?: string;
+    subjectId: string;
+    subjectTraits?: Record<string, unknown>;
+    subjectTraitValue?: string;
   }): VisibilityEvaluation {
     return {
       decision: 'DENY',
@@ -876,8 +908,10 @@ export class VisibilityService {
       policyVersion: params.policyVersion,
       objectPolicyVersion: params.objectPolicyVersion,
       objectApiName: params.objectApiName,
-      contactId: params.contactId,
-      recordType: params.recordType,
+      subjectId: params.subjectId,
+      subjectTraits: params.subjectTraits,
+      contactId: params.subjectId,
+      recordType: params.subjectTraitValue,
       appliedCones: [],
       appliedRules: [],
       matchedAssignments: [],
@@ -988,17 +1022,51 @@ export class VisibilityService {
   }
 
   private buildCacheKey(
-    contactId: string,
+    subjectId: string,
     permissionsHash: string,
-    recordType: string | undefined,
+    subjectTraitValue: string | undefined,
     objectApiName: string,
     objectPolicyVersion: number,
   ): string {
     return this.hashText(
-      [contactId, permissionsHash, recordType ?? '', objectApiName, String(objectPolicyVersion)].join(
+      [subjectId, permissionsHash, subjectTraitValue ?? '', objectApiName, String(objectPolicyVersion)].join(
         '|',
       ),
     );
+  }
+
+  private normalizeSubjectIds(values: Array<string | undefined>): string[] {
+    return [...new Set(values.map((entry) => entry?.trim()).filter(Boolean) as string[])];
+  }
+
+  private normalizeSubjectTraits(value: unknown): Record<string, unknown> | undefined {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return undefined;
+    }
+
+    const traits = Object.fromEntries(
+      Object.entries(value).filter(([, entry]) => entry !== undefined)
+    );
+
+    return Object.keys(traits).length > 0 ? traits : undefined;
+  }
+
+  private readSubjectTraitValue(traits?: Record<string, unknown>): string | undefined {
+    if (!traits) {
+      return undefined;
+    }
+
+    return (
+      this.readOptionalString(traits.contactRecordTypeDeveloperName) ??
+      this.readOptionalString(traits.recordTypeDeveloperName) ??
+      this.readOptionalString(traits.recordType) ??
+      this.readOptionalString(traits.role) ??
+      undefined
+    );
+  }
+
+  private readOptionalString(value: unknown): string | undefined {
+    return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
   }
 
   private hashPermissions(permissions: string[]): string {

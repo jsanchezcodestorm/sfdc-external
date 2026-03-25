@@ -21,6 +21,8 @@
     "@nestjs/core": "^10.4.15",
     "@nestjs/platform-express": "^10.4.15",
     "@nestjs/swagger": "^8.1.1",
+    "@platform/contracts-auth": "file:../../platform-shared-packages/packages/contracts-auth",
+    "@platform/contracts-connectors": "file:../../platform-shared-packages/packages/contracts-connectors",
     "@prisma/client": "^6.5.0",
     "@sfdc-external/shared": "0.1.0",
     "argon2": "^0.44.0",

@@ -1,15 +1,14 @@
+import { HttpException } from '@nestjs/common';
+
 type PlatformRequestOptions = Omit<RequestInit, 'body' | 'headers'> & {
   body?: BodyInit | Record<string, unknown>;
   headers?: HeadersInit;
 };
 
-export class PlatformHttpError extends Error {
-  readonly status: number;
-
+export class PlatformHttpError extends HttpException {
   constructor(status: number, message: string) {
-    super(message);
+    super(message, status);
     this.name = 'PlatformHttpError';
-    this.status = status;
   }
 }
 

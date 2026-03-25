@@ -135,7 +135,7 @@ model VisibilityRule {
 model VisibilityAssignment {
   id             String         @id @default(uuid()) @db.Uuid
   coneId         String         @db.Uuid
-  contactId      String?        @db.VarChar(18)
+  contactId      String?        @db.VarChar(128)
   permissionCode String?        @db.VarChar(80)
   recordType     String?        @db.VarChar(80)
   validFrom      DateTime?
@@ -184,7 +184,7 @@ model VisibilityAuditLog {
   id                 BigInt             @id @default(autoincrement())
   requestId          String             @db.VarChar(64)
   createdAt          DateTime           @default(now())
-  contactId          String             @db.VarChar(18)
+  contactId          String             @db.VarChar(128)
   permissionsHash    String             @db.VarChar(128)
   recordType         String?            @db.VarChar(80)
   objectApiName      String             @db.VarChar(128)
@@ -211,7 +211,7 @@ model SecurityAuditLog {
   id           BigInt             @id @default(autoincrement())
   requestId    String             @db.VarChar(64)
   createdAt    DateTime           @default(now())
-  contactId    String?            @db.VarChar(18)
+  contactId    String?            @db.VarChar(128)
   endpoint     String             @db.VarChar(512)
   httpMethod   String             @db.VarChar(16)
   eventType    String             @db.VarChar(64)
@@ -234,7 +234,7 @@ model ApplicationAuditLog {
   requestId     String                 @db.VarChar(64)
   createdAt     DateTime               @default(now())
   completedAt   DateTime?
-  contactId     String                 @db.VarChar(18)
+  contactId     String                 @db.VarChar(128)
   action        String                 @db.VarChar(64)
   targetType    String                 @db.VarChar(64)
   targetId      String                 @db.VarChar(128)
@@ -261,7 +261,7 @@ model QueryAuditLog {
   requestId     String                 @db.VarChar(64)
   createdAt     DateTime               @default(now())
   completedAt   DateTime?
-  contactId     String                 @db.VarChar(18)
+  contactId     String                 @db.VarChar(128)
   queryKind     String                 @db.VarChar(64)
   targetId      String                 @db.VarChar(128)
   objectApiName String                 @db.VarChar(128)
@@ -333,7 +333,7 @@ model AuthProviderAdminConfigRecord {
 }
 
 model LocalCredentialRecord {
-  contactId       String   @id @db.VarChar(18)
+  contactId       String   @id @db.VarChar(128)
   username        String   @unique @db.VarChar(320)
   passwordHash    String   @db.Text
   enabled         Boolean  @default(true)
@@ -351,7 +351,7 @@ model LocalCredentialRecord {
 model EntityQueryCursorCache {
   tokenHash          String   @id @db.VarChar(128)
   cursorKind         String   @db.VarChar(32)
-  contactId          String   @db.VarChar(18)
+  contactId          String   @db.VarChar(128)
   entityId           String   @db.VarChar(64)
   viewId             String?  @db.VarChar(64)
   relatedListId      String?  @db.VarChar(64)
@@ -376,7 +376,7 @@ model EntityQueryCursorCache {
 
 model ReportQueryCursorCache {
   tokenHash        String   @id @db.VarChar(128)
-  contactId        String   @db.VarChar(18)
+  contactId        String   @db.VarChar(128)
   appId            String   @db.VarChar(64)
   reportId         String   @db.Uuid
   objectApiName    String   @db.VarChar(128)
@@ -623,7 +623,7 @@ model AclDefaultPermissionRecord {
 }
 
 model AclContactPermissionRecord {
-  contactId      String   @db.VarChar(18)
+  contactId      String   @db.VarChar(128)
   permissionCode String   @db.VarChar(80)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -686,7 +686,7 @@ model ReportFolderRecord {
   appId          String                 @db.VarChar(64)
   label          String                 @db.VarChar(128)
   description    String?                @db.VarChar(512)
-  ownerContactId String                 @db.VarChar(18)
+  ownerContactId String                 @db.VarChar(128)
   accessMode     ReportFolderAccessMode @default(PERSONAL)
   createdAt      DateTime               @default(now())
   updatedAt      DateTime               @updatedAt
@@ -720,7 +720,7 @@ model ReportDefinitionRecord {
   folderId       String              @db.Uuid
   label          String              @db.VarChar(128)
   description    String?             @db.VarChar(512)
-  ownerContactId String              @db.VarChar(18)
+  ownerContactId String              @db.VarChar(128)
   objectApiName  String              @db.VarChar(128)
   columnsJson    Json
   filtersJson    Json
@@ -760,7 +760,7 @@ model DashboardFolderRecord {
   appId          String                 @db.VarChar(64)
   label          String                 @db.VarChar(128)
   description    String?                @db.VarChar(512)
-  ownerContactId String                 @db.VarChar(18)
+  ownerContactId String                 @db.VarChar(128)
   accessMode     ReportFolderAccessMode @default(PERSONAL)
   createdAt      DateTime               @default(now())
   updatedAt      DateTime               @updatedAt
@@ -795,7 +795,7 @@ model DashboardDefinitionRecord {
   sourceReportId String                       @db.Uuid
   label          String                       @db.VarChar(128)
   description    String?                      @db.VarChar(512)
-  ownerContactId String                       @db.VarChar(18)
+  ownerContactId String                       @db.VarChar(128)
   filtersJson    Json
   widgetsJson    Json
   layoutJson     Json

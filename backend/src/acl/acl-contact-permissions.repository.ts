@@ -50,6 +50,28 @@ export class AclContactPermissionsRepository {
     return rows.map((row) => row.permissionCode);
   }
 
+  async listPermissionCodesBySubjectIds(subjectIds: string[]): Promise<string[]> {
+    const normalizedSubjectIds = [...new Set(subjectIds.map((entry) => entry.trim()).filter(Boolean))];
+
+    if (normalizedSubjectIds.length === 0) {
+      return [];
+    }
+
+    const rows = await this.prisma.aclContactPermissionRecord.findMany({
+      where: {
+        contactId: {
+          in: normalizedSubjectIds,
+        },
+      },
+      orderBy: [{ permissionCode: 'asc' }],
+      select: {
+        permissionCode: true,
+      },
+    });
+
+    return rows.map((row) => row.permissionCode);
+  }
+
   async replaceForContact(
     contactId: string,
     permissionCodes: string[],
