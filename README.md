@@ -19,7 +19,7 @@ L'auth condivisa e i connector Salesforce runtime vivono nei servizi platform so
 - npm workspaces
 - Backend: NestJS + TypeScript
 - Frontend: React + Vite + TypeScript + Tailwind
-- Salesforce: jsforce
+- Salesforce: delegated to `platform-connectors-service` (`jsforce` runtime lives there)
 - Database: PostgreSQL
 - ORM: Prisma
 - Auth: shared session via `platform-auth-service`

@@ -11,7 +11,7 @@ Read root [AGENTS.md](/Users/jeanpaul/projects/cs-repository/sfdc-external/AGENT
 
 * NestJS controllers, services, and modules
 * Prisma access and schema management
-* Salesforce integration through `jsforce`
+* Salesforce access through `platform-connectors-service`
 * Authentication, ACL, visibility enforcement, and audit-related behavior
 
 Frontend clients must consume backend APIs. Do not move backend responsibilities into the UI.
@@ -65,7 +65,7 @@ Never:
 Pattern:
 
 ```text
-Controller -> Service -> SalesforceService / connector -> jsforce client
+Controller -> Service -> SalesforceService -> platform-connectors-service -> jsforce client
 ```
 
 Rules:

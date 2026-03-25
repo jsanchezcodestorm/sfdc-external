@@ -11,9 +11,10 @@ Read the nearest `AGENTS.md` before changing code in `backend/` or `frontend/`.
 
 * Runtime: Node.js 22 LTS
 * Package manager: npm workspaces
-* Backend: NestJS + TypeScript + Prisma + PostgreSQL + jsforce
+* Backend: NestJS + TypeScript + Prisma + PostgreSQL
 * Frontend: React + Vite + TypeScript + Tailwind
 * Auth: shared session via `platform-auth-service` with HttpOnly cookies
+* Salesforce access: delegated to `platform-connectors-service` (`jsforce` runtime lives there)
 * Security model: ACL + visibility engine, deny by default
 
 ## Repository Map

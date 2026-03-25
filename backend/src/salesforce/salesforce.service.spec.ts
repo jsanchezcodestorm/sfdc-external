@@ -1,210 +1,160 @@
-import assert from 'node:assert/strict';
-import test from 'node:test';
+import assert from 'node:assert/strict'
+import test from 'node:test'
 
-import jsforce from 'jsforce';
+import { BadRequestException, ForbiddenException } from '@nestjs/common'
 
-import { SalesforceNotConfiguredException } from './salesforce-not-configured.exception';
-import { SalesforceService } from './salesforce.service';
+import { SalesforceNotConfiguredException } from './salesforce-not-configured.exception'
+import { SalesforceService } from './salesforce.service'
 
-function createSalesforceService(options?: {
-  setup?: {
-    siteName: string;
-    adminEmail: string;
-    salesforce:
-      | {
-          mode: 'access-token';
-          instanceUrl: string;
-          accessToken: string;
-        }
-      | {
-          mode: 'username-password';
-          loginUrl: string;
-          username: string;
-          password: string;
-          securityToken?: string;
-        };
-    completedAt: string;
-  } | null;
-}) {
-  const configService = {
-    get(key: string) {
-      const values: Record<string, string> = {
-        SALESFORCE_DESCRIBE_CACHE_TTL_MS: '21600000',
-        SALESFORCE_DESCRIBE_STALE_WHILE_REVALIDATE_MS: '21600000',
-      };
-
-      return values[key];
-    },
-  };
-
-  const prismaService = {
-    salesforceSObjectDescribeCache: {
-      async findUnique() {
-        return null;
-      },
-      async upsert() {},
-      async deleteMany() {},
-    },
-  };
-
-  const auditWriteService = {
-    async recordSecurityEventOrThrow() {},
-  };
-
-  const setupService = {
-    async getCompletedSetup() {
-      return options?.setup ?? null;
-    },
-  };
-
-  return new SalesforceService(
-    configService as never,
-    prismaService as never,
-    auditWriteService as never,
-    setupService as never,
-  );
+type FetchCall = {
+  url: string
+  init?: RequestInit
 }
 
-test('getConnection fails explicitly when setup is not completed', async () => {
-  const service = createSalesforceService();
+function createSalesforceService(options?: { rawQueryEnabled?: boolean }) {
+  const configService = {
+    get(key: string, defaultValue?: string) {
+      if (key === 'ENABLE_RAW_SALESFORCE_QUERY') {
+        return options?.rawQueryEnabled ? 'true' : 'false'
+      }
 
-  await assert.rejects(
-    () =>
-      (service as unknown as {
-        getConnection(): Promise<unknown>;
-      }).getConnection(),
-    (error: unknown) =>
-      error instanceof SalesforceNotConfiguredException &&
-      error.message === 'Salesforce is not configured',
-  );
-});
-
-test('getConnection uses persisted access token configuration from setup', async () => {
-  const originalConnection = (jsforce as unknown as { Connection: unknown }).Connection;
-  let receivedOptions: Record<string, unknown> | null = null;
-
-  class FakeConnection {
-    instanceUrl: string;
-    userInfo = {
-      organizationId: '00D000000000001',
-    };
-    version = '61.0';
-
-    constructor(options: Record<string, unknown>) {
-      receivedOptions = options;
-      this.instanceUrl = String(options.instanceUrl ?? '');
-    }
-
-    async identity() {
-      return {
-        organization_id: '00D000000000001',
-        username: 'integration@example.com',
-      };
+      return defaultValue
     }
   }
 
-  (jsforce as unknown as { Connection: unknown }).Connection = FakeConnection;
+  return new SalesforceService(configService as never)
+}
+
+function jsonResponse(status: number, body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json' }
+  })
+}
+
+function withConnectorEnv() {
+  const previousUrl = process.env.PLATFORM_CONNECTORS_SERVICE_URL
+  const previousToken = process.env.PLATFORM_INTERNAL_TOKEN
+
+  process.env.PLATFORM_CONNECTORS_SERVICE_URL = 'http://connectors.internal'
+  process.env.PLATFORM_INTERNAL_TOKEN = 'test-internal-token'
+
+  return () => {
+    if (previousUrl === undefined) {
+      delete process.env.PLATFORM_CONNECTORS_SERVICE_URL
+    } else {
+      process.env.PLATFORM_CONNECTORS_SERVICE_URL = previousUrl
+    }
+
+    if (previousToken === undefined) {
+      delete process.env.PLATFORM_INTERNAL_TOKEN
+    } else {
+      process.env.PLATFORM_INTERNAL_TOKEN = previousToken
+    }
+  }
+}
+
+function withFetchMock(handler: (call: FetchCall) => Promise<Response> | Response) {
+  const originalFetch = globalThis.fetch
+
+  globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) =>
+    handler({ url: String(input), init })) as typeof fetch
+
+  return () => {
+    globalThis.fetch = originalFetch
+  }
+}
+
+test('describeGlobalObjects forwards requests to platform connectors service', async () => {
+  const restoreEnv = withConnectorEnv()
+  const capturedCalls: FetchCall[] = []
+  const restoreFetch = withFetchMock((call) => {
+    capturedCalls.push(call)
+    return jsonResponse(200, {
+      items: [{ name: 'Account', label: 'Account', custom: false }]
+    })
+  })
 
   try {
-    const service = createSalesforceService({
-      setup: {
-        siteName: 'Acme Portal',
-        adminEmail: 'admin@example.com',
-        salesforce: {
-          mode: 'access-token',
-          instanceUrl: 'https://example.my.salesforce.com',
-          accessToken: 'token-123',
-        },
-        completedAt: '2026-03-10T10:00:00.000Z',
-      },
-    });
+    const service = createSalesforceService()
 
-    await (service as unknown as { getConnection(): Promise<unknown> }).getConnection();
+    const objects = await service.describeGlobalObjects()
 
-    assert.deepEqual(receivedOptions, {
-      accessToken: 'token-123',
-      instanceUrl: 'https://example.my.salesforce.com',
-    });
+    assert.deepEqual(objects, [{ name: 'Account', label: 'Account', custom: false }])
+    assert.equal(capturedCalls.length, 1)
+
+    const call = capturedCalls[0] as FetchCall
+
+    assert.equal(call.url, 'http://connectors.internal/internal/connectors/salesforce/objects')
+    assert.equal(call.init?.method, 'GET')
+
+    const headers = new Headers(call.init?.headers)
+    assert.equal(headers.get('x-platform-internal-token'), 'test-internal-token')
+    assert.equal(headers.get('content-type'), null)
   } finally {
-    (jsforce as unknown as { Connection: unknown }).Connection = originalConnection;
+    restoreFetch()
+    restoreEnv()
   }
-});
+})
 
-test('describeObjectFields maps picklist and reference metadata from describe payload', async () => {
-  const service = createSalesforceService();
+test('describeObject maps connector 400 responses to BadRequestException', async () => {
+  const restoreEnv = withConnectorEnv()
+  const restoreFetch = withFetchMock(() =>
+    jsonResponse(400, { message: 'Unsupported Salesforce object' })
+  )
 
-  (service as unknown as { describeObject: (objectApiName: string) => Promise<unknown> }).describeObject = async (
-    objectApiName: string,
-  ) => {
-    assert.equal(objectApiName, 'Account');
-    return {
-      fields: [
-        {
-          name: 'Industry',
-          label: 'Industry',
-          type: 'picklist',
-          nillable: true,
-          createable: true,
-          updateable: true,
-          filterable: true,
-          defaultedOnCreate: false,
-          calculated: false,
-          autoNumber: false,
-          picklistValues: [
-            { value: 'Technology', label: 'Technology', active: true, defaultValue: true },
-            { value: 'Finance', label: 'Finance', active: true, defaultValue: false },
-          ],
-        },
-        {
-          name: 'ParentId',
-          label: 'Parent Account',
-          type: 'reference',
-          nillable: true,
-          createable: true,
-          updateable: true,
-          filterable: true,
-          relationshipName: 'Parent',
-          referenceTo: ['Account'],
-        },
-      ],
-    };
-  };
+  try {
+    const service = createSalesforceService()
 
-  const fields = await service.describeObjectFields('Account');
+    await assert.rejects(
+      () => service.describeObject('Nope__c'),
+      (error: unknown) =>
+        error instanceof BadRequestException &&
+        error.message === 'Unsupported Salesforce object'
+    )
+  } finally {
+    restoreFetch()
+    restoreEnv()
+  }
+})
 
-  assert.deepEqual(fields, [
-    {
-      name: 'Industry',
-      label: 'Industry',
-      type: 'picklist',
-      nillable: true,
-      createable: true,
-      updateable: true,
-      filterable: true,
-      defaultedOnCreate: false,
-      calculated: false,
-      autoNumber: false,
-      picklistValues: [
-        { value: 'Technology', label: 'Technology', active: true, defaultValue: true },
-        { value: 'Finance', label: 'Finance', active: true, defaultValue: false },
-      ],
-      relationshipName: undefined,
-      referenceTo: undefined,
-    },
-    {
-      name: 'ParentId',
-      label: 'Parent Account',
-      type: 'reference',
-      nillable: true,
-      createable: true,
-      updateable: true,
-      filterable: true,
-      defaultedOnCreate: false,
-      calculated: false,
-      autoNumber: false,
-      picklistValues: undefined,
-      relationshipName: 'Parent',
-      referenceTo: ['Account'],
-    },
-  ]);
-});
+test('ping maps connector 503 responses to SalesforceNotConfiguredException', async () => {
+  const restoreEnv = withConnectorEnv()
+  const restoreFetch = withFetchMock(() =>
+    jsonResponse(503, { message: 'Salesforce connector is not configured' })
+  )
+
+  try {
+    const service = createSalesforceService()
+
+    await assert.rejects(
+      () => service.ping(),
+      (error: unknown) => error instanceof SalesforceNotConfiguredException
+    )
+  } finally {
+    restoreFetch()
+    restoreEnv()
+  }
+})
+
+test('executeRawQuery fails closed when the feature flag is disabled', async () => {
+  let fetchWasCalled = false
+  const restoreFetch = withFetchMock(() => {
+    fetchWasCalled = true
+    return jsonResponse(200, { ok: true })
+  })
+
+  try {
+    const service = createSalesforceService()
+
+    await assert.rejects(
+      () => service.executeRawQuery('SELECT Id FROM Account'),
+      (error: unknown) =>
+        error instanceof ForbiddenException &&
+        error.message === 'Raw Salesforce query endpoint is disabled'
+    )
+    assert.equal(fetchWasCalled, false)
+  } finally {
+    restoreFetch()
+  }
+})
