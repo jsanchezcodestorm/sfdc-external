@@ -1,4 +1,4 @@
-const routeCatalog = require('./route-catalog.js');
+const routeCatalog = require('./route-catalog.cjs');
 
 exports.ADMIN_ACL_ROUTE_ID = routeCatalog.ADMIN_ACL_ROUTE_ID;
 exports.ADMIN_APPS_ROUTE_ID = routeCatalog.ADMIN_APPS_ROUTE_ID;

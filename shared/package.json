@@ -3,18 +3,18 @@
   "version": "0.1.0",
   "private": true,
   "type": "commonjs",
-  "main": "index.js",
+  "main": "index.cjs",
   "types": "index.d.ts",
   "exports": {
     ".": {
       "types": "./index.d.ts",
       "import": "./index.mjs",
-      "require": "./index.js"
+      "require": "./index.cjs"
     },
     "./route-catalog": {
       "types": "./route-catalog.d.ts",
       "import": "./route-catalog.mjs",
-      "require": "./route-catalog.js"
+      "require": "./route-catalog.cjs"
     }
   }
 }

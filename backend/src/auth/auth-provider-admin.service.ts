@@ -3,6 +3,7 @@ import type { Request } from 'express';
 
 import { platformAuthJson } from '../platform/platform-clients';
 
+import { AuthProviderAdminRepository } from './auth-provider-admin.repository';
 import type {
   AuthAdminProviderDetailResponse,
   AuthAdminProviderResponse,
@@ -10,7 +11,6 @@ import type {
   AuthProvidersResponse,
   AuthProviderAdminInput
 } from './auth.types';
-import { AuthProviderAdminRepository } from './auth-provider-admin.repository';
 
 @Injectable()
 export class AuthProviderAdminService {
