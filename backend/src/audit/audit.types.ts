@@ -9,6 +9,7 @@ export interface RequestContextState {
   ip: string;
   userAgent: string;
   userContactId?: string;
+  sessionToken?: string;
 }
 
 export interface SecurityAuditWriteInput {

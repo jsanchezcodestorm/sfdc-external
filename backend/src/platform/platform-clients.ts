@@ -1,4 +1,5 @@
 import { HttpException } from '@nestjs/common';
+import { RequestContextService } from '../audit/request-context.service';
 
 type PlatformRequestOptions = Omit<RequestInit, 'body' | 'headers'> & {
   body?: BodyInit | Record<string, unknown>;
@@ -24,6 +25,10 @@ function buildInternalHeaders(headers?: HeadersInit): Headers {
     'x-platform-internal-token',
     process.env.PLATFORM_INTERNAL_TOKEN ?? 'platform-local-stack-internal-token'
   );
+  const sessionToken = RequestContextService.getSessionToken();
+  if (sessionToken && !resolved.has('authorization')) {
+    resolved.set('authorization', `Bearer ${sessionToken}`);
+  }
   return resolved;
 }
 
