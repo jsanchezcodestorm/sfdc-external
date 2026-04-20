@@ -119,7 +119,9 @@ export class SetupService {
             productCode: 'sfdc-external',
             subjectId: normalizedAdminSubjectId,
             attributes: {
-              bootstrapAdmin: true
+              sessionClaims: {
+                bootstrapAdmin: true
+              }
             }
           }
         ]

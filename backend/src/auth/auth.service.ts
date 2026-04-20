@@ -1,6 +1,9 @@
 import { Injectable, Optional, forwardRef, Inject, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { SubjectTraits } from '@platform/contracts-auth';
+import type {
+  PlatformMembershipAttributes,
+  SubjectTraits,
+} from '@platform/contracts-auth';
 import type { CookieOptions, Request } from 'express';
 
 import { AclContactPermissionsRepository } from '../acl/acl-contact-permissions.repository';
@@ -18,7 +21,7 @@ type PlatformMembership = {
   subjectId: string;
   tenantId?: string;
   role?: string;
-  attributes?: Record<string, unknown>;
+  attributes?: PlatformMembershipAttributes;
 };
 
 type PlatformSessionUser = {
@@ -179,7 +182,7 @@ export class AuthService {
       throw new UnauthorizedException('Membership is missing a valid email');
     }
 
-    const subjectTraits = this.normalizeSubjectTraits(membership.attributes);
+    const subjectTraits = this.readMembershipSessionClaims(membership);
     const legacySubjectIds = this.buildLegacySubjectIds(user.id, membership.subjectId);
 
     return {
@@ -250,6 +253,12 @@ export class AuthService {
     );
 
     return Object.keys(traits).length > 0 ? traits : undefined;
+  }
+
+  private readMembershipSessionClaims(
+    membership: PlatformMembership
+  ): SubjectTraits | undefined {
+    return this.normalizeSubjectTraits(membership.attributes?.sessionClaims);
   }
 
   private buildLegacySubjectIds(identityId: string, membershipSubjectId?: string): string[] {
