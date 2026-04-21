@@ -2,13 +2,11 @@
 
 Middleware full-stack TypeScript integrato con Salesforce, con backend NestJS e frontend React/Vite.
 
-Repository path canonico:
+## Workspace locale
 
-* [`/Users/jeanpaul/projects/cs-repository/sfdc-external`](/Users/jeanpaul/projects/cs-repository/sfdc-external)
+Questo repo vive nello stesso workspace del sibling [`platform-local-stack`](/Users/jeanpaul/projects/cs-repository/platform-local-stack), che resta l'entrypoint canonico per il bootstrap completo.
 
-Stack root locale:
-
-* [`/Users/jeanpaul/projects/cs-repository/platform-local-stack`](/Users/jeanpaul/projects/cs-repository/platform-local-stack)
+Il bootstrap di `platform-local-stack` risolve i repo sibling dal `git origin` configurato e accetta i nomi cartella storici come fallback.
 
 Nel primo taglio di migrazione il `backend/` di questo repo resta il BFF di prodotto.
 L'auth condivisa e i connector Salesforce runtime vivono nei servizi platform sotto [`/Users/jeanpaul/projects/cs-repository/platform-auth-service`](/Users/jeanpaul/projects/cs-repository/platform-auth-service) e [`/Users/jeanpaul/projects/cs-repository/platform-connectors-service`](/Users/jeanpaul/projects/cs-repository/platform-connectors-service).
@@ -71,8 +69,9 @@ npm exec --workspace backend prisma -- migrate dev --schema prisma/schema.prisma
 Bootstrap completo dello stack:
 
 ```bash
-cd /Users/jeanpaul/projects/cs-repository/platform-local-stack
+cd ../platform-local-stack
 npm install
+npm run check-paths
 npm run start:dev
 ```
 

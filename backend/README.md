@@ -5,11 +5,15 @@ Backend NestJS del middleware Salesforce con ACL + Visibility deny-by-default.
 ## Avvio rapido
 
 ```bash
-cd /Users/jeanpaul/projects/cs-repository/platform-local-stack
+cd ../../platform-local-stack
+npm install
+npm run check-paths
 npm run start:dev -- sfdcBackend
 ```
 
-Il bootstrap canonico dell'intero stack resta [`/Users/jeanpaul/projects/cs-repository/platform-local-stack`](/Users/jeanpaul/projects/cs-repository/platform-local-stack). Questo workspace espone il BFF pubblico su `http://sfdc.cs.lvh.me:8080/api/*`.
+Il bootstrap canonico dell'intero stack resta [`platform-local-stack`](/Users/jeanpaul/projects/cs-repository/platform-local-stack). Questo workspace espone il BFF pubblico su `http://sfdc.cs.lvh.me:8080/api/*`.
+
+`platform-local-stack` risolve i repo sibling dal `git origin` configurato, quindi i nomi cartella locali non devono più essere uniformati manualmente.
 
 ## Setup Prisma
 
