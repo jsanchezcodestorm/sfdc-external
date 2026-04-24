@@ -85,7 +85,10 @@ test('describeGlobalObjects forwards requests to platform connectors service', a
 
     const call = capturedCalls[0] as FetchCall
 
-    assert.equal(call.url, 'http://connectors.internal/internal/connectors/salesforce/objects')
+    assert.equal(
+      call.url,
+      'http://connectors.internal/internal/connectors/sources/salesforce-default/describe/objects'
+    )
     assert.equal(call.init?.method, 'GET')
 
     const headers = new Headers(call.init?.headers)

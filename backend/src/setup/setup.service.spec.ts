@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { BadRequestException, ConflictException } from '@nestjs/common'
+import { ConflictException } from '@nestjs/common'
 
+import { PlatformHttpError } from '../platform/platform-clients'
 import { SetupService } from './setup.service'
 
 type PersistedSetupRecord = {
@@ -13,16 +14,8 @@ type PersistedSetupRecord = {
   completedAt: Date
 }
 
-type SavedCredential = {
-  contactId: string
-  username: string
-  password: string
-  enabled: boolean
-}
-
 type TransactionState = {
   savedSetup: PersistedSetupRecord | null
-  savedCredential: SavedCredential | null
 }
 
 type FetchCall = {
@@ -32,11 +25,10 @@ type FetchCall = {
 
 function createSetupService(options?: {
   record?: PersistedSetupRecord | null
-  credentialError?: Error
+  saveError?: Error
 }) {
   const state: TransactionState = {
-    savedSetup: null,
-    savedCredential: null
+    savedSetup: null
   }
   let activeTransaction: TransactionState | null = null
 
@@ -45,32 +37,24 @@ function createSetupService(options?: {
       return options?.record ?? null
     },
     async saveCompletedSetup(input: PersistedSetupRecord, tx?: TransactionState) {
-      ;(tx ?? activeTransaction ?? state).savedSetup = input
-    }
-  }
-
-  const localCredentialProvisioningService = {
-    async upsertResolvedCredential(input: SavedCredential) {
-      if (options?.credentialError) {
-        throw options.credentialError
+      if (options?.saveError) {
+        throw options.saveError
       }
 
-      ;(activeTransaction ?? state).savedCredential = input
+      ;(tx ?? activeTransaction ?? state).savedSetup = input
     }
   }
 
   const prismaService = {
     async $transaction<T>(callback: (tx: TransactionState) => Promise<T>) {
       const transactionState: TransactionState = {
-        savedSetup: null,
-        savedCredential: null
+        savedSetup: null
       }
       activeTransaction = transactionState
 
       try {
         const result = await callback(transactionState)
         state.savedSetup = transactionState.savedSetup
-        state.savedCredential = transactionState.savedCredential
         return result
       } finally {
         activeTransaction = null
@@ -81,7 +65,6 @@ function createSetupService(options?: {
   return {
     service: new SetupService(
       setupRepository as never,
-      localCredentialProvisioningService as never,
       prismaService as never
     ),
     state
@@ -97,9 +80,11 @@ function jsonResponse(status: number, body: unknown): Response {
 
 function withConnectorEnv() {
   const previousUrl = process.env.PLATFORM_CONNECTORS_SERVICE_URL
+  const previousAuthUrl = process.env.PLATFORM_AUTH_SERVICE_URL
   const previousToken = process.env.PLATFORM_INTERNAL_TOKEN
 
   process.env.PLATFORM_CONNECTORS_SERVICE_URL = 'http://connectors.internal'
+  process.env.PLATFORM_AUTH_SERVICE_URL = 'http://auth.internal'
   process.env.PLATFORM_INTERNAL_TOKEN = 'test-internal-token'
 
   return () => {
@@ -107,6 +92,12 @@ function withConnectorEnv() {
       delete process.env.PLATFORM_CONNECTORS_SERVICE_URL
     } else {
       process.env.PLATFORM_CONNECTORS_SERVICE_URL = previousUrl
+    }
+
+    if (previousAuthUrl === undefined) {
+      delete process.env.PLATFORM_AUTH_SERVICE_URL
+    } else {
+      process.env.PLATFORM_AUTH_SERVICE_URL = previousAuthUrl
     }
 
     if (previousToken === undefined) {
@@ -221,7 +212,7 @@ test('testSalesforceConfig forwards connector test requests while setup is pendi
     assert.equal(fetchMock.calls.length, 1)
     assert.equal(
       fetchMock.calls[0]?.url,
-      'http://connectors.internal/internal/connectors/salesforce/test'
+      'http://connectors.internal/internal/connectors/sources/salesforce-default/test'
     )
     assert.deepEqual(JSON.parse(String(fetchMock.calls[0]?.init?.body)), {
       salesforce: {
@@ -250,8 +241,7 @@ test('completeSetup configures the connector and persists a platform-managed set
       username: 'integration@example.com'
     }),
     jsonResponse(200, {
-      id: '003000000000001AAA',
-      email: 'admin@example.com'
+      id: 'admin@example.com'
     })
   ])
 
@@ -277,11 +267,11 @@ test('completeSetup configures the connector and persists a platform-managed set
     assert.equal(fetchMock.calls.length, 2)
     assert.equal(
       fetchMock.calls[0]?.url,
-      'http://connectors.internal/internal/connectors/salesforce/configure'
+      'http://connectors.internal/internal/connectors/sources/salesforce-default/configure'
     )
     assert.equal(
       fetchMock.calls[1]?.url,
-      'http://connectors.internal/internal/connectors/salesforce/contacts/by-email?email=admin%40example.com'
+      'http://auth.internal/internal/identities/upsert'
     )
     assert.deepEqual(JSON.parse(String(fetchMock.calls[0]?.init?.body)), {
       salesforce: {
@@ -290,18 +280,29 @@ test('completeSetup configures the connector and persists a platform-managed set
         accessToken: 'token-123'
       }
     })
+    assert.deepEqual(JSON.parse(String(fetchMock.calls[1]?.init?.body)), {
+      email: 'admin@example.com',
+      username: 'admin@example.com',
+      password: 'Password!123',
+      enabled: true,
+      memberships: [
+        {
+          productCode: 'sfdc-external',
+          subjectId: 'admin@example.com',
+          attributes: {
+            sessionClaims: {
+              bootstrapAdmin: true
+            }
+          }
+        }
+      ]
+    })
 
     assert.equal(state.savedSetup?.siteName, 'Acme Portal')
     assert.equal(state.savedSetup?.adminEmail, 'admin@example.com')
     assert.equal(state.savedSetup?.salesforceMode, 'ACCESS_TOKEN')
     assert.equal(state.savedSetup?.salesforceConfigEncrypted, 'platform-managed')
     assert.equal(state.savedSetup?.completedAt instanceof Date, true)
-    assert.deepEqual(state.savedCredential, {
-      contactId: '003000000000001AAA',
-      username: 'admin@example.com',
-      password: 'Password!123',
-      enabled: true
-    })
   } finally {
     fetchMock.restore()
     restoreEnv()
@@ -337,7 +338,7 @@ test('completeSetup rejects repeated setup completion attempts', async () => {
   )
 })
 
-test('completeSetup fails when adminEmail does not map to a Salesforce Contact', async () => {
+test('completeSetup fails before persistence when identity upsert fails', async () => {
   const restoreEnv = withConnectorEnv()
   const fetchMock = withFetchSequence([
     jsonResponse(200, {
@@ -345,7 +346,7 @@ test('completeSetup fails when adminEmail does not map to a Salesforce Contact',
       organizationId: '00D000000000001',
       instanceUrl: 'https://example.my.salesforce.com'
     }),
-    jsonResponse(200, null)
+    jsonResponse(400, { message: 'identity upsert failed' })
   ])
 
   try {
@@ -364,20 +365,19 @@ test('completeSetup fails when adminEmail does not map to a Salesforce Contact',
           }
         }),
       (error: unknown) =>
-        error instanceof BadRequestException &&
-        error.message ===
-          'adminEmail must match an existing Salesforce Contact before completing setup'
+        error instanceof PlatformHttpError &&
+        error.getStatus() === 400 &&
+        error.message === 'identity upsert failed'
     )
 
     assert.equal(state.savedSetup, null)
-    assert.equal(state.savedCredential, null)
   } finally {
     fetchMock.restore()
     restoreEnv()
   }
 })
 
-test('completeSetup rolls back setup persistence when credential provisioning fails', async () => {
+test('completeSetup rolls back setup persistence when saving setup fails', async () => {
   const restoreEnv = withConnectorEnv()
   const fetchMock = withFetchSequence([
     jsonResponse(200, {
@@ -386,16 +386,13 @@ test('completeSetup rolls back setup persistence when credential provisioning fa
       instanceUrl: 'https://example.my.salesforce.com'
     }),
     jsonResponse(200, {
-      id: '003000000000001AAA',
-      email: 'admin@example.com'
+      id: 'admin@example.com'
     })
   ])
 
   try {
     const { service, state } = createSetupService({
-      credentialError: new BadRequestException(
-        'credential.password is required when creating a local credential'
-      )
+      saveError: new Error('setup save failed')
     })
 
     await assert.rejects(
@@ -411,12 +408,11 @@ test('completeSetup rolls back setup persistence when credential provisioning fa
           }
         }),
       (error: unknown) =>
-        error instanceof BadRequestException &&
-        error.message === 'credential.password is required when creating a local credential'
+        error instanceof Error &&
+        error.message === 'setup save failed'
     )
 
     assert.equal(state.savedSetup, null)
-    assert.equal(state.savedCredential, null)
   } finally {
     fetchMock.restore()
     restoreEnv()
