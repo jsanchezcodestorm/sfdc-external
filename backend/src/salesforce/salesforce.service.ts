@@ -11,6 +11,16 @@ import type {
 
 import { platformConnectorsJson, PlatformHttpError } from '../platform/platform-clients';
 
+import {
+  buildContactByEmailSoql,
+  buildContactByIdSoql,
+  buildContactSearchSoql,
+  normalizeContactByEmailResult,
+  normalizeContactByIdResult,
+  normalizeContactSearchResult,
+  type SalesforceContactLookup,
+  type SalesforceContactSuggestion
+} from './salesforce-contact.helpers';
 import { SalesforceNotConfiguredException } from './salesforce-not-configured.exception';
 
 interface SalesforceObjectSummary {
@@ -95,44 +105,49 @@ export class SalesforceService {
     return payload.items;
   }
 
-  findContactByEmail(
-    email: string
-  ): Promise<{ id: string; email?: string; recordTypeDeveloperName?: string } | null> {
+  async findContactByEmail(email: string): Promise<SalesforceContactLookup | null> {
     const normalizedEmail = email.trim().toLowerCase();
     if (!normalizedEmail) {
-      return Promise.resolve(null);
+      return null;
     }
 
-    return this.request(
-      `/internal/connectors/salesforce/contacts/by-email?email=${encodeURIComponent(normalizedEmail)}`
+    const result = await this.executeReadOnlyQuery(
+      buildContactByEmailSoql(normalizedEmail)
+    );
+    return normalizeContactByEmailResult(
+      normalizedEmail,
+      result as { records?: Array<Record<string, unknown>> }
     );
   }
 
-  findContactById(
-    contactId: string
-  ): Promise<{ id: string; name?: string; email?: string; recordTypeDeveloperName?: string } | null> {
+  async findContactById(contactId: string): Promise<SalesforceContactLookup | null> {
     const normalizedContactId = contactId.trim();
     if (!normalizedContactId) {
-      return Promise.resolve(null);
+      return null;
     }
 
-    return this.request(
-      `/internal/connectors/salesforce/contacts/by-id/${encodeURIComponent(normalizedContactId)}`
+    const result = await this.executeReadOnlyQuery(
+      buildContactByIdSoql(normalizedContactId)
     );
+    return normalizeContactByIdResult(result as { records?: Array<Record<string, unknown>> });
   }
 
   async searchContactsByIdOrName(
     query: string,
     limit: number
-  ): Promise<Array<{ id: string; name?: string; recordTypeDeveloperName?: string }>> {
-    const payload = await this.request<{
-      items: Array<{ id: string; name?: string; recordTypeDeveloperName?: string }>;
-    }>(
-      `/internal/connectors/salesforce/contacts/search?q=${encodeURIComponent(
-        query
-      )}&limit=${encodeURIComponent(String(limit))}`
+  ): Promise<SalesforceContactSuggestion[]> {
+    const normalizedQuery = query.trim();
+    if (!normalizedQuery || normalizedQuery.length < 2) {
+      throw new BadRequestException('q must contain at least 2 characters');
+    }
+    if (!Number.isInteger(limit) || limit < 1 || limit > 8) {
+      throw new BadRequestException('limit must be between 1 and 8');
+    }
+
+    const result = await this.executeReadOnlyQuery(
+      buildContactSearchSoql(normalizedQuery, limit)
     );
-    return payload.items;
+    return normalizeContactSearchResult(result as { records?: Array<Record<string, unknown>> });
   }
 
   executeStructuredQuery(
@@ -182,14 +197,14 @@ export class SalesforceService {
   }
 
   executeReadOnlyQuery(soql: string): Promise<unknown> {
-    return this.request('/internal/connectors/salesforce/query/read-only', {
+    return this.request(this.buildSourcePath(this.resolveDataSourceId(), 'query/raw'), {
       method: 'POST',
       body: { soql }
     });
   }
 
   executeReadOnlyQueryPage(soql: string, pageSize: number): Promise<SalesforceReadOnlyQueryResult> {
-    return this.request('/internal/connectors/salesforce/query/page', {
+    return this.request(this.buildSourcePath(this.resolveDataSourceId(), 'query/raw/page'), {
       method: 'POST',
       body: { soql, pageSize }
     });
@@ -199,9 +214,9 @@ export class SalesforceService {
     locator: string,
     pageSize: number
   ): Promise<SalesforceReadOnlyQueryResult> {
-    return this.request('/internal/connectors/salesforce/query/more', {
+    return this.request(this.buildSourcePath(this.resolveDataSourceId(), 'query/raw/more'), {
       method: 'POST',
-      body: { locator, pageSize }
+      body: { cursor: locator, pageSize }
     });
   }
 
@@ -213,7 +228,7 @@ export class SalesforceService {
       throw new ForbiddenException('Raw Salesforce query endpoint is disabled');
     }
 
-    return this.request('/internal/connectors/salesforce/query/raw', {
+    return this.request(this.buildSourcePath(this.resolveDataSourceId(), 'query/raw'), {
       method: 'POST',
       body: { soql }
     });
