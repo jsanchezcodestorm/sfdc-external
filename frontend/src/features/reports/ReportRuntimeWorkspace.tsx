@@ -20,28 +20,46 @@ import {
   updateReport,
   updateReportFolder,
 } from './report-api'
+import {
+  createEmptyFolderDraft,
+  createEmptyReportDraft,
+  createFolderDraftFromSummary,
+  createReportDraftFromDefinition,
+  folderDraftToPayload,
+  hasShareSubject,
+  reportDraftToPayload,
+} from './report-drafts'
+import { ReportRunPanel } from './ReportRunPanel'
 import type {
-  ReportColumn,
   ReportContactSuggestion,
-  ReportDefinition,
   ReportFieldSuggestion,
-  ReportFilter,
   ReportFilterOperator,
   ReportFolderResponse,
   ReportFolderSummary,
-  ReportGrouping,
   ReportObjectSuggestion,
   ReportPermissionSuggestion,
   ReportResponse,
-  ReportRunGroupNode,
   ReportRunResponse,
   ReportsWorkspaceResponse,
-  ReportScalarValue,
   ReportShareGrant,
-  ReportSort,
-  UpsertReportFolderPayload,
-  UpsertReportPayload,
 } from './report-types'
+import type {
+  FolderDraft,
+  FolderEditorState,
+  ReportColumnDraft,
+  ReportDraft,
+  ReportFilterDraft,
+  ReportGroupingDraft,
+  ReportSortDraft,
+} from './report-workspace-model'
+import { EMPTY_SHARE, FILTER_OPERATORS } from './report-workspace-model'
+import {
+  buildReportFolderPath,
+  buildReportItemBasePath,
+  buildReportPath,
+  formatDate,
+  parseReportRoute,
+} from './report-workspace-utils'
 
 type ReportRuntimeWorkspaceProps = {
   appId: string
@@ -50,68 +68,6 @@ type ReportRuntimeWorkspaceProps = {
   itemLabel: string
   itemDescription?: string
 }
-
-type ReportRouteSelection =
-  | { kind: 'workspace' }
-  | { kind: 'folder'; folderId: string }
-  | { kind: 'report'; reportId: string }
-  | { kind: 'invalid' }
-
-type FolderDraft = {
-  label: string
-  description: string
-  accessMode: 'personal' | 'shared'
-  shares: ReportShareGrant[]
-}
-
-type ReportColumnDraft = {
-  field: string
-  label: string
-}
-
-type ReportFilterDraft = {
-  field: string
-  operator: ReportFilterOperator
-  valueText: string
-}
-
-type ReportGroupingDraft = {
-  field: string
-  label: string
-}
-
-type ReportSortDraft = {
-  field: string
-  direction: 'ASC' | 'DESC'
-}
-
-type ReportDraft = {
-  folderId: string
-  label: string
-  description: string
-  objectApiName: string
-  columns: ReportColumnDraft[]
-  filters: ReportFilterDraft[]
-  groupings: ReportGroupingDraft[]
-  sort: ReportSortDraft[]
-  pageSize: string
-  shareMode: 'inherit' | 'restricted' | 'personal'
-  shares: ReportShareGrant[]
-}
-
-type FolderEditorState =
-  | {
-      mode: 'create'
-      draft: FolderDraft
-    }
-  | {
-      mode: 'edit'
-      folderId: string
-      draft: FolderDraft
-    }
-
-const FILTER_OPERATORS: ReportFilterOperator[] = ['=', '!=', '<', '<=', '>', '>=', 'IN', 'NOT IN', 'LIKE']
-const EMPTY_SHARE: ReportShareGrant = { subjectType: 'permission', subjectId: '' }
 
 export function ReportRuntimeWorkspace({
   appId,
@@ -989,128 +945,6 @@ function ReportView({
             />
           </div>
         </section>
-      )}
-    </>
-  )
-}
-
-function ReportRunPanel({
-  report,
-  runResponse,
-  runLoading,
-  runError,
-  onRefreshRun,
-  onNextPage,
-}: {
-  report: ReportDefinition
-  runResponse: ReportRunResponse | null
-  runLoading: boolean
-  runError: string | null
-  onRefreshRun: () => void
-  onNextPage: () => void
-}) {
-  return (
-    <>
-      <section className="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-sm font-semibold text-slate-900">Esecuzione report</p>
-            <p className="mt-1 text-sm text-slate-500">
-              Query compilata server-side con ACL, visibility e cursor opaco.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={onRefreshRun}
-              className="rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
-            >
-              Riesegui
-            </button>
-            {runResponse?.nextCursor ? (
-              <button
-                type="button"
-                onClick={onNextPage}
-                className="rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700"
-              >
-                Pagina successiva
-              </button>
-            ) : null}
-          </div>
-        </div>
-
-        <div className="mt-4 flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
-          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1">{report.objectApiName}</span>
-          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1">{report.pageSize} righe per pagina</span>
-          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1">{report.groupings.length} grouping</span>
-        </div>
-      </section>
-
-      {runError ? (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-          {runError}
-        </div>
-      ) : null}
-
-      {runLoading ? (
-        <WorkspaceState title="Esecuzione in corso..." description="Sto recuperando la pagina richiesta dal backend." />
-      ) : runResponse ? (
-        <>
-          {runResponse.groups.length > 0 ? (
-            <section className="rounded-3xl border border-slate-200 bg-white/90 p-6 shadow-sm">
-              <p className="text-sm font-semibold text-slate-900">Grouping</p>
-              <div className="mt-4 space-y-3">
-                {runResponse.groups.map((group) => (
-                  <ReportGroupTree key={group.key} node={group} level={0} />
-                ))}
-              </div>
-            </section>
-          ) : null}
-
-          <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white/90 shadow-sm">
-            <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-6 py-4">
-              <div>
-                <p className="text-sm font-semibold text-slate-900">Risultati</p>
-                <p className="mt-1 text-sm text-slate-500">
-                  {runResponse.rows.length} righe in pagina, {runResponse.total} totali.
-                </p>
-              </div>
-            </div>
-
-            {runResponse.rows.length ? (
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-slate-200 text-sm">
-                  <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
-                    <tr>
-                      {runResponse.columns.map((column) => (
-                        <th key={column.field} className="px-4 py-3 text-left">
-                          {column.label}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 bg-white">
-                    {runResponse.rows.map((row) => (
-                      <tr key={row.id}>
-                        {runResponse.columns.map((column) => (
-                          <td key={`${row.id}-${column.field}`} className="px-4 py-3 text-slate-700">
-                            {formatRunValue(row.values[column.field])}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div className="px-6 py-10 text-center text-sm text-slate-500">
-                Nessuna riga restituita dal report.
-              </div>
-            )}
-          </section>
-        </>
-      ) : (
-        <WorkspaceState title="Run non ancora eseguito" description="Avvia l&apos;esecuzione per vedere righe e grouping del report." />
       )}
     </>
   )
@@ -2053,327 +1887,4 @@ function WorkspaceState({
       <p className="mt-2 text-sm">{description}</p>
     </section>
   )
-}
-
-function ReportGroupTree({
-  node,
-  level,
-}: {
-  node: ReportRunGroupNode
-  level: number
-}) {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4" style={{ marginLeft: level * 12 }}>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="text-sm font-semibold text-slate-900">
-            {node.label}: {formatRunValue(node.value)}
-          </p>
-          <p className="mt-1 text-xs text-slate-500">{node.count} record nel gruppo</p>
-        </div>
-        {node.rowIds?.length ? (
-          <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-600">
-            {node.rowIds.length} righe in pagina
-          </span>
-        ) : null}
-      </div>
-
-      {node.children?.length ? (
-        <div className="mt-3 space-y-3">
-          {node.children.map((child) => (
-            <ReportGroupTree key={child.key} node={child} level={level + 1} />
-          ))}
-        </div>
-      ) : null}
-    </div>
-  )
-}
-
-function parseReportRoute(value: string): ReportRouteSelection {
-  const normalized = value.trim().replace(/^\/+/, '').replace(/\/+$/, '')
-  if (!normalized) {
-    return { kind: 'workspace' }
-  }
-
-  const parts = normalized.split('/')
-  if (parts[0] === 'folders' && parts[1]) {
-    return { kind: 'folder', folderId: decodeURIComponent(parts[1]) }
-  }
-
-  if (parts[0] === 'reports' && parts[1]) {
-    return { kind: 'report', reportId: decodeURIComponent(parts[1]) }
-  }
-
-  return { kind: 'invalid' }
-}
-
-function buildReportItemBasePath(appId: string, itemId: string): string {
-  return `/app/${encodeURIComponent(appId)}/items/${encodeURIComponent(itemId)}`
-}
-
-function buildReportFolderPath(basePath: string, folderId: string): string {
-  return `${basePath}/folders/${encodeURIComponent(folderId)}`
-}
-
-function buildReportPath(basePath: string, reportId: string): string {
-  return `${basePath}/reports/${encodeURIComponent(reportId)}`
-}
-
-function createEmptyFolderDraft(): FolderDraft {
-  return {
-    label: '',
-    description: '',
-    accessMode: 'personal',
-    shares: [],
-  }
-}
-
-function createFolderDraftFromSummary(folder: ReportFolderSummary): FolderDraft {
-  return {
-    label: folder.label,
-    description: folder.description ?? '',
-    accessMode: folder.accessMode,
-    shares: folder.shares.map((share) => ({ ...share })),
-  }
-}
-
-function folderDraftToPayload(draft: FolderDraft): UpsertReportFolderPayload {
-  const label = draft.label.trim()
-  if (!label) {
-    throw new Error('Label cartella obbligatoria')
-  }
-
-  const shares = draft.shares.filter(hasShareSubject)
-  if (draft.accessMode === 'shared' && shares.length === 0) {
-    throw new Error('Le cartelle condivise richiedono almeno uno share grant')
-  }
-
-  return {
-    folder: {
-      label,
-      description: draft.description.trim() || undefined,
-      accessMode: draft.accessMode,
-      shares,
-    },
-  }
-}
-
-function createEmptyReportDraft(folderId = ''): ReportDraft {
-  return {
-    folderId,
-    label: '',
-    description: '',
-    objectApiName: '',
-    columns: [{ field: 'Id', label: '' }],
-    filters: [],
-    groupings: [],
-    sort: [],
-    pageSize: '50',
-    shareMode: 'inherit',
-    shares: [],
-  }
-}
-
-function createReportDraftFromDefinition(report: ReportDefinition): ReportDraft {
-  return {
-    folderId: report.folderId,
-    label: report.label,
-    description: report.description ?? '',
-    objectApiName: report.objectApiName,
-    columns: report.columns.map((column) => ({ field: column.field, label: column.label ?? '' })),
-    filters: report.filters.map((filter) => ({
-      field: filter.field,
-      operator: filter.operator,
-      valueText: serializeDraftFilterValue(filter.value),
-    })),
-    groupings: report.groupings.map((grouping) => ({ field: grouping.field, label: grouping.label ?? '' })),
-    sort: report.sort.map((sortEntry) => ({
-      field: sortEntry.field,
-      direction: sortEntry.direction?.toUpperCase() === 'DESC' ? 'DESC' : 'ASC',
-    })),
-    pageSize: String(report.pageSize),
-    shareMode: report.shareMode,
-    shares: report.shares.map((share) => ({ ...share })),
-  }
-}
-
-function reportDraftToPayload(draft: ReportDraft): UpsertReportPayload {
-  const folderId = draft.folderId.trim()
-  const label = draft.label.trim()
-  const objectApiName = draft.objectApiName.trim()
-
-  if (!folderId) {
-    throw new Error('Folder obbligatoria')
-  }
-
-  if (!label) {
-    throw new Error('Label report obbligatoria')
-  }
-
-  if (!objectApiName) {
-    throw new Error('Object API Name obbligatorio')
-  }
-
-  const columns = draft.columns
-    .map((column) => ({
-      field: column.field.trim(),
-      label: column.label.trim() || undefined,
-    }))
-    .filter((column) => column.field.length > 0) as ReportColumn[]
-
-  if (columns.length === 0) {
-    throw new Error('Il report richiede almeno una colonna')
-  }
-
-  const groupings = draft.groupings
-    .map((grouping) => ({
-      field: grouping.field.trim(),
-      label: grouping.label.trim() || undefined,
-    }))
-    .filter((grouping) => grouping.field.length > 0) as ReportGrouping[]
-
-  if (groupings.length > 2) {
-    throw new Error('Il report supporta al massimo due livelli di grouping')
-  }
-
-  const filters = draft.filters
-    .map((filter) => {
-      const field = filter.field.trim()
-      if (!field) {
-        return null
-      }
-
-      return {
-        field,
-        operator: filter.operator,
-        value: parseDraftFilterValue(filter.valueText, filter.operator),
-      } satisfies ReportFilter
-    })
-    .filter((entry): entry is ReportFilter => entry !== null)
-
-  const sort = draft.sort
-    .map((sortEntry) => ({
-      field: sortEntry.field.trim(),
-      direction: sortEntry.direction,
-    }))
-    .filter((sortEntry) => sortEntry.field.length > 0) as ReportSort[]
-
-  const pageSize = Number.parseInt(draft.pageSize.trim(), 10)
-  if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 2000) {
-    throw new Error('Page size deve essere un intero tra 1 e 2000')
-  }
-
-  const shares = draft.shares.filter(hasShareSubject)
-  if (draft.shareMode === 'restricted' && shares.length === 0) {
-    throw new Error('Share mode restricted richiede almeno uno share grant')
-  }
-
-  return {
-    report: {
-      folderId,
-      label,
-      description: draft.description.trim() || undefined,
-      objectApiName,
-      columns,
-      filters,
-      groupings,
-      sort,
-      pageSize,
-      shareMode: draft.shareMode,
-      shares,
-    },
-  }
-}
-
-function hasShareSubject(share: ReportShareGrant): boolean {
-  return share.subjectId.trim().length > 0
-}
-
-function parseDraftFilterValue(
-  valueText: string,
-  operator: ReportFilterOperator,
-): ReportScalarValue | ReportScalarValue[] {
-  if (operator === 'IN' || operator === 'NOT IN') {
-    const items = valueText
-      .split(',')
-      .map((entry) => entry.trim())
-      .filter((entry) => entry.length > 0)
-      .map(parseScalarToken)
-
-    if (items.length === 0) {
-      throw new Error(`Il filtro ${operator} richiede almeno un valore`)
-    }
-
-    return items
-  }
-
-  return parseScalarToken(valueText.trim())
-}
-
-function parseScalarToken(value: string): ReportScalarValue {
-  const normalized = value.trim()
-  if (!normalized || normalized.toLowerCase() === 'null') {
-    return null
-  }
-
-  if (normalized.toLowerCase() === 'true') {
-    return true
-  }
-
-  if (normalized.toLowerCase() === 'false') {
-    return false
-  }
-
-  if (/^-?\d+(?:\.\d+)?$/.test(normalized)) {
-    return Number(normalized)
-  }
-
-  return normalized
-}
-
-function serializeDraftFilterValue(value: ReportFilter['value']): string {
-  if (Array.isArray(value)) {
-    return value.map(serializeScalarValue).join(', ')
-  }
-
-  return serializeScalarValue(value)
-}
-
-function serializeScalarValue(value: ReportScalarValue): string {
-  if (value === null) {
-    return 'null'
-  }
-
-  return String(value)
-}
-
-function formatDate(value: string): string {
-  const parsed = new Date(value)
-  if (Number.isNaN(parsed.getTime())) {
-    return value
-  }
-
-  return new Intl.DateTimeFormat('it-IT', {
-    dateStyle: 'medium',
-  }).format(parsed)
-}
-
-function formatRunValue(value: unknown): string {
-  if (value === null || value === undefined || value === '') {
-    return '—'
-  }
-
-  if (typeof value === 'string') {
-    return value
-  }
-
-  if (typeof value === 'number' || typeof value === 'boolean') {
-    return String(value)
-  }
-
-  if (Array.isArray(value)) {
-    return value.map((entry) => formatRunValue(entry)).join(', ')
-  }
-
-  return JSON.stringify(value)
 }
