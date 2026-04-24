@@ -31,9 +31,7 @@ export class AuditWriteService {
     private readonly prismaService: PrismaService,
     private readonly requestContextService: RequestContextService,
   ) {
-    this.hashSalt =
-      this.configService.get<string>('AUDIT_HASH_SALT') ??
-      this.configService.get<string>('JWT_SECRET', 'audit-salt');
+    this.hashSalt = this.requireAuditHashSalt();
   }
 
   async recordSecurityEventOrThrow(input: SecurityAuditWriteInput): Promise<void> {
@@ -283,6 +281,14 @@ export class AuditWriteService {
       .update(':')
       .update(value)
       .digest('hex');
+  }
+
+  private requireAuditHashSalt(): string {
+    const value = this.configService.get<string>('AUDIT_HASH_SALT')?.trim();
+    if (!value) {
+      throw new Error('AUDIT_HASH_SALT is required');
+    }
+    return value;
   }
 
   private normalizeJson(

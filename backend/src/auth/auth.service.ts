@@ -1,20 +1,27 @@
-import { Injectable, Optional, forwardRef, Inject, UnauthorizedException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import {
+  Injectable,
+  Optional,
+  forwardRef,
+  Inject,
+  InternalServerErrorException,
+  UnauthorizedException,
+} from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import type {
   PlatformMembershipAttributes,
   SubjectTraits,
-} from '@platform/contracts-auth';
-import type { CookieOptions, Request } from 'express';
+} from "@platform/contracts-auth";
+import type { CookieOptions, Request } from "express";
 
-import { AclContactPermissionsRepository } from '../acl/acl-contact-permissions.repository';
-import { AclService } from '../acl/acl.service';
-import { platformAuthJson } from '../platform/platform-clients';
-import { SetupService } from '../setup/setup.service';
+import { AclContactPermissionsRepository } from "../acl/acl-contact-permissions.repository";
+import { AclService } from "../acl/acl.service";
+import { platformAuthJson } from "../platform/platform-clients";
+import { SetupService } from "../setup/setup.service";
 
-import { AuthPublicOriginService } from './auth-public-origin.service';
-import type { AuthProvidersResponse } from './auth.types';
-import { LocalCredentialProvisioningService } from './local-credential-provisioning.service';
-import type { SessionUser } from './session-user.interface';
+import { AuthPublicOriginService } from "./auth-public-origin.service";
+import type { AuthProvidersResponse } from "./auth.types";
+import { LocalCredentialProvisioningService } from "./local-credential-provisioning.service";
+import type { SessionUser } from "./session-user.interface";
 
 type PlatformMembership = {
   productCode: string;
@@ -28,7 +35,7 @@ type PlatformSessionUser = {
   id: string;
   email: string;
   authProvider?: string;
-  authMethod?: 'oidc' | 'local';
+  authMethod?: "oidc" | "local";
   memberships?: PlatformMembership[];
 };
 
@@ -42,36 +49,37 @@ export class AuthService {
     private readonly setupService: SetupService,
     @Optional()
     @Inject(forwardRef(() => LocalCredentialProvisioningService))
-    private readonly _legacyLocalCredentialProvisioningService?: LocalCredentialProvisioningService
+    private readonly _legacyLocalCredentialProvisioningService?: LocalCredentialProvisioningService,
   ) {}
 
   listPublicProviders(): Promise<AuthProvidersResponse> {
-    return platformAuthJson<AuthProvidersResponse>('/auth/providers');
+    return platformAuthJson<AuthProvidersResponse>("/auth/providers");
   }
 
   async createOidcLoginStart(
     providerId: string,
-    request: Pick<Request, 'headers' | 'protocol' | 'get'>
+    request: Pick<Request, "headers" | "protocol" | "get">,
   ): Promise<{ redirectUrl: string }> {
     const publicOrigin =
-      this.authPublicOriginService.resolveAllowedOrigin(request) ?? this.getDefaultFrontendOrigin();
+      this.authPublicOriginService.resolveAllowedOrigin(request) ??
+      this.getDefaultFrontendOrigin();
 
     return {
       redirectUrl: `${this.getPlatformAuthBaseUrl()}/auth/oidc/${encodeURIComponent(
-        providerId
+        providerId,
       )}/start?${new URLSearchParams({
-        productCode: 'sfdc-external',
-        returnTo: this.getFrontendLoginRedirect(undefined, publicOrigin)
-      }).toString()}`
+        productCode: "sfdc-external",
+        returnTo: this.getFrontendLoginRedirect(undefined, publicOrigin),
+      }).toString()}`,
     };
   }
 
   buildOidcCallbackProxyUrl(
     providerId: string,
-    query: Record<string, string | undefined>
+    query: Record<string, string | undefined>,
   ): string {
     const target = new URL(
-      `${this.getPlatformAuthBaseUrl()}/auth/oidc/${encodeURIComponent(providerId)}/callback`
+      `${this.getPlatformAuthBaseUrl()}/auth/oidc/${encodeURIComponent(providerId)}/callback`,
     );
 
     for (const [key, value] of Object.entries(query)) {
@@ -85,39 +93,42 @@ export class AuthService {
 
   async loginWithPassword(
     username: string,
-    password: string
+    password: string,
   ): Promise<{ token: string; user: SessionUser }> {
-    const payload = await platformAuthJson<{ user: PlatformSessionUser; accessToken: string }>(
-      '/auth/login/password',
-      {
-        method: 'POST',
-        body: {
-          username,
-          password,
-          productCode: 'sfdc-external'
-        }
-      }
-    );
+    const payload = await platformAuthJson<{
+      user: PlatformSessionUser;
+      accessToken: string;
+    }>("/auth/login/password", {
+      method: "POST",
+      body: {
+        username,
+        password,
+        productCode: "sfdc-external",
+      },
+    });
 
     return {
       token: payload.accessToken,
-      user: await this.mapPlatformUserToSessionUser(payload.user)
+      user: await this.mapPlatformUserToSessionUser(payload.user),
     };
   }
 
   async verifySessionToken(token: string): Promise<SessionUser> {
     try {
-      const payload = await platformAuthJson<{ user: PlatformSessionUser }>('/internal/session/resolve', {
-        method: 'POST',
-        body: {
-          token,
-          productCode: 'sfdc-external'
-        }
-      });
+      const payload = await platformAuthJson<{ user: PlatformSessionUser }>(
+        "/internal/session/resolve",
+        {
+          method: "POST",
+          body: {
+            token,
+            productCode: "sfdc-external",
+          },
+        },
+      );
 
       return this.mapPlatformUserToSessionUser(payload.user);
     } catch {
-      throw new UnauthorizedException('Invalid or expired session');
+      throw new UnauthorizedException("Invalid or expired session");
     }
   }
 
@@ -126,35 +137,32 @@ export class AuthService {
   }
 
   getSessionCookieOptions(): CookieOptions {
-    const isProd = this.configService.get<string>('NODE_ENV') === 'production';
-    const cookieDomain =
-      this.configService.get<string>('SESSION_COOKIE_DOMAIN') ??
-      this.configService.get<string>('PLATFORM_AUTH_COOKIE_DOMAIN') ??
-      '.cs.lvh.me';
+    const isProd = this.configService.get<string>("NODE_ENV") === "production";
+    const cookieDomain = this.getRequiredConfig("SESSION_COOKIE_DOMAIN");
 
     return {
       httpOnly: true,
       secure: isProd,
-      sameSite: 'lax',
+      sameSite: "lax",
       maxAge: 8 * 60 * 60 * 1000,
-      path: '/',
-      domain: cookieDomain
+      path: "/",
+      domain: cookieDomain,
     };
   }
 
   getClearCookieOptions(): CookieOptions {
     return {
       ...this.getSessionCookieOptions(),
-      maxAge: 0
+      maxAge: 0,
     };
   }
 
   getFrontendLoginRedirect(
     search?: Record<string, string | undefined>,
-    originOverride?: string
+    originOverride?: string,
   ): string {
     const frontendOrigin = originOverride ?? this.getDefaultFrontendOrigin();
-    const url = new URL('/', frontendOrigin);
+    const url = new URL("/", frontendOrigin);
     const searchParams = new URLSearchParams();
 
     for (const [key, value] of Object.entries(search ?? {})) {
@@ -163,75 +171,110 @@ export class AuthService {
       }
     }
 
-    url.hash = searchParams.size > 0 ? `/login?${searchParams.toString()}` : '/login';
+    url.hash =
+      searchParams.size > 0 ? `/login?${searchParams.toString()}` : "/login";
     return url.toString();
   }
 
-  private async mapPlatformUserToSessionUser(user: PlatformSessionUser): Promise<SessionUser> {
+  private async mapPlatformUserToSessionUser(
+    user: PlatformSessionUser,
+  ): Promise<SessionUser> {
     const membership = (user.memberships ?? []).find(
-      (entry) => entry.productCode === 'sfdc-external'
+      (entry) => entry.productCode === "sfdc-external",
     );
 
     if (!membership) {
-      throw new UnauthorizedException('No active membership available for sfdc-external');
+      throw new UnauthorizedException(
+        "No active membership available for sfdc-external",
+      );
     }
 
     const resolvedEmail = this.normalizeEmail(user.email);
 
     if (!resolvedEmail) {
-      throw new UnauthorizedException('Membership is missing a valid email');
+      throw new UnauthorizedException("Membership is missing a valid email");
     }
 
     const subjectTraits = this.readMembershipSessionClaims(membership);
-    const legacySubjectIds = this.buildLegacySubjectIds(user.id, membership.subjectId);
+    const legacySubjectIds = this.buildLegacySubjectIds(
+      user.id,
+      membership.subjectId,
+    );
 
     return {
       sub: user.id,
       identityId: user.id,
       email: resolvedEmail,
-      permissions: await this.resolveEffectivePermissions(user.id, legacySubjectIds, resolvedEmail),
+      permissions: await this.resolveEffectivePermissions(
+        user.id,
+        legacySubjectIds,
+        resolvedEmail,
+      ),
       subjectTraits,
       legacySubjectIds,
       authProvider: user.authProvider,
-      authMethod: user.authMethod
+      authMethod: user.authMethod,
     };
   }
 
   private async resolveEffectivePermissions(
     subjectId: string,
     legacySubjectIds: string[],
-    email: string
+    email: string,
   ): Promise<string[]> {
     const permissions = [
       ...this.aclService.getDefaultPermissions(),
-      ...(await this.aclContactPermissionsRepository.listPermissionCodesBySubjectIds([
-        subjectId,
-        ...legacySubjectIds
-      ]))
+      ...(await this.aclContactPermissionsRepository.listPermissionCodesBySubjectIds(
+        [subjectId, ...legacySubjectIds],
+      )),
     ];
     const userEmail = this.normalizeEmail(email);
-    const bootstrapAdminEmail = this.normalizeEmail(await this.setupService.getCompletedAdminEmail());
+    const bootstrapAdminEmail = this.normalizeEmail(
+      await this.setupService.getCompletedAdminEmail(),
+    );
 
     if (bootstrapAdminEmail && userEmail === bootstrapAdminEmail) {
-      permissions.push('PORTAL_ADMIN');
+      permissions.push("PORTAL_ADMIN");
     }
 
     return this.aclService.normalizePermissions(permissions);
   }
 
   private getPlatformAuthBaseUrl(): string {
-    return (
-      this.configService.get<string>('PLATFORM_AUTH_SERVICE_URL') ?? 'http://localhost:3100'
-    ).replace(/\/+$/, '');
+    const value = this.configService
+      .get<string>("PLATFORM_AUTH_PUBLIC_BASE_URL")
+      ?.trim();
+
+    if (!value) {
+      throw new InternalServerErrorException(
+        "PLATFORM_AUTH_PUBLIC_BASE_URL is required.",
+      );
+    }
+
+    return value.replace(/\/+$/, "");
   }
 
   private getDefaultFrontendOrigin(): string {
-    return (
-      this.configService.get<string>('FRONTEND_ORIGINS', 'http://localhost:5173')
-        .split(',')
-        .map((entry) => entry.trim())
-        .find((entry) => entry.length > 0) ?? 'http://localhost:5173'
-    );
+    const origin = this.getRequiredConfig("FRONTEND_ORIGINS")
+      .split(",")
+      .map((entry) => entry.trim())
+      .find((entry) => entry.length > 0);
+
+    if (!origin) {
+      throw new InternalServerErrorException(
+        "FRONTEND_ORIGINS must include at least one origin.",
+      );
+    }
+
+    return origin;
+  }
+
+  private getRequiredConfig(key: "FRONTEND_ORIGINS" | "SESSION_COOKIE_DOMAIN"): string {
+    const value = this.configService.get<string>(key)?.trim();
+    if (!value) {
+      throw new InternalServerErrorException(`${key} is required.`);
+    }
+    return value;
   }
 
   private normalizeEmail(value?: string | null): string | null {
@@ -240,28 +283,33 @@ export class AuthService {
   }
 
   private readOptionalString(value: unknown): string | null {
-    return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+    return typeof value === "string" && value.trim().length > 0
+      ? value.trim()
+      : null;
   }
 
   private normalizeSubjectTraits(value: unknown): SubjectTraits | undefined {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
       return undefined;
     }
 
     const traits = Object.fromEntries(
-      Object.entries(value).filter(([, entry]) => entry !== undefined)
+      Object.entries(value).filter(([, entry]) => entry !== undefined),
     );
 
     return Object.keys(traits).length > 0 ? traits : undefined;
   }
 
   private readMembershipSessionClaims(
-    membership: PlatformMembership
+    membership: PlatformMembership,
   ): SubjectTraits | undefined {
     return this.normalizeSubjectTraits(membership.attributes?.sessionClaims);
   }
 
-  private buildLegacySubjectIds(identityId: string, membershipSubjectId?: string): string[] {
+  private buildLegacySubjectIds(
+    identityId: string,
+    membershipSubjectId?: string,
+  ): string[] {
     const legacySubjectId = this.readOptionalString(membershipSubjectId);
     if (!legacySubjectId || legacySubjectId === identityId) {
       return [];

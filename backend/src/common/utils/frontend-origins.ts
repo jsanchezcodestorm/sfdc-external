@@ -1,14 +1,18 @@
 import type { ConfigService } from '@nestjs/config';
 
-const DEFAULT_FRONTEND_ORIGINS = 'http://localhost:5173';
-
 export function readAllowedFrontendOrigins(configService: Pick<ConfigService, 'get'>): string[] {
-  const rawOrigins = configService.get<string>('FRONTEND_ORIGINS', DEFAULT_FRONTEND_ORIGINS);
+  const rawOrigins = configService.get<string>('FRONTEND_ORIGINS')?.trim();
+  if (!rawOrigins) {
+    throw new Error('FRONTEND_ORIGINS is required');
+  }
   return parseAllowedFrontendOrigins(rawOrigins);
 }
 
 export function parseAllowedFrontendOrigins(rawOrigins?: string): string[] {
-  const source = rawOrigins?.trim() ? rawOrigins : DEFAULT_FRONTEND_ORIGINS;
+  const source = rawOrigins?.trim();
+  if (!source) {
+    throw new Error('FRONTEND_ORIGINS is required');
+  }
   const entries = source
     .split(',')
     .map((value) => value.trim())
