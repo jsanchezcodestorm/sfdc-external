@@ -1,6 +1,9 @@
+import 'reflect-metadata';
+
 import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
+import { ExpressAdapter } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import cookieParser from 'cookie-parser';
 import type { NextFunction, Request, Response } from 'express';
@@ -11,7 +14,7 @@ import { RequestContextService } from './audit/request-context.service';
 import { extractRequestOrigin, readAllowedFrontendOrigins } from './common/utils/frontend-origins';
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, new ExpressAdapter());
   const configService = app.get(ConfigService);
   const requestContextService = app.get(RequestContextService);
 

@@ -3,105 +3,102 @@ import test from 'node:test';
 
 import { AuthProviderAdminService } from './auth-provider-admin.service';
 
-function createService() {
-  const authProviderAdminRepository = {
-    async listConfigs() {
-      return [];
-    },
-    async findConfig() {
-      return null;
-    },
-    async upsertConfig() {},
-  };
+type FetchCall = {
+  url: string;
+  init?: RequestInit;
+};
 
-  const authProviderRegistryService = {
-    async listRuntimeProviders() {
-      return [
-        {
-          id: 'local',
-          providerFamily: 'local',
-          type: 'local',
-          label: 'Username e password',
-          envEnabled: true,
-          defaultSortOrder: 100,
-          isConfigured: true,
-          isRuntimeAvailable: true,
-        },
-      ];
+function withPlatformAuthFetch(payload: unknown) {
+  const calls: FetchCall[] = [];
+  const originalFetch = globalThis.fetch;
+  const previousAuthUrl = process.env.PLATFORM_AUTH_SERVICE_URL;
+  const previousToken = process.env.PLATFORM_INTERNAL_TOKEN;
+
+  process.env.PLATFORM_AUTH_SERVICE_URL = 'http://platform-auth.test';
+  process.env.PLATFORM_INTERNAL_TOKEN = 'internal-token';
+  globalThis.fetch = (async (
+    input: Parameters<typeof fetch>[0],
+    init?: Parameters<typeof fetch>[1],
+  ) => {
+    calls.push({ url: String(input), init });
+    return new Response(JSON.stringify(payload), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as typeof fetch;
+
+  return {
+    calls,
+    restore() {
+      globalThis.fetch = originalFetch;
+
+      if (previousAuthUrl === undefined) {
+        delete process.env.PLATFORM_AUTH_SERVICE_URL;
+      } else {
+        process.env.PLATFORM_AUTH_SERVICE_URL = previousAuthUrl;
+      }
+
+      if (previousToken === undefined) {
+        delete process.env.PLATFORM_INTERNAL_TOKEN;
+      } else {
+        process.env.PLATFORM_INTERNAL_TOKEN = previousToken;
+      }
     },
   };
-
-  const authPublicOriginService = {
-    resolveAllowedOrigin() {
-      return 'http://localhost:5173';
-    },
-    buildOidcCallbackUri(origin: string, providerId: string) {
-      return `${origin}/api/auth/oidc/${providerId}/callback`;
-    },
-  };
-
-  const setupSecretsService = {
-    encryptJson(value: unknown) {
-      return JSON.stringify(value);
-    },
-  };
-
-  const auditWriteService = {
-    async recordApplicationSuccessOrThrow() {},
-  };
-
-  return new AuthProviderAdminService(
-    authProviderAdminRepository as never,
-    authProviderRegistryService as never,
-    authPublicOriginService as never,
-    setupSecretsService as never,
-    auditWriteService as never,
-  );
 }
 
-test('listProviders exposes the fixed slot catalog with not_configured OIDC providers', async () => {
-  const service = createService();
-
-  const payload = await service.listProviders();
-
-  assert.deepEqual(
-    payload.items.map((item) => ({ id: item.id, status: item.status })),
-    [
-      { id: 'google', status: 'not_configured' },
-      { id: 'entra-id', status: 'not_configured' },
-      { id: 'auth0', status: 'not_configured' },
-      { id: 'custom', status: 'not_configured' },
-      { id: 'local', status: 'active' },
-    ],
-  );
-});
-
-test('getPublicProviders exposes local auth even when no OIDC provider is registered', async () => {
-  const service = createService();
-
-  const payload = await service.getPublicProviders();
-
-  assert.deepEqual(payload, {
-    items: [{ id: 'local', type: 'local', label: 'Username e password', loginPath: undefined }],
+test('listProviders proxies the admin provider catalog to platform auth', async () => {
+  const fetchMock = withPlatformAuthFetch({
+    items: [{ id: 'local', status: 'active' }],
   });
+  const service = new AuthProviderAdminService();
+
+  try {
+    const payload = await service.listProviders();
+
+    assert.deepEqual(payload.items, [{ id: 'local', status: 'active' }]);
+    assert.equal(fetchMock.calls[0]?.url, 'http://platform-auth.test/auth/admin/providers');
+  } finally {
+    fetchMock.restore();
+  }
 });
 
-test('getProvider exposes the derived callbackUri for the current origin', async () => {
-  const service = createService();
+test('getPublicProviders proxies the public provider catalog to platform auth', async () => {
+  const fetchMock = withPlatformAuthFetch({
+    items: [{ id: 'local', type: 'local', label: 'Username e password' }],
+  });
+  const service = new AuthProviderAdminService();
 
-  const payload = await service.getProvider(
-    'google',
-    {
-      headers: {
-        origin: 'http://localhost:5173',
-      },
-      protocol: 'http',
-      get() {
-        return 'localhost:5173';
-      },
-    } as never,
-  );
+  try {
+    const payload = await service.getPublicProviders();
 
-  assert.equal(payload.provider.id, 'google');
-  assert.equal(payload.provider.callbackUri, 'http://localhost:5173/api/auth/oidc/google/callback');
+    assert.deepEqual(payload.items, [
+      { id: 'local', type: 'local', label: 'Username e password' },
+    ]);
+    assert.equal(fetchMock.calls[0]?.url, 'http://platform-auth.test/auth/providers');
+  } finally {
+    fetchMock.restore();
+  }
+});
+
+test('getProvider encodes provider ids when proxying admin provider detail', async () => {
+  const fetchMock = withPlatformAuthFetch({
+    provider: {
+      id: 'custom/provider',
+      callbackUri: 'http://localhost:5173/api/auth/oidc/custom%2Fprovider/callback',
+    },
+  });
+  const service = new AuthProviderAdminService();
+
+  try {
+    const payload = await service.getProvider('custom/provider', {} as never);
+
+    assert.equal(payload.provider.id, 'custom/provider');
+    assert.equal(
+      fetchMock.calls[0]?.url,
+      'http://platform-auth.test/auth/admin/providers/custom%2Fprovider',
+    );
+  } finally {
+    fetchMock.restore();
+  }
 });

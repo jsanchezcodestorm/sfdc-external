@@ -1,6 +1,6 @@
 {
   "compilerOptions": {
-    "module": "commonjs",
+    "module": "Node16",
     "declaration": true,
     "removeComments": true,
     "emitDecoratorMetadata": true,
@@ -10,12 +10,12 @@
     "target": "ES2022",
     "sourceMap": true,
     "outDir": "./dist",
-    "baseUrl": "./",
+    "rootDir": "./src",
     "incremental": true,
     "skipLibCheck": true,
     "strict": true,
     "strictNullChecks": true,
-    "moduleResolution": "node",
+    "moduleResolution": "node16",
     "types": ["node"]
   },
   "include": ["src/**/*.ts"],

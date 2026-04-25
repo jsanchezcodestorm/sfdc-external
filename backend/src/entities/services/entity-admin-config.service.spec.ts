@@ -57,13 +57,13 @@ function createService(fields: ReturnType<typeof createField>[]) {
       hasResource() {
         return false;
       },
+      getResourceStatus() {
+        return null;
+      },
     } as never,
     {
       async ensureEntityBootstrapPolicy() {
         counters.ensureVisibilityBootstrapCalls += 1;
-      },
-      getResourceStatus() {
-        return null;
       },
     } as never,
     {
@@ -429,6 +429,9 @@ test('createEntityConfig auto-provisions entity ACL resource before persistence'
       hasResource() {
         return true;
       },
+      getResourceStatus() {
+        return null;
+      },
     } as never,
     {
       async ensureEntityBootstrapPolicy(input: { entityId: string; objectApiName: string }) {
@@ -505,6 +508,9 @@ test('createEntityConfig derives id and label from objectApiName when omitted', 
     {
       hasResource() {
         return true;
+      },
+      getResourceStatus() {
+        return null;
       },
     } as never,
     {
@@ -583,6 +589,9 @@ test('createEntityConfig auto-generates a unique id when requested id already ex
     {
       hasResource() {
         return true;
+      },
+      getResourceStatus() {
+        return null;
       },
     } as never,
     {

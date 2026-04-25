@@ -1,32 +1,33 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { verify } from 'jsonwebtoken';
-
 import { AuthService } from './auth.service';
 
 const CONTACT_ID = '003000000000001AAA';
-const VALID_PASSWORD = 'Password!123';
+const LEGACY_CONTACT_ID = '003LEGACY0000001AAA';
 
-async function createAuthService(options?: {
+type FetchCall = {
+  url: string;
+  init?: RequestInit;
+};
+
+function createAuthService(options?: {
+  allowedOrigin?: string | null;
+  bootstrapAdminEmail?: string | null;
   defaultPermissions?: string[];
   explicitPermissions?: string[];
-  bootstrapAdminEmail?: string;
-  contactEmail?: string;
 }) {
   const state = {
-    explicitPermissions: options?.explicitPermissions ?? ['ACCOUNT_READ'],
-    permissionReads: 0,
+    permissionReads: [] as string[][],
   };
-  const passwordHash = 'password-hash';
 
   const configService = {
     get(key: string, fallback?: string) {
       const values: Record<string, string> = {
-        JWT_SECRET: 'jwt-secret',
-        JWT_EXPIRES_IN_SECONDS: '3600',
-        LOCAL_AUTH_LOCKOUT_THRESHOLD: '5',
-        LOCAL_AUTH_LOCKOUT_SECONDS: '900',
+        FRONTEND_ORIGINS: 'http://localhost:5173',
+        PLATFORM_AUTH_PUBLIC_BASE_URL: 'https://auth.example',
+        SESSION_COOKIE_DOMAIN: 'localhost',
+        NODE_ENV: 'development',
       };
 
       return values[key] ?? fallback;
@@ -45,96 +46,16 @@ async function createAuthService(options?: {
   };
 
   const aclContactPermissionsRepository = {
-    async listPermissionCodesByContactId() {
-      state.permissionReads += 1;
-      return [...state.explicitPermissions];
-    },
-  };
-
-  const authProviderRegistryService = {
-    async loadOidcDiscovery() {
-      return {
-        issuer: 'https://accounts.google.com',
-        authorization_endpoint: 'https://accounts.example/authorize',
-        token_endpoint: 'https://accounts.example/token',
-        jwks_uri: 'https://accounts.example/jwks',
-      };
-    },
-    async getOidcRuntimeProvider() {
-      return {
-        id: 'google',
-        providerFamily: 'google',
-        type: 'oidc',
-        label: 'Google',
-        envEnabled: true,
-        defaultSortOrder: 0,
-        isConfigured: true,
-        isRuntimeAvailable: true,
-        loginPath: '/api/auth/oidc/google/start',
-        issuer: 'https://accounts.google.com',
-        discoveryUrl: 'https://accounts.google.com/.well-known/openid-configuration',
-        clientId: 'google-client-id',
-        clientSecret: 'google-client-secret',
-        scopes: ['openid', 'email', 'profile'],
-      };
-    },
-    async verifyOidcIdToken() {
-      return {
-        email: (options?.contactEmail ?? 'user@example.com').toLowerCase(),
-      };
-    },
-    getFrontendLoginUrl() {
-      return '/#/login';
-    },
-  };
-
-  const authProviderAdminService = {
-    async getPublicProviders() {
-      return {
-        items: [
-          { id: 'google', type: 'oidc', label: 'Google', loginPath: '/api/auth/oidc/google/start' },
-          { id: 'local', type: 'local', label: 'Username e password' },
-        ],
-      };
+    async listPermissionCodesBySubjectIds(subjectIds: string[]) {
+      state.permissionReads.push(subjectIds);
+      return options?.explicitPermissions ?? ['ACCOUNT_READ'];
     },
   };
 
   const authPublicOriginService = {
     resolveAllowedOrigin() {
-      return 'http://localhost:5173';
+      return options?.allowedOrigin === undefined ? 'http://localhost:5173' : options.allowedOrigin;
     },
-    buildOidcCallbackUri(origin: string, providerId: string) {
-      return `${origin}/api/auth/oidc/${providerId}/callback`;
-    },
-  };
-
-  const localCredentialPasswordService = {
-    async verifyPassword(passwordHashToCheck: string, password: string) {
-      return passwordHashToCheck === passwordHash && password === VALID_PASSWORD;
-    },
-  };
-
-  const localCredentialRepository = {
-    async findByUsername() {
-      return {
-        contactId: CONTACT_ID,
-        username: (options?.contactEmail ?? 'user@example.com').toLowerCase(),
-        passwordHash,
-        enabled: true,
-        failedAttempts: 0,
-        lockedUntil: null,
-      };
-    },
-    async recordFailedLogin() {},
-    async recordSuccessfulLogin() {},
-  };
-
-  const localLoginRateLimiterService = {
-    isAllowed() {
-      return true;
-    },
-    recordFailure() {},
-    reset() {},
   };
 
   const setupService = {
@@ -143,93 +64,137 @@ async function createAuthService(options?: {
     },
   };
 
-  const salesforceService = {
-    async findContactById() {
-      return {
-        id: CONTACT_ID,
-        email: options?.contactEmail ?? 'user@example.com',
-        recordTypeDeveloperName: 'Customer',
-      };
-    },
-    async findContactByEmail(email: string) {
-      return {
-        id: CONTACT_ID,
-        email,
-        recordTypeDeveloperName: 'Customer',
-      };
-    },
-  };
-
   const service = new AuthService(
     configService as never,
     aclService as never,
     aclContactPermissionsRepository as never,
-    authProviderRegistryService as never,
-    authProviderAdminService as never,
     authPublicOriginService as never,
-    localCredentialPasswordService as never,
-    localCredentialRepository as never,
-    localLoginRateLimiterService as never,
     setupService as never,
-    salesforceService as never,
   );
 
   return { service, state };
 }
 
-test('loginWithPassword merges default, explicit, and setup bootstrap admin permissions', async () => {
-  const { service, state } = await createAuthService({
+function withPlatformAuthFetch(payload: unknown) {
+  const calls: FetchCall[] = [];
+  const originalFetch = globalThis.fetch;
+  const previousAuthUrl = process.env.PLATFORM_AUTH_SERVICE_URL;
+  const previousToken = process.env.PLATFORM_INTERNAL_TOKEN;
+
+  process.env.PLATFORM_AUTH_SERVICE_URL = 'http://platform-auth.test';
+  process.env.PLATFORM_INTERNAL_TOKEN = 'internal-token';
+  globalThis.fetch = (async (
+    input: Parameters<typeof fetch>[0],
+    init?: Parameters<typeof fetch>[1],
+  ) => {
+    calls.push({ url: String(input), init });
+    return new Response(JSON.stringify(payload), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }) as typeof fetch;
+
+  return {
+    calls,
+    restore() {
+      globalThis.fetch = originalFetch;
+
+      if (previousAuthUrl === undefined) {
+        delete process.env.PLATFORM_AUTH_SERVICE_URL;
+      } else {
+        process.env.PLATFORM_AUTH_SERVICE_URL = previousAuthUrl;
+      }
+
+      if (previousToken === undefined) {
+        delete process.env.PLATFORM_INTERNAL_TOKEN;
+      } else {
+        process.env.PLATFORM_INTERNAL_TOKEN = previousToken;
+      }
+    },
+  };
+}
+
+function createPlatformUser(email = 'admin@example.com') {
+  return {
+    id: CONTACT_ID,
+    email,
+    authProvider: 'local',
+    authMethod: 'local',
+    memberships: [
+      {
+        productCode: 'sfdc-external',
+        subjectId: LEGACY_CONTACT_ID,
+        attributes: {
+          sessionClaims: {
+            accountId: '001000000000001AAA',
+          },
+        },
+      },
+    ],
+  };
+}
+
+test('loginWithPassword proxies credentials and maps platform membership permissions', async () => {
+  const { service, state } = createAuthService({
     defaultPermissions: ['PORTAL_USER'],
     explicitPermissions: ['ACCOUNT_READ', 'PORTAL_USER'],
     bootstrapAdminEmail: 'admin@example.com',
-    contactEmail: 'admin@example.com',
+  });
+  const fetchMock = withPlatformAuthFetch({
+    accessToken: 'access-token',
+    user: createPlatformUser('Admin@Example.com'),
   });
 
-  const response = await service.loginWithPassword('admin@example.com', VALID_PASSWORD, '127.0.0.1');
+  try {
+    const response = await service.loginWithPassword('admin@example.com', 'Password!123');
+    const requestBody = JSON.parse(String(fetchMock.calls[0]?.init?.body));
 
-  assert.deepEqual(response.user.permissions, ['PORTAL_USER', 'ACCOUNT_READ', 'PORTAL_ADMIN']);
-  assert.equal(response.user.contactRecordTypeDeveloperName, 'Customer');
-  assert.equal(response.user.authProvider, 'local');
-  assert.equal(response.user.authMethod, 'local');
-  assert.equal(state.permissionReads, 1);
+    assert.equal(fetchMock.calls[0]?.url, 'http://platform-auth.test/auth/login/password');
+    assert.deepEqual(requestBody, {
+      username: 'admin@example.com',
+      password: 'Password!123',
+      productCode: 'sfdc-external',
+    });
+    assert.equal(response.token, 'access-token');
+    assert.equal(response.user.sub, CONTACT_ID);
+    assert.equal(response.user.identityId, CONTACT_ID);
+    assert.equal(response.user.email, 'admin@example.com');
+    assert.deepEqual(response.user.permissions, ['PORTAL_USER', 'ACCOUNT_READ', 'PORTAL_ADMIN']);
+    assert.deepEqual(response.user.legacySubjectIds, [LEGACY_CONTACT_ID]);
+    assert.deepEqual(response.user.subjectTraits, { accountId: '001000000000001AAA' });
+    assert.deepEqual(state.permissionReads, [[CONTACT_ID, LEGACY_CONTACT_ID]]);
+  } finally {
+    fetchMock.restore();
+  }
 });
 
-test('verifySessionToken trusts the JWT permission snapshot without rereading PostgreSQL', async () => {
-  const { service, state } = await createAuthService({
+test('verifySessionToken resolves platform sessions with fresh local permissions', async () => {
+  const { service, state } = createAuthService({
     defaultPermissions: ['PORTAL_USER'],
-    explicitPermissions: ['ACCOUNT_READ'],
-    contactEmail: 'user@example.com',
+    explicitPermissions: ['ACCOUNT_WRITE'],
+  });
+  const fetchMock = withPlatformAuthFetch({
+    user: createPlatformUser('user@example.com'),
   });
 
-  const firstLogin = await service.loginWithPassword('user@example.com', VALID_PASSWORD, '127.0.0.1');
-  state.explicitPermissions = ['ACCOUNT_WRITE'];
+  try {
+    const user = await service.verifySessionToken('session-token');
+    const requestBody = JSON.parse(String(fetchMock.calls[0]?.init?.body));
 
-  const firstSession = await service.verifySessionToken(firstLogin.token);
-
-  assert.deepEqual(firstLogin.user.permissions, ['PORTAL_USER', 'ACCOUNT_READ']);
-  assert.deepEqual(firstSession.permissions, ['PORTAL_USER', 'ACCOUNT_READ']);
-  assert.equal(state.permissionReads, 1);
+    assert.equal(fetchMock.calls[0]?.url, 'http://platform-auth.test/internal/session/resolve');
+    assert.deepEqual(requestBody, {
+      token: 'session-token',
+      productCode: 'sfdc-external',
+    });
+    assert.deepEqual(user.permissions, ['PORTAL_USER', 'ACCOUNT_WRITE']);
+    assert.deepEqual(state.permissionReads, [[CONTACT_ID, LEGACY_CONTACT_ID]]);
+  } finally {
+    fetchMock.restore();
+  }
 });
 
-test('refreshSessionUser applies updated contact permissions from PostgreSQL', async () => {
-  const { service, state } = await createAuthService({
-    defaultPermissions: ['PORTAL_USER'],
-    explicitPermissions: ['ACCOUNT_READ'],
-    contactEmail: 'user@example.com',
-  });
-
-  const firstLogin = await service.loginWithPassword('user@example.com', VALID_PASSWORD, '127.0.0.1');
-  state.explicitPermissions = ['ACCOUNT_WRITE'];
-
-  const refreshedSession = await service.refreshSessionUser(firstLogin.token);
-
-  assert.deepEqual(firstLogin.user.permissions, ['PORTAL_USER', 'ACCOUNT_READ']);
-  assert.deepEqual(refreshedSession.permissions, ['PORTAL_USER', 'ACCOUNT_WRITE']);
-  assert.equal(state.permissionReads, 2);
-});
-
-test('createOidcLoginStart derives the callback from the current public origin and stores it in the flow token', async () => {
-  const { service } = await createAuthService();
+test('createOidcLoginStart delegates OIDC start to platform auth with a product return URL', async () => {
+  const { service } = createAuthService();
 
   const response = await service.createOidcLoginStart(
     'google',
@@ -245,61 +210,29 @@ test('createOidcLoginStart derives the callback from the current public origin a
   );
 
   const redirectUrl = new URL(response.redirectUrl);
-  assert.equal(
-    redirectUrl.searchParams.get('redirect_uri'),
-    'http://localhost:5173/api/auth/oidc/google/callback',
-  );
 
-  const decoded = verify(response.flowToken, 'jwt-secret') as Record<string, unknown>;
-  assert.equal(decoded.redirectUri, 'http://localhost:5173/api/auth/oidc/google/callback');
+  assert.equal(redirectUrl.origin, 'https://auth.example');
+  assert.equal(redirectUrl.pathname, '/auth/oidc/google/start');
+  assert.equal(redirectUrl.searchParams.get('productCode'), 'sfdc-external');
+  assert.equal(redirectUrl.searchParams.get('returnTo'), 'http://localhost:5173/#/login');
 });
 
-test('completeOidcLogin reuses the callback stored in the flow token during token exchange', async () => {
-  const { service } = await createAuthService({
-    contactEmail: 'oidc-user@example.com',
-  });
-  const originalFetch = global.fetch;
-  let capturedBody = '';
+test('buildOidcCallbackProxyUrl forwards only populated callback parameters', () => {
+  const { service } = createAuthService();
 
-  const loginStart = await service.createOidcLoginStart(
-    'google',
-    {
-      headers: {
-        origin: 'http://localhost:5173',
-      },
-      protocol: 'http',
-      get() {
-        return 'localhost:5173';
-      },
-    } as never,
-  );
-  const decoded = verify(loginStart.flowToken, 'jwt-secret') as Record<string, unknown>;
-
-  global.fetch = (async (_input, init) => {
-    capturedBody = String(init?.body ?? '');
-    return new Response(JSON.stringify({ id_token: 'oidc-id-token' }), {
-      status: 200,
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-  }) as typeof fetch;
-
-  try {
-    const payload = await service.completeOidcLogin('google', {
-      flowToken: loginStart.flowToken,
-      state: String(decoded.state),
+  const url = new URL(
+    service.buildOidcCallbackProxyUrl('custom/provider', {
       code: 'auth-code',
-    });
-
-    assert.equal(payload.user.authMethod, 'oidc');
-    assert.equal(payload.user.authProvider, 'google');
-  } finally {
-    global.fetch = originalFetch;
-  }
-
-  assert.match(
-    capturedBody,
-    /redirect_uri=http%3A%2F%2Flocalhost%3A5173%2Fapi%2Fauth%2Foidc%2Fgoogle%2Fcallback/,
+      state: 'state-value',
+      error: '',
+      error_description: '  ',
+    }),
   );
+
+  assert.equal(url.origin, 'https://auth.example');
+  assert.equal(url.pathname, '/auth/oidc/custom%2Fprovider/callback');
+  assert.equal(url.searchParams.get('code'), 'auth-code');
+  assert.equal(url.searchParams.get('state'), 'state-value');
+  assert.equal(url.searchParams.has('error'), false);
+  assert.equal(url.searchParams.has('error_description'), false);
 });

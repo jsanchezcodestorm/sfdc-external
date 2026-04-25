@@ -1,6 +1,5 @@
 const tsParser = require('@typescript-eslint/parser');
 const tsPlugin = require('@typescript-eslint/eslint-plugin');
-const importPlugin = require('eslint-plugin-import');
 
 module.exports = [
   {
@@ -17,20 +16,12 @@ module.exports = [
       }
     },
     plugins: {
-      '@typescript-eslint': tsPlugin,
-      import: importPlugin
+      '@typescript-eslint': tsPlugin
     },
     rules: {
       '@typescript-eslint/no-explicit-any': 'error',
       '@typescript-eslint/consistent-type-imports': ['error', { prefer: 'type-imports' }],
-      'import/order': [
-        'warn',
-        {
-          alphabetize: { order: 'asc', caseInsensitive: true },
-          'newlines-between': 'always',
-          groups: ['builtin', 'external', 'internal', 'parent', 'sibling', 'index']
-        }
-      ]
+      'preserve-caught-error': 'off'
     }
   }
 ];

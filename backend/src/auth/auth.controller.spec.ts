@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { CSRF_COOKIE_NAME, OIDC_FLOW_COOKIE_NAME, SESSION_COOKIE_NAME } from '../app.constants';
+import { CSRF_COOKIE_NAME, SESSION_COOKIE_NAME } from '../app.constants';
 
 import { AuthController } from './auth.controller';
 import { CsrfService } from './csrf.service';
@@ -271,7 +271,7 @@ test('getCsrfToken returns a token and sets the csrf cookie', () => {
   assert.equal(response.cookieCalls[0].value, payload.csrfToken);
 });
 
-test('startOidcLogin sets the flow cookie and redirects to the provider', async () => {
+test('startOidcLogin redirects to the provider', async () => {
   const { controller } = createController();
   const response = createResponse();
 
@@ -289,9 +289,7 @@ test('startOidcLogin sets the flow cookie and redirects to the provider', async 
     response as never,
   );
 
-  assert.equal(response.cookieCalls.length, 1);
-  assert.equal(response.cookieCalls[0].name, OIDC_FLOW_COOKIE_NAME);
-  assert.equal(response.cookieCalls[0].value, 'oidc-flow-token');
+  assert.equal(response.cookieCalls.length, 0);
   assert.deepEqual(response.redirectCalls, ['https://accounts.example/authorize']);
 });
 
@@ -323,7 +321,7 @@ test('loginWithPassword returns user and csrfToken while setting session and csr
   );
 });
 
-test('getSession refreshes the user, rotates the session and csrf cookies, and returns the token', async () => {
+test('getSession refreshes the user and csrf cookie', async () => {
   const { controller, state } = createController();
   const response = createResponse();
   const request = {
@@ -338,14 +336,12 @@ test('getSession refreshes the user, rotates the session and csrf cookies, and r
   assert.deepEqual(payload.user, REFRESHED_USER);
   assert.equal(typeof payload.csrfToken, 'string');
   assert.deepEqual(state.refreshedSessionTokens, ['existing-session-token']);
-  assert.deepEqual(state.issuedSessionUsers, [REFRESHED_USER]);
+  assert.deepEqual(state.issuedSessionUsers, []);
   assert.deepEqual(state.setUsers, [REFRESHED_USER]);
   assert.deepEqual(request.user, REFRESHED_USER);
-  assert.equal(response.cookieCalls.length, 2);
-  assert.equal(response.cookieCalls[0].name, SESSION_COOKIE_NAME);
-  assert.equal(response.cookieCalls[0].value, 'rotated-session-token');
-  assert.equal(response.cookieCalls[1].name, CSRF_COOKIE_NAME);
-  assert.equal(response.cookieCalls[1].value, payload.csrfToken);
+  assert.equal(response.cookieCalls.length, 1);
+  assert.equal(response.cookieCalls[0].name, CSRF_COOKIE_NAME);
+  assert.equal(response.cookieCalls[0].value, payload.csrfToken);
 });
 
 test('logout clears session and csrf cookies', () => {
