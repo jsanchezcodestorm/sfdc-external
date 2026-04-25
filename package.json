@@ -9,18 +9,26 @@
   ],
   "scripts": {
     "build": "npm run build --workspace backend && npm run build --workspace frontend",
-    "lint": "npm run lint --workspaces",
+    "lint": "npm run lint --workspaces --if-present",
     "start:dev": "npm run start:dev --workspace backend",
     "dev": "npm run dev --workspace frontend",
     "prisma:studio": "npm run --workspace backend prisma:studio --"
   },
   "devDependencies": {
-    "@nestjs/common": "^11.1.19"
+    "@nestjs/common": "^11.1.19",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5"
   },
   "overrides": {
     "@nestjs/common": "^11.1.19",
     "@nestjs/core": "^11.1.19",
-    "@nestjs/platform-express": "^11.1.19"
+    "@nestjs/platform-express": "^11.1.19",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5"
   },
   "engines": {
     "node": ">=22",
