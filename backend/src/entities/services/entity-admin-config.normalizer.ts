@@ -1,0 +1,352 @@
+import { BadRequestException } from '@nestjs/common';
+
+import type {
+  EntityActionConfig,
+  EntityConfig,
+  EntityDetailConfig,
+  EntityDetailSectionConfig,
+  EntityFormConfig,
+  EntityFormSectionConfig,
+  EntityListConfig,
+  EntityListViewConfig,
+  EntityRelatedListConfig
+} from '../entities.types';
+import { normalizeEntityFormFieldConfig } from '../entity-form-config.validation';
+import { normalizeEntityQueryConfig } from '../entity-query-config.validation';
+
+export class EntityAdminConfigNormalizer {
+  normalizeForPersistence(entityId: string | undefined, value: unknown): EntityConfig {
+    return this.normalizeEntityConfig(entityId, value);
+  }
+
+  normalizeForCreate(value: unknown): EntityConfig {
+    const entity = this.requireObject(value, 'entity payload must be an object');
+    const objectApiName = this.requireString(entity.objectApiName, 'entity.objectApiName is required');
+    const derivedId = this.asOptionalString(entity.id) ?? objectApiName;
+    const derivedLabel = this.asOptionalString(entity.label) ?? this.buildEntityLabelFromObjectApiName(objectApiName);
+
+    if (!derivedLabel) {
+      throw new BadRequestException('entity.label is required');
+    }
+
+    return this.normalizeEntityConfig(undefined, {
+      ...entity,
+      id: derivedId,
+      label: derivedLabel,
+      objectApiName
+    });
+  }
+
+  normalizeBootstrapEntityBase(value: unknown): EntityConfig {
+    const entity = this.requireObject(value, 'entity payload must be an object');
+    if (entity.list !== undefined || entity.detail !== undefined || entity.form !== undefined) {
+      throw new BadRequestException('bootstrap preview accepts base entity fields only');
+    }
+
+    return {
+      id: this.requireString(entity.id, 'entity.id is required'),
+      label: this.requireString(entity.label, 'entity.label is required'),
+      objectApiName: this.requireString(entity.objectApiName, 'entity.objectApiName is required'),
+      description: this.asOptionalString(entity.description),
+      navigation: this.normalizeNavigation(entity.navigation)
+    };
+  }
+
+  private normalizeEntityConfig(entityId: string | undefined, value: unknown): EntityConfig {
+    const entity = this.requireObject(value, 'entity payload must be an object');
+    const id = this.requireString(entity.id, 'entity.id is required');
+
+    if (entityId && id !== entityId) {
+      throw new BadRequestException('entity.id must match route entityId');
+    }
+
+    const label = this.requireString(entity.label, 'entity.label is required');
+    const objectApiName = this.requireString(entity.objectApiName, 'entity.objectApiName is required');
+
+    return {
+      id,
+      label,
+      objectApiName,
+      description: this.asOptionalString(entity.description),
+      navigation: this.normalizeNavigation(entity.navigation),
+      list: this.normalizeListConfig(entity.list),
+      detail: this.normalizeDetailConfig(entity.detail),
+      form: this.normalizeFormConfig(entity.form)
+    };
+  }
+
+  private buildEntityLabelFromObjectApiName(objectApiName: string): string {
+    const normalized = objectApiName
+      .replace(/__(c|r)$/i, '')
+      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+      .replace(/[_-]+/g, ' ')
+      .trim();
+
+    return normalized.length > 0 ? normalized : objectApiName;
+  }
+
+  private normalizeNavigation(value: unknown): EntityConfig['navigation'] | undefined {
+    if (value === undefined || value === null) {
+      return undefined;
+    }
+
+    const navigation = this.requireObject(value, 'entity.navigation must be an object');
+    const basePath = this.asOptionalString(navigation.basePath);
+
+    return basePath ? { basePath } : undefined;
+  }
+
+  private normalizeListConfig(value: unknown): EntityListConfig | undefined {
+    if (value === undefined || value === null) {
+      return undefined;
+    }
+
+    const list = this.requireObject(value, 'entity.list must be an object');
+    const title = this.requireString(list.title, 'entity.list.title is required');
+    const views = this.requireArray(list.views, 'entity.list.views must be an array')
+      .map((entry, index) => this.normalizeListView(entry, index));
+
+    if (views.length === 0) {
+      throw new BadRequestException('entity.list.views must contain at least one item');
+    }
+
+    return {
+      title,
+      subtitle: this.asOptionalString(list.subtitle),
+      primaryAction: this.normalizeAction(list.primaryAction),
+      views
+    };
+  }
+
+  private normalizeListView(value: unknown, index: number): EntityListViewConfig {
+    const view = this.requireObject(value, `entity.list.views[${index}] must be an object`);
+    const id = this.requireString(view.id, `entity.list.views[${index}].id is required`);
+    const label = this.requireString(view.label, `entity.list.views[${index}].label is required`);
+    const columns = this.normalizeColumns(view.columns, `entity.list.views[${index}].columns`);
+
+    return {
+      id,
+      label,
+      query: normalizeEntityQueryConfig(view.query, `entity.list.views[${index}].query`),
+      columns,
+      description: this.asOptionalString(view.description),
+      default: this.asOptionalBoolean(view.default),
+      pageSize: this.asOptionalNumber(view.pageSize),
+      search: this.normalizeObjectOrUndefined(view.search, `entity.list.views[${index}].search`) as EntityListViewConfig['search'],
+      primaryAction: this.normalizeAction(view.primaryAction),
+      rowActions: this.normalizeActionsArray(view.rowActions, `entity.list.views[${index}].rowActions`)
+    };
+  }
+
+  private normalizeDetailConfig(value: unknown): EntityDetailConfig | undefined {
+    if (value === undefined || value === null) {
+      return undefined;
+    }
+
+    const detail = this.requireObject(value, 'entity.detail must be an object');
+    const sections = this.requireArray(detail.sections, 'entity.detail.sections must be an array')
+      .map((entry, index) => this.normalizeDetailSection(entry, index));
+
+    if (sections.length === 0) {
+      throw new BadRequestException('entity.detail.sections must contain at least one item');
+    }
+
+    return {
+      query: normalizeEntityQueryConfig(detail.query, 'entity.detail.query'),
+      sections,
+      relatedLists: this.normalizeRelatedListsArray(detail.relatedLists),
+      titleTemplate: this.asOptionalString(detail.titleTemplate),
+      fallbackTitle: this.asOptionalString(detail.fallbackTitle),
+      subtitle: this.asOptionalString(detail.subtitle),
+      actions: this.normalizeActionsArray(detail.actions, 'entity.detail.actions'),
+      pathStatus: this.normalizeObjectOrUndefined(detail.pathStatus, 'entity.detail.pathStatus') as EntityDetailConfig['pathStatus']
+    };
+  }
+
+  private normalizeDetailSection(value: unknown, index: number): EntityDetailSectionConfig {
+    const section = this.requireObject(value, `entity.detail.sections[${index}] must be an object`);
+    const title = this.requireString(section.title, `entity.detail.sections[${index}].title is required`);
+    const fields = this.requireArray(section.fields, `entity.detail.sections[${index}].fields must be an array`)
+      .map((entry, fieldIndex) =>
+        this.requireObject(
+          entry,
+          `entity.detail.sections[${index}].fields[${fieldIndex}] must be an object`
+        )
+      );
+
+    if (fields.length === 0) {
+      throw new BadRequestException(`entity.detail.sections[${index}].fields must contain at least one item`);
+    }
+
+    return {
+      title,
+      fields: fields as unknown as EntityDetailSectionConfig['fields']
+    };
+  }
+
+  private normalizeRelatedListsArray(value: unknown): EntityRelatedListConfig[] | undefined {
+    if (value === undefined || value === null) {
+      return undefined;
+    }
+
+    const rows = this.requireArray(value, 'entity.detail.relatedLists must be an array')
+      .map((entry, index) => this.normalizeRelatedList(entry, index));
+
+    return rows.length > 0 ? rows : undefined;
+  }
+
+  private normalizeRelatedList(value: unknown, index: number): EntityRelatedListConfig {
+    const relatedList = this.requireObject(value, `entity.detail.relatedLists[${index}] must be an object`);
+    const id = this.requireString(relatedList.id, `entity.detail.relatedLists[${index}].id is required`);
+    const label = this.requireString(relatedList.label, `entity.detail.relatedLists[${index}].label is required`);
+    const columns = this.normalizeColumns(relatedList.columns, `entity.detail.relatedLists[${index}].columns`);
+
+    return {
+      id,
+      label,
+      query: normalizeEntityQueryConfig(
+        relatedList.query,
+        `entity.detail.relatedLists[${index}].query`
+      ),
+      columns,
+      description: this.asOptionalString(relatedList.description),
+      actions: this.normalizeActionsArray(relatedList.actions, `entity.detail.relatedLists[${index}].actions`),
+      rowActions: this.normalizeActionsArray(relatedList.rowActions, `entity.detail.relatedLists[${index}].rowActions`),
+      emptyState: this.asOptionalString(relatedList.emptyState),
+      pageSize: this.asOptionalNumber(relatedList.pageSize),
+      entityId: this.asOptionalString(relatedList.entityId)
+    };
+  }
+
+  private normalizeFormConfig(value: unknown): EntityFormConfig | undefined {
+    if (value === undefined || value === null) {
+      return undefined;
+    }
+
+    const form = this.requireObject(value, 'entity.form must be an object');
+    const title = this.requireObject(form.title, 'entity.form.title is required');
+    const createTitle = this.requireString(title.create, 'entity.form.title.create is required');
+    const editTitle = this.requireString(title.edit, 'entity.form.title.edit is required');
+    const sections = this.requireArray(form.sections, 'entity.form.sections must be an array')
+      .map((entry, index) => this.normalizeFormSection(entry, index));
+
+    if (sections.length === 0) {
+      throw new BadRequestException('entity.form.sections must contain at least one item');
+    }
+
+    return {
+      title: {
+        create: createTitle,
+        edit: editTitle
+      },
+      query: normalizeEntityQueryConfig(form.query, 'entity.form.query'),
+      subtitle: this.asOptionalString(form.subtitle),
+      sections
+    };
+  }
+
+  private normalizeFormSection(value: unknown, index: number): EntityFormSectionConfig {
+    const section = this.requireObject(value, `entity.form.sections[${index}] must be an object`);
+    const fields = this.requireArray(section.fields, `entity.form.sections[${index}].fields must be an array`)
+      .map((entry, fieldIndex) =>
+        normalizeEntityFormFieldConfig(
+          entry,
+          `entity.form.sections[${index}].fields[${fieldIndex}]`
+        )
+      );
+
+    if (fields.length === 0) {
+      throw new BadRequestException(`entity.form.sections[${index}].fields must contain at least one item`);
+    }
+
+    return {
+      title: this.asOptionalString(section.title),
+      fields
+    };
+  }
+
+  private normalizeColumns(value: unknown, path: string): EntityListViewConfig['columns'] {
+    const columns = this.requireArray(value, `${path} must be an array`)
+      .filter((entry): entry is string | Record<string, unknown> => typeof entry === 'string' || this.isObjectRecord(entry));
+
+    if (columns.length === 0) {
+      throw new BadRequestException(`${path} must contain at least one item`);
+    }
+
+    return columns as EntityListViewConfig['columns'];
+  }
+
+  private normalizeAction(value: unknown): EntityActionConfig | undefined {
+    if (value === undefined || value === null) {
+      return undefined;
+    }
+
+    const action = this.requireObject(value, 'action must be an object');
+    return action as unknown as EntityActionConfig;
+  }
+
+  private normalizeActionsArray(value: unknown, path: string): EntityActionConfig[] | undefined {
+    if (value === undefined || value === null) {
+      return undefined;
+    }
+
+    const actions = this.requireArray(value, `${path} must be an array`)
+      .map((entry, index) => this.requireObject(entry, `${path}[${index}] must be an object`))
+      .map((entry) => entry as unknown as EntityActionConfig);
+
+    return actions.length > 0 ? actions : undefined;
+  }
+
+  private normalizeObjectOrUndefined(value: unknown, errorMessage: string): Record<string, unknown> | undefined {
+    if (value === undefined || value === null) {
+      return undefined;
+    }
+
+    return this.requireObject(value, `${errorMessage} must be an object`);
+  }
+
+  private requireObject(value: unknown, errorMessage: string): Record<string, unknown> {
+    if (!this.isObjectRecord(value)) {
+      throw new BadRequestException(errorMessage);
+    }
+
+    return value;
+  }
+
+  private requireArray(value: unknown, errorMessage: string): unknown[] {
+    if (!Array.isArray(value)) {
+      throw new BadRequestException(errorMessage);
+    }
+
+    return value;
+  }
+
+  private requireString(value: unknown, errorMessage: string): string {
+    if (typeof value !== 'string' || value.trim().length === 0) {
+      throw new BadRequestException(errorMessage);
+    }
+
+    return value.trim();
+  }
+
+  private asOptionalString(value: unknown): string | undefined {
+    if (typeof value !== 'string') {
+      return undefined;
+    }
+
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  }
+
+  private asOptionalBoolean(value: unknown): boolean | undefined {
+    return typeof value === 'boolean' ? value : undefined;
+  }
+
+  private asOptionalNumber(value: unknown): number | undefined {
+    return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+  }
+
+  private isObjectRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+  }
+}
