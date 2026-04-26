@@ -116,7 +116,7 @@ jobs:
           
           ENV NODE_ENV=production
           
-          CMD ["sh", "-lc", "npm run prisma:migrate:deploy --workspace backend && npm run start --workspace backend"]
+          CMD sh -lc 'npm run prisma:migrate:deploy --workspace backend && npm run start --workspace backend'
           DOCKERFILE
               ;;
             sfdc-web)
