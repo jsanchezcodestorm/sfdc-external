@@ -1,0 +1,88 @@
+name: Deploy to Railway
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: railway-deploy-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "22"
+  SERVICE_PATH: sfdc-external
+
+jobs:
+  deploy:
+    name: Build and deploy ${{ matrix.railway_service }}
+    if: github.ref_name == 'main' || github.ref_name == 'master'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        railway_service:
+          - sfdc-api
+          - sfdc-web
+    env:
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
+      RAILWAY_ENVIRONMENT: ${{ secrets.RAILWAY_ENVIRONMENT }}
+    defaults:
+      run:
+        working-directory: sfdc-external
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          path: ${{ env.SERVICE_PATH }}
+
+      - name: Checkout shared packages
+        uses: actions/checkout@v4
+        with:
+          repository: CodeStormLab/cs-products-shared-packages
+          path: platform-shared-packages
+          token: ${{ secrets.SHARED_PACKAGES_REPOSITORY_TOKEN || github.token }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: ${{ env.SERVICE_PATH }}/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli@4.42.1
+
+      - name: Deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${RAILWAY_TOKEN:-}" || -z "${RAILWAY_PROJECT_ID:-}" ]]; then
+            echo "Missing RAILWAY_TOKEN or RAILWAY_PROJECT_ID secret." >&2
+            exit 1
+          fi
+
+          railway_service="${{ matrix.railway_service }}"
+          link_args=(link --project "${RAILWAY_PROJECT_ID}" --service "${railway_service}")
+          up_args=(up --service "${railway_service}" --ci)
+
+          if [[ -n "${RAILWAY_ENVIRONMENT:-}" ]]; then
+            link_args+=(--environment "${RAILWAY_ENVIRONMENT}")
+            up_args+=(--environment "${RAILWAY_ENVIRONMENT}")
+          fi
+
+          railway "${link_args[@]}"
+          railway "${up_args[@]}"
