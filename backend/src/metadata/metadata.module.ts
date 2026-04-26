@@ -11,6 +11,8 @@ import { VisibilityModule } from '../visibility/visibility.module';
 
 import { MetadataController } from './metadata.controller';
 import { MetadataAdminService } from './metadata.service';
+import { MetadataEntryNormalizerService } from './services/metadata-entry-normalizer.service';
+import { MetadataPackageCodecService } from './services/metadata-package-codec.service';
 
 @Module({
   imports: [
@@ -24,6 +26,6 @@ import { MetadataAdminService } from './metadata.service';
     SalesforceModule,
   ],
   controllers: [MetadataController],
-  providers: [MetadataAdminService],
+  providers: [MetadataAdminService, MetadataEntryNormalizerService, MetadataPackageCodecService],
 })
 export class MetadataModule {}

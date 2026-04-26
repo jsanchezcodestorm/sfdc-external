@@ -1,36 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { MetadataAdminService } from './metadata.service';
-
-function createService(): MetadataAdminService {
-  return new MetadataAdminService(
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    {} as never,
-  );
-}
+import { MetadataEntryNormalizerService } from './services/metadata-entry-normalizer.service';
 
 test('normalizeEntryForComparison normalizes legacy entity and ACL metadata ids', () => {
-  const service = createService() as unknown as {
-    normalizeEntryForComparison: (typeName: string, member: string, value: unknown) => Record<string, unknown>;
-  };
+  const service = new MetadataEntryNormalizerService();
 
   const entity = service.normalizeEntryForComparison('EntityConfig', 'Contact', {
     id: 'Contact',
@@ -88,9 +62,7 @@ test('normalizeEntryForComparison normalizes legacy entity and ACL metadata ids'
 });
 
 test('normalizeEntryForComparison normalizes legacy app item entity references', () => {
-  const service = createService() as unknown as {
-    normalizeEntryForComparison: (typeName: string, member: string, value: unknown) => Record<string, unknown>;
-  };
+  const service = new MetadataEntryNormalizerService();
 
   const app = service.normalizeEntryForComparison('AppConfig', 'sales', {
     id: 'sales',
