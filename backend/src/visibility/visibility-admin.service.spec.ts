@@ -397,11 +397,7 @@ test('normalizeRule keeps a trimmed optional description and drops whitespace-on
   };
   const { service } = createVisibilityAdminService({ prisma });
 
-  const normalizeRule = service as unknown as {
-    normalizeRule(ruleId: string | undefined, value: unknown): Promise<Record<string, unknown>>;
-  };
-
-  const normalizedWithDescription = await normalizeRule.normalizeRule(undefined, {
+  const normalizedWithDescription = await service.normalizeRuleForPersistence({
     coneId: 'ddcf4148-5230-45ea-97e0-741417507a85',
     objectApiName: 'Account',
     description: '  Regola per account attivi  ',
@@ -416,7 +412,7 @@ test('normalizeRule keeps a trimmed optional description and drops whitespace-on
 
   assert.equal(normalizedWithDescription.description, 'Regola per account attivi');
 
-  const normalizedWithoutDescription = await normalizeRule.normalizeRule(undefined, {
+  const normalizedWithoutDescription = await service.normalizeRuleForPersistence({
     coneId: 'ddcf4148-5230-45ea-97e0-741417507a85',
     objectApiName: 'Account',
     description: '   ',
